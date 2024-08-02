@@ -1,0 +1,16 @@
+.idea/
+.DS_Store
+.env
+.venv
+*.log
+output*/
+src/main/resources/dataset
+src/main/resources/tmp/
+src/main/resources/log4j2.properties
+src/main/java/star/tratto/lsp
+scripts/dataset/bash
+scripts/utils
+target/
+tmp/
+# Excel files:
+~$*
