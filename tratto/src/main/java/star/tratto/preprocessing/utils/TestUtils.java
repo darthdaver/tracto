@@ -16,20 +16,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import star.tratto.data.*;
 import star.tratto.preprocessing.components.OracleDatapoint;
-import star.tratto.preprocessing.components.TestMethod;
+import star.tratto.preprocessing.components.Method;
 import star.tratto.utils.FileUtils;
 import star.tratto.utils.javaParser.JavaParserUtils;
 import star.tratto.utils.javaParser.visitors.AssertStmtVisitor;
 import star.tratto.utils.javaParser.visitors.MethodCallExprVisitor;
 import star.tratto.utils.javaParser.visitors.StmtVisitorHelper;
 
-import javax.swing.text.html.Option;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 
+/**
+ * This class provides static utility methods to process test files and
+ * generate Oracles Datapoints.
+ */
 public class TestUtils {
 
     /** The logger for the class. */
@@ -140,12 +143,18 @@ public class TestUtils {
      *    ]
      * </pre>
      *
+     * @param repoRootPath the path to the root of the repository
      * @param testFilePath the path to the test class file
      * @param outputPath the path to the split test class file
      */
-    public static void splitTest(Path testFilePath, Path outputPath) {
-        Path regularOutputPath = Paths.get(outputPath.toString(), "regular", testFilePath.getFileName().toString());
-        Path errorOutputPath = Paths.get(outputPath.toString(), "error", testFilePath.getFileName().toString());
+    public static void splitTest(Path repoRootPath, Path testFilePath, Path outputPath) {
+        String testFileRelativePath = testFilePath.toString().replace(repoRootPath.getParent().toString(), "");
+        // Regular output path for report analysis
+        Path regularOutputPath = Paths.get(outputPath.toString(), "regular", testFileRelativePath.replace(".java", TrattoNamingConvention.TEST_SPLIT_FILE.getConventionName()));
+        // Error output path for error analysis
+        Path errorOutputPath = Paths.get(outputPath.toString(), "error", testFileRelativePath);
+        // Test repository output path for further processing
+        Path testRepoOutputPath = Paths.get(testFilePath.toString().replace(".java", TrattoNamingConvention.TEST_SPLIT_FILE.getConventionName()));
         // Create a list to store the split test cases generated from the original test cases of the given test class
         List<MethodDeclaration> splitTestCases = new ArrayList<>();
         try {
@@ -211,13 +220,37 @@ public class TestUtils {
             // Set the methods of the test case to the split test methods
             TypeDeclaration testClass = cu.getPrimaryType().get();
             testClass.setMembers(new NodeList<>(splitTestCases));
-            // Save the split test class to the output path
+            // Save the split test class to the output paths (regular and test repository)
             FileUtils.writeJavaFile(regularOutputPath, cu);
+            FileUtils.writeJavaFile(testRepoOutputPath, cu);
         } catch (IOException e) {
             logger.error("Error reading file: " + testFilePath);
         }
     }
 
+    /**
+     * Parse the statements of the given block and split the test case into multiple test cases at any occurrence of an
+     * assertion. The list of statements represent the statements within a block. Each statement is analyzed through the
+     * help of JavaParser.
+     * If the statement is a simple expression the statement is processed and added to the current test case.
+     * If the statement is an assertion, the assertion is added to the current test case and the current test is
+     * completed (a new split test is created, starting from the state of the last test prefix, with the last assertion added,
+     * the index of the split test cases is incremented accordingly)
+     * If the statement is a complex statement (representing for example a try-catch, a for loop, a while loop, etc.) the
+     * statement is analyzed progressively, calling the method recursively, incrementing the recursion level, and defining
+     * the type of the block statement to analyze in the next recursion step.
+     * The method returns the last test prefix generated, and the list of the intermediary test prefixes, split at any
+     * occurrence of an assertion.
+     *
+     * @param statements the list of statements to parse
+     * @param testCaseMold the mold of the test case
+     * @param startIdx the index of the split test cases
+     * @param auxiliaryMethods the auxiliary methods of the test class
+     * @param blockStatementsType the type of block statements
+     * @param recursionLevel the level of recursion of the current block of statements analyzed
+     * @return the pair of the last split test case generated and the list of split test cases
+     * @throws IllegalStateException if an error occurs while parsing the statements of the block
+     */
     private static Pair<MethodDeclaration, List<MethodDeclaration>> parseStatementsBlock(
             List<Statement> statements,
             MethodDeclaration testCaseMold,
@@ -897,6 +930,18 @@ public class TestUtils {
         return Optional.empty();
     }
 
+    /**
+     * Process the test classes collected from a given repository to generate all the oracles datapoints {@link OracleDatapoint}
+     * from their test cases.
+     *
+     * @param repoRootPath the path to the repository to process
+     * @param testFiles the list of test classes collected from the repository
+     * @param testCaseParsingType {@code TestCaseParsingType.LAST_OCCURRENCE} if the method have to analyze only the last
+     *                            method invocation within each test prefix (the focal method). Otherwise,
+     *                            {@code TestCaseParsingType.ANY_OCCURRENCE} if the method have to analyze all the
+     *                            method invocations within each test prefix.
+     * @return
+     */
     public static List<OracleDatapoint> parseRepoTestClasses(Path repoRootPath, List<Path> testFiles, TestCaseParsingType testCaseParsingType) {
         // Create a list to store the oracle datapoints
         List<OracleDatapoint> oracleDatapoints = new ArrayList<>();
@@ -940,7 +985,7 @@ public class TestUtils {
                 // Split test cases (one test case for each assertion)
                 List<MethodDeclaration> splittedTestCases = new ArrayList<>();
                 // Create a list to store the test methods
-                List<TestMethod> testMethods = new ArrayList<>();
+                List<Method> testMethods = new ArrayList<>();
                 // Iterate over the test cases
                 for (MethodDeclaration testCase : testCases) {
                     // Create a list to store the test method statements
@@ -967,6 +1012,12 @@ public class TestUtils {
     }
 
 
+    /**
+     * Retrieve all the classes extended by the compilation unit passed to the method.
+     *
+     * @param cu The compilation unit to process
+     * @return the list of classes extended by the class represented by the compilation unit.
+     */
     private static List<ClassOrInterfaceDeclaration> getExtendedClassesFromCompilationUnit(CompilationUnit cu) {
         List<ClassOrInterfaceDeclaration> extendedClasses = new ArrayList<>();
 

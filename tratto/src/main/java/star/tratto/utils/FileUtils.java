@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileAttribute;
+import java.util.stream.Stream;
 
 /**
  * This class provides file input and output utilities, such as: creating, copying, moving, writing, reading, etc.
@@ -76,6 +77,38 @@ public class FileUtils {
             Files.write(path, cu.toString().getBytes());
         } catch (IOException e) {
             throw new Error("Error when writing to file " + path, e);
+        }
+    }
+
+    /**
+     * Recursively deletes a directory and its contents. If the file does not
+     * exist, then this method does nothing.
+     *
+     * @param dirPath a directory
+     * @throws Error if an error occurs while traversing or deleting files
+     */
+    public static void deleteDirectory(Path dirPath) {
+        if (!Files.exists(dirPath)) {
+            return;
+        }
+        try (Stream<Path> walk = Files.walk(dirPath)) {
+            walk
+                    .filter(p -> !p.equals(dirPath))
+                    .forEach(p -> {
+                        if (Files.isDirectory(p)) {
+                            deleteDirectory(p);
+                        } else {
+                            try {
+                                Files.delete(p);
+                            } catch (IOException e) {
+                                throw new Error("Error when trying to delete the file " + p, e);
+                            }
+                        }
+                    });
+            // delete root directory last
+            Files.delete(dirPath);
+        } catch (IOException e) {
+            throw new Error("Error when trying to delete the directory " + dirPath, e);
         }
     }
 }

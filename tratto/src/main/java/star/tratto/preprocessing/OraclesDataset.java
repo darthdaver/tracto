@@ -15,6 +15,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
+/**
+ * This class provides the main method to generate the oracles dataset.
+ */
 public class OraclesDataset {
 
     private static final Logger logger = LoggerFactory.getLogger(OraclesDataset.class);
@@ -33,6 +36,8 @@ public class OraclesDataset {
         logger.info("1. Repository classes analysis...");
         // Setup the repository root path for JavaParser
         JavaParserUtils.setRepoJavaParser(repoRootPath);
+        // Clean repository from previous execution of the current program
+        JavaFileCollector.cleanRepository(repoRootPath, outputPath);
         // Collect java files within the repository
         List<Path> javaFilePaths = JavaFileCollector.collectAllJavaFilePaths(repoRootPath);
         // Collect java test files within the repository
@@ -50,6 +55,7 @@ public class OraclesDataset {
         logger.info("Java Files: {}", javaFilePaths.size());
         logger.info("Test Classes: {}", testFilePaths.size());
         logger.info("Source Classes: {}", sourceFilePaths.size());
+        logger.info("Excluded Classes: {}", excludedClasses.size());
         // Log step 2
         logger.info("2. Perfect name matching analysis (Test Class <--> Source Class)");
         List<Path> perfectMatchNotFounds = new ArrayList<>();
@@ -73,11 +79,12 @@ public class OraclesDataset {
         statistics.put("perfectMatchesNotFound", perfectMatchNotFounds.size());
         // Define the list to store the test class files with the splitted test cases
         List<Path> splittedTestFilePaths = new ArrayList<>();
-        // Iterate over the original test class files and 
+        // Iterate over the original test class files and split the test cases at any occurrence of an assertion
+        // The
         for (Path testClassPath : testFilePaths) {
             logger.info("Splitting test class: {}", testClassPath.toString().replace(repoRootPath.toString(), ""));
             Path splitTestClassPath = Paths.get(outputPath.toString(), "test-split");
-            TestUtils.splitTest(testClassPath, splitTestClassPath);
+            TestUtils.splitTest(repoRootPath, testClassPath, splitTestClassPath);
             splittedTestFilePaths.add(splitTestClassPath);
         }
     }

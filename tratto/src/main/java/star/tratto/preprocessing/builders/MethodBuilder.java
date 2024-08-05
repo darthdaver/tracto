@@ -1,9 +1,11 @@
 package star.tratto.preprocessing.builders;
 
-import star.tratto.preprocessing.components.TestMethod;
+import star.tratto.preprocessing.components.Method;
+import star.tratto.preprocessing.components.Type;
+
 import java.util.List;
 
-public class TestMethodBuilder {
+public class MethodBuilder {
 
     private String identifier;
     private List<String> annotations;
@@ -11,21 +13,27 @@ public class TestMethodBuilder {
     private String signature;
     private String fullSignature;
     private String classTestMethodSignature;
-    private String body;
-    private String returnType;
+    private List<String> thrownExceptions;
     private List<String> parameters;
+    private Type returnType;
+    private String javadoc;
+    private String body;
+    private List<Method> invokedMethods;
 
-    public TestMethod build() {
-        return new TestMethod(
+    public Method build() {
+        return new Method(
                 this.identifier,
                 this.annotations,
                 this.modifiers,
                 this.signature,
                 this.fullSignature,
                 this.classTestMethodSignature,
-                this.body,
+                this.thrownExceptions,
+                this.parameters,
                 this.returnType,
-                this.parameters
+                this.javadoc,
+                this.body,
+                this.invokedMethods
         );
     }
 
@@ -94,6 +102,37 @@ public class TestMethodBuilder {
     }
 
     /**
+     * Set the exceptions thrown by a test method.
+     * Example:
+     *      `["Exception1", "Exception2"]`
+     *
+     * @param thrownExceptions the test method thrown exceptions
+     */
+    void setThrownExceptions(List<String> thrownExceptions) {
+        this.thrownExceptions = thrownExceptions;
+    }
+
+    /**
+     * Set the parameters of a test method.
+     * Example:
+     *      `["ParamType1 param1", "ParamType2 param2"]`
+     *
+     * @param parameters the test method parameters
+     */
+    void setParameters(List<String> parameters) {
+        this.parameters = parameters;
+    }
+
+    /**
+     * Set the documentation of a test method.
+     *
+     * @param javadoc the test method documentation
+     */
+    void setJavadoc(String javadoc) {
+        this.javadoc = javadoc;
+    }
+
+    /**
      * Set the body of a test method.
      *
      * @param body the test method body
@@ -107,18 +146,16 @@ public class TestMethodBuilder {
      *
      * @param returnType the test method return type
      */
-    void setReturnType(String returnType) {
+    void setReturnType(Type returnType) {
         this.returnType = returnType;
     }
 
     /**
-     * Set the parameters of a test method.
-     * Example:
-     *      `["ParamType1 param1", "ParamType2 param2"]`
+     * Set the list of methods invoked within the method. it can be null.
      *
-     * @param parameters the test method parameters
+     * @param invokedMethods the list of methods invoked within the method. It can be null
      */
-    void setParameters(List<String> parameters) {
-        this.parameters = parameters;
+    void setInvokedMethods(List<Method> invokedMethods) {
+        this.invokedMethods = invokedMethods;
     }
 }

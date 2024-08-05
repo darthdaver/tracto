@@ -17,7 +17,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-
+/**
+ * This class provides static methods for JavaParser utilities.
+ */
 public class JavaParserUtils {
 
     private static JavaParser javaParser;
