@@ -3,7 +3,7 @@ This script evaluates the syntax of the Oracle dataset using the ANTLR4 grammar.
     python3 -m venv venv
     source venv/bin/activate
     pip3 install -r requirements.txt
-    antlr4 -Dlanguage=Python3 ./oracle-grammar/ANTLR4/JavaLexer.g4 ./oracle-grammar/ANTLR4/JavaParser.g4
+    antlr4 -Dlanguage=Python3 ./grammars/ANTLR4/JavaLexer.g4 ./grammars/ANTLR4/JavaParser.g4
 """
 
 import json
@@ -25,10 +25,10 @@ def check_token_kind(input_string):
     """
     # Create an InputStream from the input string
     input_stream = InputStream(input_string)
-    
+
     # Create a lexer for the input
     lexer = JavaLexer(input_stream)
-    
+
     # Tokenize the input
     token_stream = CommonTokenStream(lexer)
     token_stream.fill()  # Load all tokens
@@ -101,6 +101,7 @@ class SyntaxErrorListener(ErrorListener):
         return str(token_type)
 
     def syntaxError(self, recognizer, offendingSymbol, line, column, msg, e):
+        """ Capture syntax errors and store them in a list """
         # Get the token name
         expected_tokens = ""
         if e is not None:

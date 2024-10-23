@@ -48,7 +48,6 @@ def compare_tokens_and_error(json1, json2):
 
     # Check if the first differing token is in the error message
     if first_differing_token in error_message:
-        #print(f"The first differing token '{first_differing_token}' is in the ANTLR next token suggestions.")
         return True
     else:
         print(f"The first differing token '{first_differing_token}' is NOT in the error message.")
@@ -121,7 +120,7 @@ def normalize_token(token):
         'VOID': 'void',
         'VOLATILE': 'volatile',
         'WHILE': 'while',
-        
+
         # Separators
         'LPAREN': '(',
         'RPAREN': ')',
@@ -132,7 +131,7 @@ def normalize_token(token):
         'SEMI': ';',
         'COMMA': ',',
         'DOT': '.',
-        
+
         # Operators
         'ASSIGN': '=',
         'GT': '>',
@@ -234,7 +233,7 @@ def get_literal_type(token):
         return None
 
 # Main code to process the JSON file and compare tokens
-with open('./grammars/Output/antlr4_eval.json', 'r') as file:
+with open('./grammars/Output/antlr4_eval.json', 'r', encoding='utf-8') as file:
     data_list = json.load(file)
     sub_list = data_list
     extracted_data = []
@@ -250,4 +249,5 @@ with open('./grammars/Output/antlr4_eval.json', 'r') as file:
             print(f"Incomplete Java Oracle: {sub_list[i+1]['input']}\n")
         count_total += 1
 
-    print(f"\n\n{count_true} out of {count_total} comparisons are correct. Percentage: {round(count_true/count_total*100,1)}%")
+    print(f"""\n\n{count_true} out of {count_total} 
+          comparisons are correct. Percentage: {round(count_true/count_total*100,1)}%""")
