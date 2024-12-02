@@ -1,21 +1,21 @@
 package star.tratto.preprocessing.builders;
 
-import star.tratto.preprocessing.components.Field;
-import star.tratto.preprocessing.components.Type;
+import star.tratto.preprocessing.components.FieldTratto;
+import star.tratto.preprocessing.components.TypeTratto;
 
 import java.util.List;
 
 public class FieldBuilder {
     private String identifier;
-    private String fullSignature;
+    private String signature;
     private String declarator;
     private List<String> modifiers;
-    private Type type;
+    private TypeTratto type;
 
-    public Field build() {
-        return new Field(
+    public FieldTratto build() {
+        return new FieldTratto(
             this.identifier,
-            this.fullSignature,
+            this.signature,
             this.declarator,
             this.modifiers,
             this.type
@@ -34,10 +34,10 @@ public class FieldBuilder {
     /**
      * Set the full signature of the field.
      *
-     * @param fullSignature the full signature of the field
+     * @param signature the full signature of the field
      */
-    public void setFullSignature(String fullSignature) {
-        this.fullSignature = fullSignature;
+    public void setSignature(String signature) {
+        this.signature = signature;
     }
 
     /**
@@ -63,7 +63,18 @@ public class FieldBuilder {
      *
      * @param type the type of the field
      */
-    public void setType(Type type) {
+    public void setType(TypeTratto type) {
         this.type = type;
+    }
+
+    /**
+     * Reset the builder.
+     */
+    public void reset() {
+        this.identifier = null;
+        this.signature = null;
+        this.declarator = null;
+        this.modifiers = null;
+        this.type = null;
     }
 }

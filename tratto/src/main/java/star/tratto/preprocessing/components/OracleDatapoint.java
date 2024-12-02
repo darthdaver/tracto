@@ -14,13 +14,13 @@ package star.tratto.preprocessing.components;
  */
 public record OracleDatapoint(
         /* The test prefix */
-        Method testPrefix,
+        CallableTratto testPrefix,
         /* The focal method of the test prefix */
-        Method focalMethod,
+        CallableTratto focalMethodTratto,
         /* The test class */
-        Clazz testClass,
+        TestClassTratto testClass,
         /* The focal class */
-        Clazz focalClass,
+        ClassTratto focalClass,
         /* The target, i.e. the next assertion to generate */
         String target
 ) {

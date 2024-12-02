@@ -1,17 +1,30 @@
 package star.tratto.preprocessing.builders;
 
-import star.tratto.preprocessing.components.Clazz;
-import star.tratto.preprocessing.components.Type;
+import star.tratto.preprocessing.components.ClassTratto;
+import star.tratto.preprocessing.components.TypeTratto;
+
+import java.util.List;
+import java.util.Optional;
 
 public class TypeBuilder {
 
     private String identifier;
-    private Clazz clazz;
+    private List<String> fullyQualifiedIdentifiers;
+    private boolean isVoid;
+    private boolean isPrimitive;
+    private boolean isGeneric;
+    private int arrayLevel;
+    private List<ClassTratto> clazzes;
 
-    public Type build() {
-        return new Type(
+    public TypeTratto build() {
+        return new TypeTratto(
                 this.identifier,
-                this.clazz
+                this.fullyQualifiedIdentifiers,
+                this.isVoid,
+                this.isPrimitive,
+                this.isGeneric,
+                this.arrayLevel,
+                this.clazzes.size() > 0 ? Optional.of(this.clazzes) : Optional.empty()
         );
     }
 
@@ -25,11 +38,60 @@ public class TypeBuilder {
     }
 
     /**
+     * Set the fullyQualifiedIdentifiers of the type.
+     *
+     * @param fullyQualifiedIdentifiers the fullyQualifiedIdentifier of the type
+     */
+    public void setFullyQualifiedIdentifiers(List<String> fullyQualifiedIdentifiers) {
+        this.fullyQualifiedIdentifiers = fullyQualifiedIdentifiers;
+    }
+
+    /**
+     * Set the isVoid boolean attribute. True if the corresponding type is a void type.
+     * False otherwise.
+     *
+     * @param isVoid the type identifier
+     */
+    public void setIsVoid(boolean isVoid) {
+        this.isVoid = isVoid;
+    }
+
+    /**
+     * Set the isPrimitive boolean attribute. True if the corresponding type is a primitive type.
+     * False otherwise.
+     *
+     * @param isPrimitive the type identifier
+     */
+    public void setIsPrimitive(boolean isPrimitive) {
+        this.isPrimitive = isPrimitive;
+    }
+
+    /**
+     * Set the isGeneric boolean attribute. True if the corresponding type is a generic type.
+     * False otherwise.
+     *
+     * @param isGeneric the type identifier
+     */
+    public void setIsGeneric(boolean isGeneric) {
+        this.isGeneric = isGeneric;
+    }
+
+    /**
+     * Set the isArray boolean attribute. True if the corresponding type is an array type.
+     * False otherwise.
+     *
+     * @param arrayLevel the type identifier
+     */
+    public void setArrayLevel(int arrayLevel) {
+        this.arrayLevel = arrayLevel;
+    }
+
+    /**
      * Set the class of the type.
      *
-     * @param clazz the class of the type. It can be null
+     * @param classTratto the class of the type. It can be null
      */
-    public void setClazz(Clazz clazz) {
-        this.clazz = clazz;
+    public void setClazzes(List<ClassTratto> classTratto) {
+        this.clazzes = classTratto;
     }
 }

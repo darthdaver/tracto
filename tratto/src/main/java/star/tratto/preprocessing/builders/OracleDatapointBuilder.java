@@ -1,21 +1,22 @@
 package star.tratto.preprocessing.builders;
 
-import star.tratto.preprocessing.components.Clazz;
-import star.tratto.preprocessing.components.Method;
+import star.tratto.preprocessing.components.ClassTratto;
+import star.tratto.preprocessing.components.CallableTratto;
 import star.tratto.preprocessing.components.OracleDatapoint;
+import star.tratto.preprocessing.components.TestClassTratto;
 
 public class OracleDatapointBuilder {
 
-    private Method testPrefix;
-    private Method focalMethod;
-    private Clazz testClass;
-    private Clazz focalClass;
+    private CallableTratto testPrefix;
+    private CallableTratto focalMethodTratto;
+    private TestClassTratto testClass;
+    private ClassTratto focalClass;
     private String target;
 
     public OracleDatapoint build() {
         return new OracleDatapoint(
             this.testPrefix,
-            this.focalMethod,
+            this.focalMethodTratto,
             this.testClass,
             this.focalClass,
             this.target
@@ -27,17 +28,17 @@ public class OracleDatapointBuilder {
      *
      * @param testPrefix the test prefix
      */
-    public void setTestPrefix(Method testPrefix) {
+    public void setTestPrefix(CallableTratto testPrefix) {
         this.testPrefix = testPrefix;
     }
 
     /**
      * Set the focal method of the OracleDatapoint.
      *
-     * @param focalMethod the focal method
+     * @param focalMethodTratto the focal method
      */
-    public void setFocalMethod(Method focalMethod) {
-        this.focalMethod = focalMethod;
+    public void setFocalMethod(CallableTratto focalMethodTratto) {
+        this.focalMethodTratto = focalMethodTratto;
     }
 
     /**
@@ -45,7 +46,7 @@ public class OracleDatapointBuilder {
      *
      * @param testClass the test class
      */
-    public void setTestClass(Clazz testClass) {
+    public void setTestClass(TestClassTratto testClass) {
         this.testClass = testClass;
     }
 
@@ -54,7 +55,7 @@ public class OracleDatapointBuilder {
      *
      * @param focalClass the focal class
      */
-    public void setFocalClass(Clazz focalClass) {
+    public void setFocalClass(ClassTratto focalClass) {
         this.focalClass = focalClass;
     }
 

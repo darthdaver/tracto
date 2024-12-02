@@ -5,6 +5,7 @@ import com.github.javaparser.ast.CompilationUnit;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.attribute.FileAttribute;
 import java.util.stream.Stream;
 
@@ -55,6 +56,19 @@ public class FileUtils {
     }
 
     /**
+     * Converts a fully qualified class name into a relative file Path. For
+     * example,
+     *     {@code com.example.MyClass}    -&gt;
+     *     {@code com/example/MyClass.java}
+     *
+     * @param fullyQualifiedName a fully qualified class name
+     * @return the path corresponding to the fully qualified class name
+     */
+    public static Path getFQNPath(String fullyQualifiedName) {
+        return Paths.get(fullyQualifiedName.replaceAll("[.]", "/") + ".java");
+    }
+
+    /**
      * Get the absolute path of the Tratto project root.
      */
     public static Path getProjectRootAbsolutePath() {
@@ -75,6 +89,15 @@ public class FileUtils {
         createFile(path);
         try {
             Files.write(path, cu.toString().getBytes());
+        } catch (IOException e) {
+            throw new Error("Error when writing to file " + path, e);
+        }
+    }
+
+    public static void writeJSONFile(Path path, String json) {
+        createFile(path);
+        try {
+            Files.write(path, json.getBytes());
         } catch (IOException e) {
             throw new Error("Error when writing to file " + path, e);
         }

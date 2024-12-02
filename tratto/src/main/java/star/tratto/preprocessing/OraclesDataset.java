@@ -1,19 +1,26 @@
 package star.tratto.preprocessing;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.javaparser.JavaParser;
+import org.javatuples.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import star.tratto.data.TestCaseParsingType;
+import star.tratto.data.TrattoNamingConvention;
+import star.tratto.preprocessing.components.OracleDatapoint;
 import star.tratto.preprocessing.utils.JavaFileCollector;
 import star.tratto.preprocessing.utils.TestUtils;
 import star.tratto.utils.FileUtils;
 import star.tratto.utils.javaParser.JavaParserUtils;
 
 import java.io.IOException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * This class provides the main method to generate the oracles dataset.
@@ -22,20 +29,24 @@ public class OraclesDataset {
 
     private static final Logger logger = LoggerFactory.getLogger(OraclesDataset.class);
 
-    public static void main(String[] args) throws IOException {
-        // Process arguments
-        Path repoRootPath = Path.of(args[0]);
-        Path outputPath = Path.of(args[1]);
+    public static void generate(Path repoRootPath, Path outputPath, String projectIdentifier, String classpath) throws IOException {
+        // Update classpath with the libraries paths
+        List<Path> librariesPaths = findLibrariesPaths(repoRootPath);
+        for (Path libraryPath : librariesPaths) {
+            classpath += ":" + libraryPath.toString();
+        }
         // Define test mapping hash map
         HashMap<Path, Path> mappedTests = new HashMap<>();
         // Define statistics hash map
         HashMap<String, Integer> statistics = new HashMap<>();
+        // Define list of oracles datapoints
+        List<OracleDatapoint> oraclesDatapoints = new ArrayList<>();
         // Generate directories to output path if they do not exist
         FileUtils.createDirectories(outputPath);
         // Log step 1
         logger.info("1. Repository classes analysis...");
         // Setup the repository root path for JavaParser
-        JavaParserUtils.setRepoJavaParser(repoRootPath);
+        JavaParserUtils.setRepoJavaParser(repoRootPath, classpath);
         // Clean repository from previous execution of the current program
         JavaFileCollector.cleanRepository(repoRootPath, outputPath);
         // Collect java files within the repository
@@ -77,16 +88,66 @@ public class OraclesDataset {
         // Store statistics
         statistics.put("perfectMatches", mappedTests.size());
         statistics.put("perfectMatchesNotFound", perfectMatchNotFounds.size());
-        // Define the list to store the test class files with the splitted test cases
-        List<Path> splittedTestFilePaths = new ArrayList<>();
+        // Define the list to store the test pair of split test cases (generated from the original test cases) and the
+        // corresponding source class (if available)
+        List<Pair<Path, Optional<Path>>> splittedTestFilePaths = new ArrayList<>();
         // Iterate over the original test class files and split the test cases at any occurrence of an assertion
-        // The
         for (Path testClassPath : testFilePaths) {
             logger.info("Splitting test class: {}", testClassPath.toString().replace(repoRootPath.toString(), ""));
-            Path splitTestClassPath = Paths.get(outputPath.toString(), "test-split");
-            TestUtils.splitTest(repoRootPath, testClassPath, splitTestClassPath);
-            splittedTestFilePaths.add(splitTestClassPath);
+            Path splitTestClassPath = TestUtils.splitTest(repoRootPath, testClassPath, Paths.get(outputPath.toString(), "test-split"));
+            splittedTestFilePaths.add(new Pair<>(splitTestClassPath, Optional.ofNullable(mappedTests.get(testClassPath))));
         }
+        // Update java parser considering the new split files generated within the repository
+        JavaParserUtils.setRepoJavaParser(repoRootPath, classpath);
+        // Convert statistics to JSON
+        ObjectMapper objectMapper = new ObjectMapper();
+        int counter = 0;
+        // Iterate over the original test class files and split the test cases at any occurrence of an assertion
+        for (Pair<Path, Optional<Path>> splitTestClassPathsPair : splittedTestFilePaths) {
+            Path splitTestClassPath = splitTestClassPathsPair.getValue0();
+            Optional<Path> sourceFilePath = splitTestClassPathsPair.getValue1();
+            logger.info("Processing split test class {} to generate oracles datapoints", splitTestClassPath.toString().replace(repoRootPath.toString(), ""));
+            if (sourceFilePath.isPresent()) {
+                oraclesDatapoints.addAll(TestUtils.processSplitTestClass(repoRootPath, splitTestClassPath, sourceFilePath.get()));
+            }
+        }
+        // TODO: Log statistics
+        // Log info data
+        logger.info("Oracle datapoints generated: {}", oraclesDatapoints.size());
+        int maxFileSizeBytes = 50 * 1024 * 1024; // 50 MB
+        int fileCounter = 0;
+        List<OracleDatapoint> currentChunk = new ArrayList<>();
+        long currentChunkSize = 0;
+
+        for (OracleDatapoint dataPoint : oraclesDatapoints) {
+            // Convert individual data points to JSON to estimate their size
+            String dataPointJSON = objectMapper.writeValueAsString(dataPoint);
+            long dataPointSize = dataPointJSON.getBytes(StandardCharsets.UTF_8).length;
+
+            // Check if adding this data point exceeds the max file size
+            if (currentChunkSize + dataPointSize > maxFileSizeBytes && !currentChunk.isEmpty()) {
+                // Write current chunk to file
+                writeChunkToFile(currentChunk, fileCounter++, outputPath, projectIdentifier, objectMapper);
+
+                // Start a new chunk
+                currentChunk = new ArrayList<>();
+                currentChunkSize = 0;
+            }
+
+            // Add the data point to the current chunk
+            currentChunk.add(dataPoint);
+            currentChunkSize += dataPointSize;
+        }
+
+        // Write the last chunk if any
+        if (!currentChunk.isEmpty()) {
+            writeChunkToFile(currentChunk, fileCounter++, outputPath, projectIdentifier, objectMapper);
+        }
+        // Store statistics
+        statistics.put("oracleDatapoints", oraclesDatapoints.size());
+        String statisticsJSON = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(statistics);
+        // Write statistics to file
+        FileUtils.writeJSONFile(Paths.get(outputPath.toString(), String.format("statistics-%s.json", projectIdentifier)), statisticsJSON);
     }
 
     /**
@@ -136,5 +197,29 @@ public class OraclesDataset {
         }
         // Return the list of excluded classes
         return excludedClasses;
+    }
+
+    private static void writeChunkToFile(List<OracleDatapoint> chunk, int fileCounter, Path outputPath, String projectIdentifier, ObjectMapper objectMapper) throws IOException {
+        String chunkJSON = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(chunk);
+        Path outputFile = Paths.get(outputPath.toString(), String.format("oracles-datapoints-%s-%d.json", projectIdentifier, fileCounter));
+        Files.writeString(outputFile, chunkJSON, StandardCharsets.UTF_8);
+    }
+
+    private static List<Path> findLibrariesPaths(Path repoRootPath) {
+        List<Path> matchingPaths = new ArrayList<>();
+        try {
+            Files.walkFileTree(repoRootPath, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+                    if (dir.getFileName().toString().equals(TrattoNamingConvention.LIB_FOLDER.getConventionName())) {
+                        matchingPaths.add(dir);
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+        } catch (IOException e) {
+            System.err.println("Error while searching for folders: " + e.getMessage());
+        }
+        return matchingPaths;
     }
 }

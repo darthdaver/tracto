@@ -7,8 +7,8 @@ output*/
 src/main/resources/dataset
 src/main/resources/tmp/
 src/main/resources/log4j2.properties
+src/main/java/star/tratto/preprocessing/TokensDataset.java
 src/main/java/star/tratto/lsp
-scripts/dataset/bash
 scripts/utils
 target/
 tmp/

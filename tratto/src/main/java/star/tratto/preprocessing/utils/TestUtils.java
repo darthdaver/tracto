@@ -1,33 +1,43 @@
 package star.tratto.preprocessing.utils;
 
+import com.github.javaparser.JavaParser;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.NodeList;
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import com.github.javaparser.ast.body.MethodDeclaration;
-import com.github.javaparser.ast.body.TypeDeclaration;
+import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.stmt.*;
-import com.github.javaparser.ast.type.ClassOrInterfaceType;
-import com.github.javaparser.ast.type.Type;
-import com.github.javaparser.ast.type.UnionType;
+import com.github.javaparser.ast.type.*;
+import com.github.javaparser.resolution.MethodUsage;
+import com.github.javaparser.resolution.UnsolvedSymbolException;
+import com.github.javaparser.resolution.declarations.*;
+import com.github.javaparser.resolution.types.*;
 import org.javatuples.Pair;
 import org.javatuples.Triplet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import star.tratto.data.*;
-import star.tratto.preprocessing.components.OracleDatapoint;
-import star.tratto.preprocessing.components.Method;
+import star.tratto.preprocessing.builders.*;
+import star.tratto.preprocessing.components.*;
 import star.tratto.utils.FileUtils;
 import star.tratto.utils.javaParser.JavaParserUtils;
-import star.tratto.utils.javaParser.visitors.AssertStmtVisitor;
-import star.tratto.utils.javaParser.visitors.MethodCallExprVisitor;
-import star.tratto.utils.javaParser.visitors.StmtVisitorHelper;
+import star.tratto.utils.javaParser.visitors.declarations.FieldDeclarationVisitor;
+import star.tratto.utils.javaParser.visitors.statements.AssertStmtVisitor;
+import star.tratto.utils.javaParser.visitors.expressions.MethodCallExprVisitor;
+import star.tratto.utils.javaParser.visitors.statements.helper.StmtVisitorHelper;
 
+import javax.swing.text.html.Option;
+import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * This class provides static utility methods to process test files and
@@ -146,8 +156,9 @@ public class TestUtils {
      * @param repoRootPath the path to the root of the repository
      * @param testFilePath the path to the test class file
      * @param outputPath the path to the split test class file
+     * @return the path to the split test class file
      */
-    public static void splitTest(Path repoRootPath, Path testFilePath, Path outputPath) {
+    public static Path splitTest(Path repoRootPath, Path testFilePath, Path outputPath) {
         String testFileRelativePath = testFilePath.toString().replace(repoRootPath.getParent().toString(), "");
         // Regular output path for report analysis
         Path regularOutputPath = Paths.get(outputPath.toString(), "regular", testFileRelativePath.replace(".java", TrattoNamingConvention.TEST_SPLIT_FILE.getConventionName()));
@@ -160,6 +171,7 @@ public class TestUtils {
         try {
             // Parse the test class
             CompilationUnit cu = JavaParserUtils.getCompilationUnit(testFilePath);
+
             // Get the list of all the methods defined within the test class
             List<MethodDeclaration> testClassMethods = cu.findAll(MethodDeclaration.class);
             // Distribute the methods of the class according to their meaning
@@ -219,13 +231,20 @@ public class TestUtils {
             }
             // Set the methods of the test case to the split test methods
             TypeDeclaration testClass = cu.getPrimaryType().get();
-            testClass.setMembers(new NodeList<>(splitTestCases));
+            testClass.setName(testClass.getNameAsString() + TrattoNamingConvention.TEST_SPLIT_CLASS.getConventionName());
+            for (MethodDeclaration originalTestCase : originalTestCases) {
+                testClass.remove(originalTestCase);
+            }
+            for (MethodDeclaration splitTestCase : splitTestCases) {
+                testClass.addMember(splitTestCase);
+            }
             // Save the split test class to the output paths (regular and test repository)
             FileUtils.writeJavaFile(regularOutputPath, cu);
             FileUtils.writeJavaFile(testRepoOutputPath, cu);
         } catch (IOException e) {
             logger.error("Error reading file: " + testFilePath);
         }
+        return testRepoOutputPath;
     }
 
     /**
@@ -931,112 +950,841 @@ public class TestUtils {
     }
 
     /**
-     * Process the test classes collected from a given repository to generate all the oracles datapoints {@link OracleDatapoint}
-     * from their test cases.
+     * Process the test class of a given repository to generate all the oracles datapoints {@link OracleDatapoint}
+     * from its test cases.
      *
      * @param repoRootPath the path to the repository to process
-     * @param testFiles the list of test classes collected from the repository
-     * @param testCaseParsingType {@code TestCaseParsingType.LAST_OCCURRENCE} if the method have to analyze only the last
-     *                            method invocation within each test prefix (the focal method). Otherwise,
-     *                            {@code TestCaseParsingType.ANY_OCCURRENCE} if the method have to analyze all the
-     *                            method invocations within each test prefix.
-     * @return
+     * @param testFilePath the path to the test class to process
+     * @param sourceFilePath the path to the corresponding source file, if available
+     * @return the list of oracle datapoints generated from the test cases of the test class
      */
-    public static List<OracleDatapoint> parseRepoTestClasses(Path repoRootPath, List<Path> testFiles, TestCaseParsingType testCaseParsingType) {
+    public static List<OracleDatapoint> processSplitTestClass(Path repoRootPath, Path testFilePath, Path sourceFilePath) {
         // Create a list to store the oracle datapoints
         List<OracleDatapoint> oracleDatapoints = new ArrayList<>();
-        // Iterate over the test files
-        for (Path testFilePath : testFiles) {
-            try {
-                // Parse the test class
-                CompilationUnit cu = JavaParserUtils.getCompilationUnit(testFilePath);
-                // Get the test cases from the test class
-                List<MethodDeclaration> testClassMethods = cu.getPrimaryType()
-                        .orElseThrow(() -> new IllegalStateException("Primary type not found in test class: " + testFilePath))
-                        .getMethods();
-                // Get the list of extended classes
-                //List<String> extendedClasses = cu.getPrimaryType().get()
-                // Create a map to store the setup and tear down methods (@Before, @BeforeEach, @After, @AfterEach, etc.)
-                // The key is the signature of the method while the value is the method declaration
-                HashMap<String, MethodDeclaration> setUpTearDownMethods = new HashMap<>();
-                // Create a map to store auxiliary methods defined within the test class.
-                // The key is the signature of the method while the value is the method declaration
-                HashMap<String, MethodDeclaration> auxiliaryMethods = new HashMap<>();
-                // Create a list to store the test cases
-                List<MethodDeclaration> testCases = new ArrayList<>();
-                // Distribute the methods into the corresponding set of methods
-                for (MethodDeclaration method : testClassMethods) {
-                    NodeList<AnnotationExpr> methodAnnotations = method.getAnnotations();
-                    if (methodAnnotations.size() > 0) {
-                        if (methodAnnotations.stream().anyMatch(a -> JUnitAnnotationType.isTestAnnotation(a.getNameAsString()))) {
-                            testCases.add(method);
-                        } else if (methodAnnotations.stream().anyMatch(a -> JUnitAnnotationType.isSetUpTearDownAnnotation(a.getNameAsString()))) {
-                            setUpTearDownMethods.put(method.getSignature().asString(), method);
-                        } else {
-                            if (methodAnnotations.stream().anyMatch(a -> a.getNameAsString().equals("Override"))) {
-
-                            }
-                            auxiliaryMethods.put(method.getSignature().asString(), method);
-                        }
-                    } else {
-                        auxiliaryMethods.put(method.getSignature().asString(), method);
-                    }
-                }
-                // Split test cases (one test case for each assertion)
-                List<MethodDeclaration> splittedTestCases = new ArrayList<>();
-                // Create a list to store the test methods
-                List<Method> testMethods = new ArrayList<>();
-                // Iterate over the test cases
-                for (MethodDeclaration testCase : testCases) {
-                    // Create a list to store the test method statements
-                    List<Statement> testMethodStatements = new ArrayList<>();
-                    // Get the test method name
-                    String testMethodName = testCase.getNameAsString();
-                    // Get the list of all the statements within the test
-                    NodeList<Statement> statements = testCase
-                            .getBody()
-                            .orElseThrow(() -> new IllegalStateException("Cannot retrieve block statements from test " + testMethodName))
-                            .getStatements();
-                    // Throw an exception if no statements are found (empty test)
-                    if (statements.size() <= 0) {
-                        throw new IllegalStateException("No statements found in test " + testMethodName);
-                    }
-                }
-            } catch (IOException e) {
-                System.err.println("Error reading file: " + testFilePath);
-            } catch (IllegalStateException e) {
-                System.err.println(e.getMessage());
+        // Process the test class and generate the corresponding oracles datapoints
+        try {
+            // Parse the test class and focal classes
+            CompilationUnit cuTestClass = JavaParserUtils.getCompilationUnit(testFilePath);
+            CompilationUnit cuFocalClass = JavaParserUtils.getCompilationUnit(sourceFilePath);
+            // Get the primary type of the test and focal classes
+            TypeDeclaration testClass = cuTestClass.getPrimaryType().orElseThrow(() -> new IllegalStateException("Primary type not found in test class: " + testFilePath));
+            TypeDeclaration focalClass = cuFocalClass.getPrimaryType().orElseThrow(() -> new IllegalStateException("Primary type not found in focal class: " + sourceFilePath));
+            //
+            Path repoSourcePath = Path.of(sourceFilePath.toString().replace(FileUtils.getFQNPath((String) focalClass.getFullyQualifiedName().get()).toString(), ""));
+            // Distribute the methods of the class according to their meaning (auxiliary, setup & tear down, test cases)
+            Triplet<List<MethodDeclaration>, HashMap<String, MethodDeclaration>, HashMap<String, MethodDeclaration>> distributedMethods = distributeMethods(testClass.getMethods());
+            // Set the list of all the test cases defined in the given test class
+            List<MethodDeclaration> testCases = distributedMethods.getValue0();
+            // Set the list of all the setup & tear down methods defined in the given test class
+            HashMap<String, MethodDeclaration> setupTearDownMethods = distributedMethods.getValue1();
+            // Set the list of all the auxiliary methods defined in the given test class
+            HashMap<String, MethodDeclaration> auxiliaryMethods = distributedMethods.getValue2();
+            // Process test class
+            TestClassTratto testClassTratto = processTestClass(testClass, testFilePath, distributedMethods);
+            // Process focal class
+            ClassTratto focalClassTratto = processFocalClass(focalClass, sourceFilePath);
+            // Process test cases
+            for (MethodDeclaration testCase : testCases) {
+                Pair<CallableTratto,List<CallableTratto>> invokedMethodsPair = processInvokedMethods(repoSourcePath, focalClass, testClass, testCase);
+                CallableTratto focalMethodTratto = invokedMethodsPair.getValue0();
+                List<CallableTratto> invokedMethods = invokedMethodsPair.getValue1();
+                CallableTratto testCaseTratto = processCallable(testClass, testCase, invokedMethods);
+                // TODO: Check id the last statement in the test case is an assertion or not
+                String target = JavaParserUtils.getLastStatementInMethodDeclaration(testCase).toString();
+                oracleDatapoints.add(new OracleDatapoint(testCaseTratto, focalMethodTratto, testClassTratto, focalClassTratto, target));
             }
+        } catch (IOException e) {
+            logger.error("Error reading file: " + testFilePath);
+        } catch (IllegalStateException e) {
+            logger.error(e.getMessage());
         }
         return oracleDatapoints;
     }
 
+    /**
+     * Extract the information about the fields defined in the type declaration (class) passed as input.
+     * @param typeDeclaration the type declaration (class) to analyze
+     * @return the list of {@link FieldTratto}, providing information about each field defined in the compilation unit
+     */
+    private static List<FieldTratto> processFieldsFromTypeDeclaration(TypeDeclaration typeDeclaration) {
+        List<FieldTratto> fields = new ArrayList<>();
+        FieldBuilder fieldBuilder = new FieldBuilder();
+
+        FieldDeclarationVisitor fieldDeclarationCollector = new FieldDeclarationVisitor();
+        List<FieldDeclaration> fieldDeclarations = fieldDeclarationCollector.visit(typeDeclaration);
+
+        for (FieldDeclaration fieldDeclaration : fieldDeclarations) {
+            // Get field modifiers
+            List<String> modifiers = JavaParserUtils.getModifiersAsStrings(fieldDeclaration.getModifiers());
+            // Analyze the single varibles within the given field declaration
+            List<VariableDeclarator> variables = fieldDeclaration.getVariables();
+            for (VariableDeclarator variable : variables) {
+                // Set identifier
+                fieldBuilder.setIdentifier(variable.getNameAsString());
+                // Set signature
+                String signature = JavaParserUtils.getSignatureFromVariableDeclarator(modifiers, variable);
+                fieldBuilder.setSignature(signature);
+                // Set declarator
+                fieldBuilder.setDeclarator(variable.toString());
+                // Set field modifiers
+                fieldBuilder.setModifiers(modifiers);
+                // Analyze the type of the variable
+                Type varType = variable.getType();
+                TypeTratto type = processType(typeDeclaration, varType, 0);
+                fieldBuilder.setType(type);
+                fields.add(fieldBuilder.build());
+                fieldBuilder.reset();
+            }
+        }
+        return fields;
+    }
 
     /**
-     * Retrieve all the classes extended by the compilation unit passed to the method.
-     *
-     * @param cu The compilation unit to process
-     * @return the list of classes extended by the class represented by the compilation unit.
+     * Handle a type (that can be primitive, reference or void) and generate the corresponding {@link TypeTratto}.
+     * @param typeDeclaration the type declaration (class) to support the analysis of a type, (if reference type)
+     * @param type the type to process
+     * @param arrayLevel the array level of the type (0 if the type is not an array)
+     * @return the {@link TypeTratto} object generated from the type
      */
-    private static List<ClassOrInterfaceDeclaration> getExtendedClassesFromCompilationUnit(CompilationUnit cu) {
-        List<ClassOrInterfaceDeclaration> extendedClasses = new ArrayList<>();
+    private static TypeTratto processType(TypeDeclaration typeDeclaration, Type type, int arrayLevel) {
+        if (type.isPrimitiveType()) {
+            return processPrimitiveType(type.asPrimitiveType(), arrayLevel);
+        } else if (type.isArrayType()) {
+            Type arrayType = type.asArrayType().getComponentType();
+            return processType(typeDeclaration, arrayType, arrayLevel + 1);
+        } else if (type.isReferenceType()) {
+            return processReferenceType(typeDeclaration, type.asReferenceType(), arrayLevel);
+        } else if (type.isTypeParameter()) {
+            return processTypeParameter(typeDeclaration, type.asTypeParameter(), arrayLevel);
+        } else if (type.isVoidType()) {
+            return processVoidType(type.asVoidType());
+        }
+        throw new RuntimeException("Type not supported: " + type.toString());
+    }
 
-        // Get the primary type (the main class)
-        Optional<ClassOrInterfaceDeclaration> primaryType = cu.getPrimaryType()
-                .filter(ClassOrInterfaceDeclaration.class::isInstance)
-                .map(ClassOrInterfaceDeclaration.class::cast);
+    /**
+     * Handle a type (that can be primitive, reference or void) and generate the corresponding {@link TypeTratto}.
+     * The method is invoked when a constructor or a method cannot be resolved with a callable declaration, for example
+     * when it refers to a class of an external library, whose source code is not accessible (only the bytecode is available).
+     * Therefore, only the {@link ResolvedType} is available.
+     *
+     * @param type the type to process
+     * @param arrayLevel the array level of the type (0 if the type is not an array)
+     * @return the {@link TypeTratto} object generated from the type
+     */
+    private static TypeTratto processType(ResolvedType type, int arrayLevel) {
+        if (type.isPrimitive()) {
+            return processPrimitiveType(type.asPrimitive(), arrayLevel);
+        } else if (type.isArray()) {
+            ResolvedType arrayType = type.asArrayType().getComponentType();
+            return processType(arrayType, arrayLevel + 1);
+        } else if (type.isReferenceType()) {
+            return processReferenceType(type.asReferenceType(), arrayLevel);
+        } else if (type.isTypeVariable()) {
+            return processTypeVariable(type.asTypeVariable(), arrayLevel);
+        } else if (type.isVoid()) {
+            return processVoidType(type);
+        }
+        throw new RuntimeException("Type not supported: " + type.toString());
+    }
 
-        // Check if primary type is present and it extends any other classes
-        if (primaryType.isPresent()) {
-            ClassOrInterfaceDeclaration classDeclaration = primaryType.get();
-            if (classDeclaration.getExtendedTypes().isNonEmpty()) {
-                for (ClassOrInterfaceType extendedType : classDeclaration.getExtendedTypes()) {
-                    // TODO: Check the extended classes from the imports
+    /**
+     * Process the primitive type and generate the corresponding {@link TypeTratto} object.
+     *
+     * @param primitiveType the primitive type to process
+     * @param arrayLevel the array level of the type (0 if the type is not an array)
+     * @return the {@link TypeTratto} object generated from the primitive type
+     */
+    private static TypeTratto processPrimitiveType(PrimitiveType primitiveType, int arrayLevel) {
+        // Instantiate a type builder to build a TypeTratto object from the primitive type
+        TypeBuilder typeBuilder = new TypeBuilder();
+        // Set the attributes of the type
+        typeBuilder.setIdentifier(primitiveType.getType().asString().replace("Ljava", "java"));
+        typeBuilder.setFullyQualifiedIdentifiers(new ArrayList<>());
+        typeBuilder.setIsVoid(false);
+        typeBuilder.setIsPrimitive(true);
+        typeBuilder.setIsGeneric(false);
+        typeBuilder.setArrayLevel(arrayLevel);
+        // A primitive type does not have any reference to classes. An empty list is set
+        typeBuilder.setClazzes(new ArrayList<>());
+        // Build the type and return it
+        return typeBuilder.build();
+    }
+
+    /**
+     * Process the primitive type and generate the corresponding {@link TypeTratto} object. The method
+     * is invoked when the constructor or a method cannot be resolved with a callable declaration, for example when it refers to
+     * a class of an external library, whose source code is not accessible (only the bytecode is available). Therefore,
+     * only the {@link ResolvedPrimitiveType} is available.
+     *
+     *
+     * @param resolvedPrimitiveType the primitive type to process
+     * @param arrayLevel the array level of the type (0 if the type is not an array)
+     * @return the {@link TypeTratto} object generated from the primitive type
+     */
+    private static TypeTratto processPrimitiveType(ResolvedPrimitiveType resolvedPrimitiveType, int arrayLevel) {
+        // Instantiate a type builder to build a TypeTratto object from the primitive type
+        TypeBuilder typeBuilder = new TypeBuilder();
+        // Set the attributes of the type
+        typeBuilder.setIdentifier(resolvedPrimitiveType.describe().replace("Ljava", "java"));
+        typeBuilder.setFullyQualifiedIdentifiers(new ArrayList<>());
+        typeBuilder.setIsVoid(false);
+        typeBuilder.setIsPrimitive(true);
+        typeBuilder.setIsGeneric(false);
+        typeBuilder.setArrayLevel(arrayLevel);
+        // A primitive type does not have any reference to classes. An empty list is set
+        typeBuilder.setClazzes(new ArrayList<>());
+        // Build the type and return it
+        return typeBuilder.build();
+    }
+
+    /**
+     * Check if the reference type is an array type.
+     *
+     * @param referenceType the reference type to check
+     * @return {@code true} if the reference type is an array type, {@code false} otherwise
+     */
+    private static boolean isArrayType(ReferenceType referenceType) {
+        if (referenceType.isArrayType()) {
+            return true;
+        } else if (referenceType instanceof ClassOrInterfaceType) {
+            Optional<Node> parentNode = referenceType.getParentNode();
+            if (parentNode.isPresent()) {
+                Node parent = parentNode.get();
+                if (parent instanceof ArrayType) {
+                    return true;
                 }
             }
         }
-        return extendedClasses;
+        return false;
     }
+
+    /**
+     * Process the reference type and generate the corresponding {@link TypeTratto} object.
+     *
+     * @param typeDeclaration the type declaration (class) to support the analysis of a type, (if reference type)
+     * @param referenceType the reference type to process
+     * @param arrayLevel the array level of the type (0 if the type is not an array)
+     * @return the {@link TypeTratto} object generated from the reference type
+     */
+    private static TypeTratto processReferenceType(TypeDeclaration typeDeclaration, ReferenceType referenceType, int arrayLevel) {
+        TypeBuilder typeBuilder = new TypeBuilder();
+        typeBuilder.setIsVoid(false);
+        typeBuilder.setIsPrimitive(false);
+        typeBuilder.setIsGeneric(referenceType.isTypeParameter());
+        typeBuilder.setArrayLevel(arrayLevel);
+        typeBuilder.setIdentifier(referenceType.toString());
+        // Try to find additional information about the reference type
+        List<String> classNames = new ArrayList<>();
+        try {
+            // Set the identifier of the reference type
+            classNames.add(referenceType.toDescriptor().replace("Ljava", "java"));
+        } catch (UnsolvedSymbolException | IllegalStateException e) {
+            // TODO: Handle complex types like generics, List of reference types, List of Pair, etc.
+            // Regex to match class names (starting with uppercase letters)
+            Pattern pattern = Pattern.compile("\\b[A-Z][a-zA-Z0-9_]*\\b");
+            Matcher matcher = pattern.matcher(referenceType.toString());
+            while (matcher.find()) {
+                String className = matcher.group();
+                // If the reference type is not resolved, try to find the identifier in the imports of the compilation unit
+                for (ImportDeclaration importDeclaration : typeDeclaration.findCompilationUnit().get().getImports()) {
+                    if (importDeclaration.getNameAsString().endsWith(className)) {
+                        classNames.add(importDeclaration.getNameAsString());
+                        break;
+                    }
+                }
+            }
+        }
+        typeBuilder.setFullyQualifiedIdentifiers(classNames);
+        typeBuilder.setClazzes(new ArrayList<>());
+        return typeBuilder.build();
+
+        // TODO: Implement the processing of the reference type (improved version of the dataset)
+        /*Optional<ResolvedReferenceTypeDeclaration> resolvedType = referenceType.resolve().asReferenceType().getTypeDeclaration();
+
+        if (resolvedType.isPresent()) {
+            // Initialize a clazz builder to build a ClazzTratto object from the resolved type
+            ClazzBuilder clazzBuilder = new ClazzBuilder();
+            // Get methods defined and inherited by the resolved type
+            Set<MethodUsage> methods = resolvedType.get().getAllMethods();
+            // Get constructors defined and inherited by the resolved type
+            List<ResolvedConstructorDeclaration> constructors = resolvedType.get().getConstructors();
+            // Process the methods of the variable type
+            for (MethodUsage method : methods) {
+                // Try to resolve the method declaration from the method usage
+                Optional<Node> resolvedMethodDeclaration = method.getDeclaration().toAst();
+                if (resolvedMethodDeclaration.isPresent()) {
+                    MethodDeclaration methodDeclaration = (MethodDeclaration) resolvedMethodDeclaration.get();
+                    MethodTratto processedMethod = TestUtils.processCallable(methodDeclaration);
+                } else {
+                    // TODO: Analyze the method usage
+                    throw new RuntimeException("Method declaration not found for method usage: " + method.getName());
+                }
+            }
+        }*/
+    }
+
+    /**
+     * Process the generic type and generate the corresponding {@link TypeTratto} object.
+     *
+     * @param typeDeclaration the type declaration (class) to support the analysis of a type, (if reference type)
+     * @param typeParameter the generic type to process
+     * @param arrayLevel the array level of the type (0 if the type is not an array)
+     * @return the {@link TypeTratto} object generated from the reference type
+     */
+    private static TypeTratto processTypeParameter(TypeDeclaration typeDeclaration, TypeParameter typeParameter, int arrayLevel) {
+        TypeBuilder typeBuilder = new TypeBuilder();
+        typeBuilder.setIsVoid(false);
+        typeBuilder.setIsPrimitive(false);
+        typeBuilder.setIsGeneric(true);
+        typeBuilder.setArrayLevel(arrayLevel);
+        typeBuilder.setIdentifier(typeParameter.toString());
+        // Try to find additional information about the reference type
+        List<String> classNames = new ArrayList<>();
+        try {
+            // Set the identifier of the reference type
+            classNames.add(typeParameter.toDescriptor().replace("Ljava", "java"));
+        } catch (UnsolvedSymbolException e) {
+            // TODO: Handle complex types like generics, List of reference types, List of Pair, etc.
+            // Regex to match class names (starting with uppercase letters)
+            Pattern pattern = Pattern.compile("\\b[A-Z][a-zA-Z0-9_]*\\b");
+            Matcher matcher = pattern.matcher(typeParameter.toString());
+            while (matcher.find()) {
+                String className = matcher.group();
+                // If the reference type is not resolved, try to find the identifier in the imports of the compilation unit
+                for (ImportDeclaration importDeclaration : typeDeclaration.findCompilationUnit().get().getImports()) {
+                    if (importDeclaration.getNameAsString().endsWith(className)) {
+                        classNames.add(importDeclaration.getNameAsString());
+                        break;
+                    }
+                }
+            }
+        }
+        typeBuilder.setFullyQualifiedIdentifiers(classNames);
+        typeBuilder.setClazzes(new ArrayList<>());
+        return typeBuilder.build();
+    }
+
+    /**
+     * Process the reference type and generate the corresponding {@link TypeTratto} object. The method is invoked when a
+     * constructor or a method cannot be resolved with a callable declaration, for example when it refers to a class of
+     * an external library, whose source code is not accessible (only the bytecode is available). Therefore, only the
+     * {@link ResolvedReferenceType} is available.
+     *
+     * @param referenceType the reference type to process
+     * @param arrayLevel the array level of the type (0 if the type is not an array)
+     * @return the {@link TypeTratto} object generated from the reference type
+     */
+    private static TypeTratto processReferenceType(ResolvedReferenceType referenceType, int arrayLevel) {
+        TypeBuilder typeBuilder = new TypeBuilder();
+        typeBuilder.setIsVoid(false);
+        typeBuilder.setIsPrimitive(false);
+        typeBuilder.setIsGeneric(false);
+        typeBuilder.setArrayLevel(arrayLevel);
+        typeBuilder.setIdentifier(referenceType.getQualifiedName().substring(referenceType.getQualifiedName().lastIndexOf(".") + 1));
+        // Try to find additional information about the reference type
+        List<String> classNames = new ArrayList<>();
+        try {
+            // Set the identifier of the reference type
+            classNames.add(referenceType.getQualifiedName().replace("Ljava", "java"));
+        } catch (UnsolvedSymbolException e) {}
+        typeBuilder.setFullyQualifiedIdentifiers(classNames);
+        typeBuilder.setClazzes(new ArrayList<>());
+        return typeBuilder.build();
+    }
+
+    /**
+     * Process the generic type and generate the corresponding {@link TypeTratto} object. The method is invoked when a
+     * constructor or a method cannot be resolved with a callable declaration, for example when it refers to a class of
+     * an external library, whose source code is not accessible (only the bytecode is available). Therefore, only the
+     * {@link ResolvedTypeVariable} is available.
+     *
+     * @param typeVariable the generic type to process
+     * @param arrayLevel the array level of the type (0 if the type is not an array)
+     * @return the {@link TypeTratto} object generated from the generic type
+     */
+    private static TypeTratto processTypeVariable(ResolvedTypeVariable typeVariable, int arrayLevel) {
+        TypeBuilder typeBuilder = new TypeBuilder();
+        typeBuilder.setIsVoid(false);
+        typeBuilder.setIsPrimitive(false);
+        typeBuilder.setIsGeneric(true);
+        typeBuilder.setArrayLevel(arrayLevel);
+        typeBuilder.setIdentifier(typeVariable.describe());
+        // Try to find additional information about the reference type
+        List<String> classNames = new ArrayList<>();
+        try {
+            // Set the identifier of the reference type
+            classNames.add(typeVariable.qualifiedName().replace("Ljava", "java"));
+        } catch (UnsolvedSymbolException e) {}
+        typeBuilder.setFullyQualifiedIdentifiers(classNames);
+        typeBuilder.setClazzes(new ArrayList<>());
+        return typeBuilder.build();
+    }
+    
+    /**
+     * Process the void type and generate the corresponding {@link TypeTratto} object. The method is invoked when a
+     * constructor or a method cannot be resolved with a callable declaration, for example when it refers to a class of
+     * an external library, whose source code is not accessible (only the bytecode is available). Therefore, only the
+     * {@link ResolvedType} is available.
+     *
+     * @param voidType the void type to process
+     * @return the {@link TypeTratto} object generated from the resolved void type
+     */
+    private static TypeTratto processVoidType(ResolvedType voidType) {
+        TypeBuilder typeBuilder = new TypeBuilder();
+        typeBuilder.setIsVoid(true);
+        typeBuilder.setIsPrimitive(false);
+        typeBuilder.setIsGeneric(false);
+        typeBuilder.setArrayLevel(0);
+        // Leave the detailed analysis of the reference type empty for the first version of the oracles dataset
+        typeBuilder.setIdentifier(voidType.toString());
+        typeBuilder.setFullyQualifiedIdentifiers(new ArrayList<>());
+        typeBuilder.setClazzes(new ArrayList<>());
+        return typeBuilder.build();
+    }
+
+    /**
+     * Process the void type and generate the corresponding {@link TypeTratto} object.
+     *
+     * @param voidType the void type to process
+     * @return the {@link TypeTratto} object generated from the void type
+     */
+    private static TypeTratto processVoidType(VoidType voidType) {
+        TypeBuilder typeBuilder = new TypeBuilder();
+        typeBuilder.setIsVoid(true);
+        typeBuilder.setIsPrimitive(false);
+        typeBuilder.setIsGeneric(false);
+        typeBuilder.setArrayLevel(0);
+        // Leave the detailed analysis of the reference type empty for the first version of the oracles dataset
+        typeBuilder.setIdentifier(voidType.toString());
+        typeBuilder.setFullyQualifiedIdentifiers(new ArrayList<>());
+        typeBuilder.setClazzes(new ArrayList<>());
+        return typeBuilder.build();
+    }
+
+    /**
+     * Process the test class in the form of {@link TypeDeclaration} and generate the corresponding
+     * {@link TestClassTratto} object.
+     *
+     * @param testClass the test class to process
+     * @param testFilePath the path to the test class file
+     * @param distributedMethods the methods of the test class distributed according to their meaning
+     *                           (auxiliary, setup & tear down, test cases)
+     * @return the {@link TestClassTratto} object generated from the test class
+     */
+    private static TestClassTratto processTestClass(
+            TypeDeclaration testClass,
+            Path testFilePath,
+            Triplet<List<MethodDeclaration>, HashMap<String, MethodDeclaration>, HashMap<String, MethodDeclaration>> distributedMethods
+    ) {
+        TestClassBuilder testClassBuilder = new TestClassBuilder();
+        // Set test class identifier (name)
+        testClassBuilder.setIdentifier(testClass.getNameAsString());
+        // Set test class package
+        testClassBuilder.setPackageIdentifier(JavaParserUtils.getPackageNameFromTypeDeclaration(testClass).orElse(""));
+        // Retrieve the superclasses extended and the interfaces implemented by the test class
+        List<String> superClasses = new ArrayList<>();
+        List<String> interfaces = new ArrayList<>();
+        for(ResolvedReferenceType resolvedReferenceType : testClass.resolve().getAllAncestors()) {
+            Optional<ResolvedReferenceTypeDeclaration> resolvedReferenceTypeDeclaration = resolvedReferenceType.getTypeDeclaration();
+            if (resolvedReferenceTypeDeclaration.isPresent()) {
+                if (resolvedReferenceTypeDeclaration.get().isClass()) {
+                    superClasses.add(resolvedReferenceTypeDeclaration.get().getQualifiedName());
+                } else if (resolvedReferenceTypeDeclaration.get().isInterface()) {
+                    interfaces.add(resolvedReferenceTypeDeclaration.get().getQualifiedName());
+                }
+            }
+            // TODO: We miss the reference type without a corresponding declaration in this way.
+            //       We can evaluate if join interfaces and extended classes in a single array and
+            //       extract all the information directly from the ResolvedReferenceType
+        }
+        // Set test class superclasses and interfaces
+        testClassBuilder.setSuperClasses(superClasses);
+        testClassBuilder.setInterfaces(interfaces);
+        // Set file path of the test class
+        testClassBuilder.setFilePath(testFilePath.toString());
+        // Set test class fields
+        testClassBuilder.setFields(processFieldsFromTypeDeclaration(testClass));
+        // Set the list of all the test cases defined in the given test class
+        List<MethodDeclaration> testCases = distributedMethods.getValue0();
+        // TODO: Manage invoked methods recursion in the improved version of the dataset. In the current
+        //       version the invoked methods are set to null.
+        testClassBuilder.setTestCases(testCases.stream().map(m -> processCallable(testClass, m, null)).collect(Collectors.toList()));
+        // Set the list of all the setup & tear down methods defined in the given test class
+        HashMap<String, MethodDeclaration> setupTearDownMethods = distributedMethods.getValue1();
+        testClassBuilder.setSetupTearDownMethods(setupTearDownMethods.values().stream().map(m -> processCallable(testClass, m, null)).collect(Collectors.toList()));
+        // Set the list of all the auxiliary methods defined in the given test class
+        HashMap<String, MethodDeclaration> auxiliaryMethods = distributedMethods.getValue2();
+        testClassBuilder.setAuxiliaryMethods(auxiliaryMethods.values().stream().map(m -> processCallable(testClass, m, null)).collect(Collectors.toList()));
+        // Generate and return the test class
+        return testClassBuilder.build();
+    }
+
+    /**
+     * Process the focal class in the form of {@link TypeDeclaration} and generate the corresponding
+     * {@link ClassTratto} object.
+     *
+     * @param focalClass the test class to process
+     * @param sourceFilePath the path to the source file representing the focal class
+     * @return the {@link TestClassTratto} object generated from the test class
+     */
+    private static ClassTratto processFocalClass(TypeDeclaration focalClass, Path sourceFilePath) {
+        ClassBuilder focalClassBuilder = new ClassBuilder();
+        // Set test class identifier (name)
+        focalClassBuilder.setIdentifier(focalClass.getNameAsString());
+        // Set test class package
+        focalClassBuilder.setPackageIdentifier(JavaParserUtils.getPackageNameFromTypeDeclaration(focalClass).orElse(""));
+        // Retrieve the superclasses extended and the interfaces implemented by the test class
+        List<String> superClasses = new ArrayList<>();
+        List<String> interfaces = new ArrayList<>();
+        try {
+            for (ResolvedReferenceType resolvedReferenceType : focalClass.resolve().getAllAncestors()) {
+                Optional<ResolvedReferenceTypeDeclaration> resolvedReferenceTypeDeclaration = resolvedReferenceType.getTypeDeclaration();
+                if (resolvedReferenceTypeDeclaration.isPresent()) {
+                    if (resolvedReferenceTypeDeclaration.get().isClass()) {
+                        superClasses.add(resolvedReferenceTypeDeclaration.get().getQualifiedName());
+                    } else if (resolvedReferenceTypeDeclaration.get().isInterface()) {
+                        interfaces.add(resolvedReferenceTypeDeclaration.get().getQualifiedName());
+                    }
+                }
+                // TODO: We miss the reference type without a corresponding declaration in this way.
+                //       We can evaluate if join interfaces and extended classes in a single array and
+                //       extract all the information directly from the ResolvedReferenceType
+            }
+        } catch (UnsolvedSymbolException e) {
+            logger.error("Error resolving ancestors of type declaration: " + focalClass.getNameAsString());
+        }
+        // Set test class superclasses and interfaces
+        focalClassBuilder.setSuperClasses(superClasses);
+        focalClassBuilder.setInterfaces(interfaces);
+        // Set file path of the test class
+        focalClassBuilder.setFilePath(sourceFilePath.toString());
+        // Set test class fields
+        focalClassBuilder.setFields(processFieldsFromTypeDeclaration(focalClass));
+        // Set the list of all the constructors and methods defined in the given focal class
+        List<ConstructorDeclaration> constructors = focalClass.getConstructors();
+        // TODO: Manage invoked methods recursion in the improved version of the dataset. In the current
+        //       version the invoked methods are set to null.
+        focalClassBuilder.setConstructors(constructors.stream().map(m -> processCallable(focalClass, m, null)).collect(Collectors.toList()));
+        List<MethodDeclaration> methods = focalClass.getMethods();
+        focalClassBuilder.setMethods(methods.stream().map(m -> processCallable(focalClass, m, null)).collect(Collectors.toList()));
+        return focalClassBuilder.build();
+    }
+
+    private static Pair<CallableTratto,List<CallableTratto>> processInvokedMethods(Path repoSourcePath, TypeDeclaration focalClass, TypeDeclaration testClass, MethodDeclaration testCase) {
+        // Define list of methods invoked in the test case
+        List<CallableTratto> invokedMethods = new ArrayList<>();
+        // Define the focal method to find. Initially null.
+        CallableTratto focalMethod = null;
+        // Set identifier of the focal method
+        String testName = testCase.getNameAsString();
+        try {
+            // Get the list of all the statements within the test
+            NodeList<Statement> statements = testCase
+                    .getBody()
+                    .orElseThrow(() -> new IllegalStateException(String.format("Cannot retrieve block statements from test %s.", testName)))
+                    .getStatements();
+            // Throw an exception if no statements are found (empty test)
+            if (statements.size() <= 0) {
+                throw new IllegalStateException(String.format("No statements found in test %s.", testName));
+            }
+            // Get statement index
+            int stmtIndex = statements.size() - 1;
+            // Define an HashMap saving information about the variable progressively defined (and used) within the test case
+            HashMap<String, TypeDeclaration> projectVariables = new HashMap<>();
+            HashMap<String, ResolvedReferenceType> librariesVariables = new HashMap<>();
+
+            for (FieldDeclaration testClassField : testClass.findAll(FieldDeclaration.class)) {
+                for (VariableDeclarator variable : testClassField.getVariables()) {
+                    String variableName = variable.getNameAsString();
+                    ResolvedType variableType = variable.getType().resolve();
+                    if (variableType.isReferenceType()) {
+                        ResolvedReferenceType resolvedReferenceType = variableType.asReferenceType();
+                        Optional<ResolvedReferenceTypeDeclaration> resolvedReferenceTypeDeclaration = resolvedReferenceType.getTypeDeclaration();
+                        if (resolvedReferenceTypeDeclaration.isPresent()) {
+                            ResolvedReferenceTypeDeclaration typeDeclaration = resolvedReferenceTypeDeclaration.get();
+                            Optional<Node> typeDeclarationNode = typeDeclaration.toAst();
+                            if (typeDeclarationNode.isPresent()) {
+                                TypeDeclaration variableTypeDeclaration = (TypeDeclaration) typeDeclarationNode.get();
+                                projectVariables.put(variableName, variableTypeDeclaration);
+                            } else {
+                                librariesVariables.put(variableName, resolvedReferenceType);
+                            }
+                        }
+                    }
+                }
+            }
+
+
+            // Iterate over the statements of the test from the top to the bottom
+            for (int i = 0; i < stmtIndex; i++) {
+                // Get current statement
+                Statement stmt = statements.get(i);
+                Expression expr = null;
+                CallableExprType exprType = null;
+                // A method call or constructor invocation must be an instance of ExpressionStmt
+                if (!stmt.isExpressionStmt()) {
+                    continue;
+                }
+                // Get the expression from the current statement
+                Expression unparsedExpr = stmt.asExpressionStmt().getExpression();
+                // Parse the expression to understand if it refers to a method call or construction invocation
+                List<Pair<Expression,CallableExprType>> expressionAnalysisResult = JavaParserUtils.parseExpression(unparsedExpr, true);
+                for (Pair<Expression,CallableExprType> exprPair : expressionAnalysisResult) {
+                    try {
+                        // Get the expression and its type
+                        expr = exprPair.getValue0();
+                        exprType = exprPair.getValue1();
+                        boolean fromExternalLibrary = false;
+                        // Initialize the invoked class to the reference class. The invoked class is the instance of the class
+                        // that contains the invoked method.
+                        TypeDeclaration invokedClass = focalClass;
+
+                        if (exprType == CallableExprType.METHOD) {
+                            if (expr.asMethodCallExpr().getScope().isPresent()) {
+                                Expression scope = expr.asMethodCallExpr().getScope().get();
+                                if (scope.isNameExpr()) {
+                                    String scopeName = scope.asNameExpr().getNameAsString();
+                                    if (projectVariables.containsKey(scopeName)) {
+                                        invokedClass = projectVariables.get(scopeName);
+                                    } else if (librariesVariables.containsKey(scopeName)) {
+                                        fromExternalLibrary = true;
+                                        ResolvedReferenceType resolvedReferenceType = librariesVariables.get(scopeName);
+                                        ResolvedMethodDeclaration resolvedMethodDeclaration = JavaParserUtils.searchCandidateResolvedMethodDeclaration(resolvedReferenceType, expr.asMethodCallExpr());
+                                        if (resolvedMethodDeclaration == null) {
+                                            throw new CandidateCallableDeclarationNotFoundException("The method in the expression " + expr.toString() + " cannot be resolved in the given focal class " + focalClass.getNameAsString());
+                                        }
+                                        invokedMethods.add(processMethodCallExpr(expr.asMethodCallExpr().resolve()));
+                                    }
+                                }
+                            }
+                        }
+                        if (!fromExternalLibrary) {
+                            // Get the invoked method. The invoked method must be a method declaration or a constructor declaration.
+                            // Start searching the method or constructor in the test class
+                            CallableDeclaration invokedMethod = JavaParserUtils.resolveCallExpression(testClass, expr, exprType);
+                            // If the focal method is not found, look at the methods and constructors in the focal class
+                            invokedMethod = JavaParserUtils.resolveCallExpression(invokedClass, expr, exprType);
+                            // If the focal method is still not found, search it within the inherited methods of the focal class
+                            if (invokedMethod == null) {
+                                if (exprType == CallableExprType.CONSTRUCTOR) {
+                                    String candidateClassPath = expr.asObjectCreationExpr().getType().resolve().asReferenceType().getQualifiedName();
+                                    Path fullyQualifiedCandidateFilePath = repoSourcePath.resolve(FileUtils.getFQNPath(candidateClassPath));
+                                    if (Files.exists(fullyQualifiedCandidateFilePath)) {
+                                        invokedClass = JavaParserUtils.getCompilationUnit(repoSourcePath.resolve(fullyQualifiedCandidateFilePath)).getPrimaryType().get();
+                                        invokedMethod = JavaParserUtils.resolveCallExpression(invokedClass, expr, exprType);
+                                        if (invokedMethod == null) {
+                                            throw new NoFocalMethodMatchingException("The constructor in the expression " + expr.toString() + " cannot be resolved in the given focal class " + invokedClass.getNameAsString());
+                                        }
+                                    }
+                                } else {
+                                    MethodUsage invokedMethodUsage = JavaParserUtils.searchCandidateMethodUsage(invokedClass, expr);
+                                    // If the focal method is still not found, raise an exception
+                                    if (!(invokedMethodUsage == null)) {
+                                        Path fullyQualifiedClassNameLastExpressionPath = FileUtils.getFQNPath(invokedMethodUsage.declaringType().getQualifiedName());
+                                        Path classFileInvokedMethodUsagePath = repoSourcePath.resolve(fullyQualifiedClassNameLastExpressionPath);
+                                        CompilationUnit cuInvokedMethodUsage = null;
+                                        if (Files.exists(classFileInvokedMethodUsagePath)) {
+                                            try {
+                                                cuInvokedMethodUsage = JavaParserUtils.getCompilationUnit(classFileInvokedMethodUsagePath);
+                                            } catch (IOException e) {
+                                                logger.error("Error reading file: " + classFileInvokedMethodUsagePath);
+                                            }
+                                        }
+                                        invokedClass = cuInvokedMethodUsage.getPrimaryType().orElseThrow(() -> new NoPrimaryTypeException("[ERROR] - ClassFile from method usage, with no primary file."));
+                                        List<MethodDeclaration> candidateMethods = invokedClass.getMethods();
+                                        invokedMethod = JavaParserUtils.matchMethodUsageWithMethodDeclaration(invokedMethodUsage, candidateMethods);
+                                    }
+                                }
+                            }
+                            // If the invoked method is still not found, process the expression as a call from an external library
+                            if (invokedMethod == null) {
+                                fromExternalLibrary = true;
+                                try {
+                                    if (exprType == CallableExprType.METHOD) {
+                                        invokedMethods.add(processMethodCallExpr(expr.asMethodCallExpr().resolve()));
+                                    } else {
+                                        invokedMethods.add(processObjectCreationExpr(expr.asObjectCreationExpr()));
+                                    }
+                                } catch (UnsolvedSymbolException e) {
+                                    throw new NoFocalMethodMatchingException("The method in the expression " + expr.toString() + " cannot be resolved in the given focal class " + focalClass.getNameAsString());
+                                }
+                            } else {
+                                // Create the focal method
+                                // TODO: Manage invoked methods recursion in the improved version of the dataset. In the current
+                                //       version the invoked methods are set to null.
+                                invokedMethods.add(processCallable(invokedClass, invokedMethod, null));
+                                // Update focal method
+                                if (invokedClass.equals(focalClass)) {
+                                    focalMethod = invokedMethods.get(invokedMethods.size() - 1);
+                                }
+                            }
+                        }
+                        if (unparsedExpr.isVariableDeclarationExpr() && invokedClass != null) {
+                            VariableDeclarationExpr varExpr = unparsedExpr.asVariableDeclarationExpr();
+                            for (VariableDeclarator var : varExpr.getVariables()) {
+                                if (var.getType().isReferenceType()) {
+                                    if (!fromExternalLibrary) {
+                                        projectVariables.put(var.getNameAsString(), invokedClass);
+                                    } else {
+                                        librariesVariables.put(var.getNameAsString(), var.getType().resolve().asReferenceType());
+                                    }
+                                }
+                            }
+                        }
+                    } catch (
+                            NoFocalMethodMatchingException | NoPrimaryTypeException | UnrecognizedExprException |
+                            CandidateCallableDeclarationNotFoundException | CandidateCallableMethodUsageNotFoundException |
+                            MultipleCandidatesException | UnsolvedSymbolException | IllegalStateException e
+                    ) {
+                        logger.error(String.format("Error processing expression %s of test case %s", stmt, testName));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            String errMsg = String.format(
+                    "[ERROR] - Unexpected error while matching focal method of class %s for test %s (%s)",
+                    focalClass.getNameAsString(),
+                    testCase.getNameAsString(),
+                    e.getClass().getName()
+            );
+            logger.error(errMsg);
+        }
+        return new Pair<>(focalMethod, invokedMethods);
+    }
+
+    /**
+     * Process the class or interface type and generate the corresponding {@link ClassTratto} object.
+     *
+     * @param classOrInterfaceType the class or interface type to process
+     * @return the {@link ClassTratto} object generated from the class or interface type
+     */
+    private static ClassTratto processClassOrInterface(ClassOrInterfaceType classOrInterfaceType) {
+        ClassBuilder classBuilder = new ClassBuilder();
+        Optional<ResolvedReferenceTypeDeclaration> resolvedReferenceTypeDeclaration = classOrInterfaceType.resolve().asReferenceType().getTypeDeclaration();
+
+        classBuilder.setIdentifier(classOrInterfaceType.getNameAsString());
+
+        if (resolvedReferenceTypeDeclaration.isPresent()) {
+            Optional<Node> classOrInterfaceDeclaration = resolvedReferenceTypeDeclaration.get().toAst();
+
+            if (classOrInterfaceDeclaration.isPresent() && classOrInterfaceDeclaration.get() instanceof ClassOrInterfaceDeclaration) {
+                // TODO: Check
+                //return processClassOrInterface(((ClassOrInterfaceDeclaration) classOrInterfaceDeclaration.get());
+            }
+        }
+        //TODO: manage the other cases
+        return null;
+    }
+
+    /**
+     * Process the method declaration and generate the corresponding {@link CallableTratto} object.
+     *
+     * @param typeDeclaration the type declaration (class) to which the method belongs
+     * @param callableDeclaration the method or constructor declaration to process
+     * @param invokedMethods the list of invoked methods within the method or constructor declaration. It can be null.
+     * @return the {@link CallableTratto} object generated from the method declaration
+     */
+    private static CallableTratto processCallable(TypeDeclaration typeDeclaration, CallableDeclaration callableDeclaration, List<CallableTratto> invokedMethods) {
+        // Instantiate a method builder to build a MethodTratto object from the method declaration
+        CallableBuilder callableBuilder = new CallableBuilder();
+        // Set the attributes of the method
+        callableBuilder.setIdentifier(callableDeclaration.getNameAsString());
+        callableBuilder.setAnnotations(JavaParserUtils.getAnnotationsAsStrings(callableDeclaration.getAnnotations()));
+        callableBuilder.setModifiers(JavaParserUtils.getModifiersAsStrings(callableDeclaration.getModifiers()));
+        callableBuilder.setSignature(JavaParserUtils.getCallableSignature(callableDeclaration));
+        callableBuilder.setThrownExceptions(JavaParserUtils.getExceptionsAsString(callableDeclaration.getThrownExceptions()));
+        callableBuilder.setJavadoc(JavaParserUtils.getCallableJavadoc(callableDeclaration));
+        callableBuilder.setBody(JavaParserUtils.getCallableSourceCode(callableDeclaration));
+        // TODO: Manage invoked methods recursion in the improved version of the dataset
+        callableBuilder.setInvokedMethods(invokedMethods); // avoid recursion in the first version of the dataset
+        if (callableDeclaration instanceof MethodDeclaration) {
+            callableBuilder.setReturnType(processType(typeDeclaration, ((MethodDeclaration) callableDeclaration).getType(),0));
+        } else {
+            callableBuilder.setReturnType(null);
+        }
+        // Process the parameters of the method
+        List<Pair<String,TypeTratto>> parameters = new ArrayList<>();
+        for (Object obj : callableDeclaration.getParameters()) {
+            Parameter parameter = (Parameter) obj;
+            String parameterName = parameter.getNameAsString();
+            TypeTratto parameterType = processType(typeDeclaration, parameter.getType(), 0);
+            parameters.add(new Pair<>(parameterName, parameterType));
+        }
+        callableBuilder.setParameters(parameters);
+        // Build the method and return it
+        return callableBuilder.build();
+    }
+
+    /**
+     * Process the object creation expression and generate the corresponding {@link CallableTratto} object. The method
+     * is invoked when the constructor cannot be resolved with a callable declaration, for example when it refers to
+     * a class of an external library, whose source code is not accessible (only the bytecode is available). Therefore,
+     * some information are missing or less accurate.
+     *
+     * @param objCreationExpr the object creation expression to process
+     * @return the {@link CallableTratto} object generated from the method declaration
+     */
+    private static CallableTratto processObjectCreationExpr(ObjectCreationExpr objCreationExpr) {
+        ResolvedConstructorDeclaration resolvedConstructor = objCreationExpr.resolve();
+        // Instantiate a method builder to build a MethodTratto object from the method declaration
+        CallableBuilder callableBuilder = new CallableBuilder();
+        // Set the attributes of the method
+        callableBuilder.setIdentifier(resolvedConstructor.getName());
+        callableBuilder.setAnnotations(null);
+        callableBuilder.setModifiers(null);
+        callableBuilder.setSignature(resolvedConstructor.getSignature());
+        callableBuilder.setThrownExceptions(null);
+        callableBuilder.setJavadoc("");
+        callableBuilder.setBody(null);
+        callableBuilder.setInvokedMethods(null); // avoid recursion in the first version of the dataset
+        callableBuilder.setReturnType(null);
+        // Process the parameters of the method
+        List<Pair<String,TypeTratto>> parameters = new ArrayList<>();
+        for (int i = 0; i < resolvedConstructor.getNumberOfParams(); i++) {
+            ResolvedParameterDeclaration resolvedParam = resolvedConstructor.getParam(i);
+            TypeTratto parameterType = processType(resolvedParam.getType(), 0);
+            parameters.add(new Pair<>(null, parameterType));
+        }
+        callableBuilder.setParameters(parameters);
+        // Build the method and return it
+        return callableBuilder.build();
+    }
+
+    /**
+     * Process the resolved method declaration and generate the corresponding {@link CallableTratto} object. The method
+     * is invoked when the method call cannot be resolved with a callable declaration, for example when it refers to
+     * a class of an external library, whose source code is not accessible (only the bytecode is available). Therefore,
+     * some information are missing or less accurate.
+     *
+     * @param resolvedMethod the resolved method declaration to process
+     * @return the {@link CallableTratto} object generated from the method declaration
+     */
+    private static CallableTratto processMethodCallExpr(ResolvedMethodDeclaration resolvedMethod) {
+        // Instantiate a method builder to build a MethodTratto object from the method declaration
+        CallableBuilder callableBuilder = new CallableBuilder();
+        // Set the attributes of the method
+        callableBuilder.setIdentifier(resolvedMethod.getName());
+        callableBuilder.setAnnotations(null);
+        callableBuilder.setModifiers(null);
+        callableBuilder.setSignature(resolvedMethod.getSignature());
+        callableBuilder.setThrownExceptions(null);
+        callableBuilder.setJavadoc("");
+        callableBuilder.setBody(null);
+        callableBuilder.setInvokedMethods(null); // avoid recursion in the first version of the dataset
+        callableBuilder.setReturnType(null);
+        // Process the parameters of the method
+        List<Pair<String,TypeTratto>> parameters = new ArrayList<>();
+        for (int i = 0; i < resolvedMethod.getNumberOfParams(); i++) {
+            ResolvedParameterDeclaration resolvedParam = resolvedMethod.getParam(i);
+            TypeTratto parameterType = processType(resolvedParam.getType(), 0);
+            parameters.add(new Pair<>(null, parameterType));
+        }
+        callableBuilder.setParameters(parameters);
+        // Build the method and return it
+        return callableBuilder.build();
+    }
+
 
     /**
      * Distribute the methods of the class according to their meaning.
@@ -1045,7 +1793,7 @@ public class TestUtils {
      *     <li>Test cases: methods annotated with @Test</li>
      *     <li>Setup and tear down methods: methods annotated with @Before, @BeforeEach, @After, @AfterEach, etc.</li>
      *     <li>Auxiliary methods: methods not annotated with any JUnit annotation (can contain assertions or procedures
-     *     shared by multiple methods</li>
+     *     shared by multiple methods)</li>
      * </ul>
      *
      * @param testClassMethods the list of methods in the test class
@@ -1072,7 +1820,6 @@ public class TestUtils {
                             testCases.add(method);
                         }
                     }
-                    testCases.add(method);
                 } else if (methodAnnotations.stream().anyMatch(a -> a.getNameAsString().equals("Override"))) {
                     if (method.getBody().isPresent()) {
                         if (getNumberOfAssertions(method.getBody().get().getStatements()) > 0) {
