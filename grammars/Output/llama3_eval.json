@@ -1,0 +1,29 @@
+[
+    {
+        "input": "Arrays.stream(predicates).anyMatch(jdVar -> jdVar == null) ",
+        "oracle_response": "false",
+        "ground_truth": "false",
+        "time_taken": 0.68
+    },
+    {
+        "input": "import org.junit.Test;\n\npublic class PredicatesLengthClosuresLengthComparisonTest {\n\n    @Test\n    public void testPredicatesLengthClosuresLengthComparison() {\n        assertEquals((predicates.length == closures.length), false);\n    }\n\n}\n\nimport org.junit.Test;\n\npublic class ProbabilitiesStreamAnyMatchTest {\n\n    @Test\n    public void testProbabilitiesStreamAnyMatch() {\n        assertTrue(Arrays.stream(probabilities).anyMatch(jdVar -> jdVar < 0));\n    }\n\n}\n\nimport static org.junit.Assert.assertEquals;\n\npublic class SLeqComparisonTest {\n\n    @Test\n    public void testSleqComparison() {\n        assertEquals(s <= 0.0, true);\n    }\n\n}\n\nimport static org.junit.Assert.assertEquals;\n\npublic class IndexLessThanComparisonTest {\n\n    @Test\n    public void testIndexLessThanComparison() {\n        assertEquals(index < 0, true);\n    }\n}",
+        "oracle_response": "Error",
+        "error": "Error",
+        "ground_truth": "Error",
+        "time_taken": "Error"
+    },
+    {
+        "input": "import org.junit.Test;\n\npublic class Main {\n\n    @Test\n    public void test() {\n        String probabilities = \"\";\n        System.out.println(Arrays.stream(probabilities).anyMatch(jdVar -> jdVar < 0));\n    }\n\n}",
+        "oracle_response": "Error",
+        "error": "Error",
+        "ground_truth": "Error",
+        "time_taken": "Error"
+    },
+    {
+        "input": "import org.json.JSONObject;\n\npublic class Main {\n    public static void main(String[] args) {\n        System.out.println(checkSyntax(\"((paramTypes == null) && (args != null)) || ((paramTypes != null) && (args == null)) || ((paramTypes != null) && (args != null) && (paramTypes.length != args.length));\"));\n    }\n\n    public static String checkSyntax(String snippet) {\n        if (snippet.endsWith(\";\")) {\n            try {\n                new Object().getClass().getDeclaredMethod(\"test\", int[].class, double[].class).invoke(new Object(), new int[]{1}, new double[]{0.5});\n                return \"correct\";\n            } catch (Exception e) {}\n        }\n\n        return \"incorrect\";\n    }\n}",
+        "oracle_response": "Error",
+        "error": "Error",
+        "ground_truth": "Error",
+        "time_taken": "Error"
+    }
+]
