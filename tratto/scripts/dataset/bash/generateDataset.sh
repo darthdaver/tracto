@@ -14,6 +14,8 @@ source "${UTILS_DIR}/init_sdkman.sh"
 # Add Maven bin directory to PATH temporarily
 export PATH="$MAVEN_BIN:$PATH"
 
+M2T_REPO_LIST=${1:-$M2T_REPO_LIST}
+
 if [ ! -e "${TRATTO_JAR}" ]; then
   cd "${ROOT_DIR}"
   mvn clean package -DskipTests
