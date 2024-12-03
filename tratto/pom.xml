@@ -128,6 +128,12 @@
     </build>
 
     <dependencies>
+        <!-- ANTLR -->
+        <dependency>
+            <groupId>org.antlr</groupId>
+            <artifactId>antlr4-runtime</artifactId>
+            <version>4.13.2</version>
+        </dependency>
         <!-- Field Descriptor Utils -->
         <dependency>
             <groupId>org.plumelib</groupId>
