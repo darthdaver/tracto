@@ -1059,6 +1059,7 @@ public class TestUtils {
         } else if (type.isVoidType()) {
             return processVoidType(type.asVoidType());
         }
+        // TODO: Handle other types (like ClassOrInterfaceType, etc.)
         throw new RuntimeException("Type not supported: " + type.toString());
     }
 
@@ -1085,6 +1086,7 @@ public class TestUtils {
         } else if (type.isVoid()) {
             return processVoidType(type);
         }
+        // TODO: Handle other types (like ResolvedClassDeclaration, etc.)
         throw new RuntimeException("Type not supported: " + type.toString());
     }
 
@@ -1179,7 +1181,7 @@ public class TestUtils {
         try {
             // Set the identifier of the reference type
             classNames.add(referenceType.toDescriptor().replace("Ljava", "java"));
-        } catch (UnsolvedSymbolException | IllegalStateException e) {
+        } catch (UnsolvedSymbolException | IllegalStateException | UnsupportedOperationException e) {
             // TODO: Handle complex types like generics, List of reference types, List of Pair, etc.
             // Regex to match class names (starting with uppercase letters)
             Pattern pattern = Pattern.compile("\\b[A-Z][a-zA-Z0-9_]*\\b");
@@ -1287,7 +1289,7 @@ public class TestUtils {
         try {
             // Set the identifier of the reference type
             classNames.add(referenceType.getQualifiedName().replace("Ljava", "java"));
-        } catch (UnsolvedSymbolException e) {}
+        } catch (UnsolvedSymbolException | UnsupportedOperationException | IllegalStateException e) {}
         typeBuilder.setFullyQualifiedIdentifiers(classNames);
         typeBuilder.setClazzes(new ArrayList<>());
         return typeBuilder.build();
