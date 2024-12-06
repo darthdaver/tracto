@@ -26,6 +26,8 @@ LIB_DIR="${ROOT_DIR}/lib"
 
 # Bin
 MAVEN_BIN="${SDKMAN_DIR}/candidates/maven/${MAVEN_VERSION}/bin"
+GRADLE_BIN="${SDKMAN_DIR}/candidates/gradle/${GRADLE_VERSION}/bin"
+ANT_BIN="${SDKMAN_DIR}/candidates/ant/${ANT_VERSION}/bin"
 
 # Jar
 TRATTO_JAR="target/tratto-jar-with-dependencies.jar"
