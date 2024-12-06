@@ -1052,10 +1052,10 @@ public class TestUtils {
         } else if (type.isArrayType()) {
             Type arrayType = type.asArrayType().getComponentType();
             return processType(typeDeclaration, arrayType, arrayLevel + 1);
-        } else if (type.isReferenceType()) {
-            return processReferenceType(typeDeclaration, type.asReferenceType(), arrayLevel);
         } else if (type.isTypeParameter()) {
             return processTypeParameter(typeDeclaration, type.asTypeParameter(), arrayLevel);
+        } else if (type.isReferenceType()) {
+            return processReferenceType(typeDeclaration, type.asReferenceType(), arrayLevel);
         } else if (type.isVoidType()) {
             return processVoidType(type.asVoidType());
         }
