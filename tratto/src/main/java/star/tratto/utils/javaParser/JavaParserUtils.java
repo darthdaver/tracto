@@ -883,7 +883,7 @@ public class JavaParserUtils {
                         continue;
                     }
                     if (focalMethodArg.isArray() && (param.getType().isArray())) {
-                        if (focalMethodArg.asArrayType().arrayLevel() != param.getType().asArrayType().getComponentType().arrayLevel()) {
+                        if (focalMethodArg.asArrayType().arrayLevel() != param.getType().asArrayType().arrayLevel()) {
                             continue;
                         }
                     }
@@ -1138,7 +1138,7 @@ public class JavaParserUtils {
     public static MethodUsage searchCandidateMethodUsage(TypeDeclaration typeDeclaration, Expression expr) throws CandidateCallableMethodUsageNotFoundException, MultipleCandidatesException {
         try {
             return iterateOverCandidatesMethodUsage(typeDeclaration.resolve().getAllMethods(), expr.asMethodCallExpr());
-        } catch (CandidateCallableMethodUsageNotFoundException e) {
+        } catch (CandidateCallableMethodUsageNotFoundException | UnsolvedSymbolException e) {
             return null;
         }
     }

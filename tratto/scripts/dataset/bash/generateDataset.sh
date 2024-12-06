@@ -34,10 +34,10 @@ while IFS=, read -r repo_id repo_url commit_sha; do
       echo "Checkout commit version: ${repo_id} - ${commit_sha}."
       cd "${GITHUB_REPOS_TMP_DIR}/${repo_id}"
       git checkout "${commit_sha}"
+      # Setup dependencies
+      bash "${UTILS_DIR}/resolve_dependencies.sh" "${GITHUB_REPOS_TMP_DIR}/${repo_id}"
     fi
     cd "$ROOT_DIR"
-    # Setup dependencies
-     bash "${UTILS_DIR}/resolve_dependencies.sh" "${GITHUB_REPOS_TMP_DIR}/${repo_id}"
     # Setup java libraries paths
     classpath="${LIB_DIR}/java8:${LIB_DIR}/java11:${LIB_DIR}/java17"
     # Generate Oracle dataset

@@ -1497,19 +1497,29 @@ public class TestUtils {
             for (FieldDeclaration testClassField : testClass.findAll(FieldDeclaration.class)) {
                 for (VariableDeclarator variable : testClassField.getVariables()) {
                     String variableName = variable.getNameAsString();
-                    ResolvedType variableType = variable.getType().resolve();
+                    Type variableType = variable.getType();
+                    while (variableType.isArrayType()) {
+                        variableType = variableType.asArrayType().getComponentType();
+                    }
+                    // TODO: Handle the case when the variable type is an array
                     if (variableType.isReferenceType()) {
-                        ResolvedReferenceType resolvedReferenceType = variableType.asReferenceType();
-                        Optional<ResolvedReferenceTypeDeclaration> resolvedReferenceTypeDeclaration = resolvedReferenceType.getTypeDeclaration();
-                        if (resolvedReferenceTypeDeclaration.isPresent()) {
-                            ResolvedReferenceTypeDeclaration typeDeclaration = resolvedReferenceTypeDeclaration.get();
-                            Optional<Node> typeDeclarationNode = typeDeclaration.toAst();
-                            if (typeDeclarationNode.isPresent()) {
-                                TypeDeclaration variableTypeDeclaration = (TypeDeclaration) typeDeclarationNode.get();
-                                projectVariables.put(variableName, variableTypeDeclaration);
+                        try {
+                            ResolvedReferenceType resolvedReferenceType = variableType.resolve().asReferenceType();
+                            Path fqnVarType = FileUtils.getFQNPath(resolvedReferenceType.getQualifiedName());
+                            Path classFilePath = repoSourcePath.resolve(fqnVarType);
+                            CompilationUnit cuVarType = null;
+                            if (Files.exists(classFilePath)) {
+                                try {
+                                    cuVarType = JavaParserUtils.getCompilationUnit(classFilePath);
+                                } catch (IOException e) {
+                                    logger.error("Error reading file: " + classFilePath);
+                                }
+                                projectVariables.put(variable.getNameAsString(), cuVarType.getPrimaryType().orElseThrow(() -> new NoPrimaryTypeException("[ERROR] - ClassFile from method usage, with no primary file.")));
                             } else {
-                                librariesVariables.put(variableName, resolvedReferenceType);
+                                librariesVariables.put(variable.getNameAsString(), variableType.resolve().asReferenceType());
                             }
+                        } catch (UnsolvedSymbolException e) {
+                            logger.error("Unable to resolve variable type " + variableType.toString() + " in test class " + testClass.getNameAsString());
                         }
                     }
                 }
@@ -1517,7 +1527,7 @@ public class TestUtils {
 
 
             // Iterate over the statements of the test from the top to the bottom
-            for (int i = 0; i < stmtIndex; i++) {
+            for (int i = 0; i <= stmtIndex; i++) {
                 // Get current statement
                 Statement stmt = statements.get(i);
                 Expression expr = null;
@@ -1543,6 +1553,9 @@ public class TestUtils {
                         if (exprType == CallableExprType.METHOD) {
                             if (expr.asMethodCallExpr().getScope().isPresent()) {
                                 Expression scope = expr.asMethodCallExpr().getScope().get();
+                                while (scope.isArrayAccessExpr()) {
+                                    scope = scope.asArrayAccessExpr().getName();
+                                }
                                 if (scope.isNameExpr()) {
                                     String scopeName = scope.asNameExpr().getNameAsString();
                                     if (projectVariables.containsKey(scopeName)) {
@@ -1562,6 +1575,7 @@ public class TestUtils {
                         if (!fromExternalLibrary) {
                             // Get the invoked method. The invoked method must be a method declaration or a constructor declaration.
                             // Start searching the method or constructor in the test class
+                            // CallableDeclaration invokedMethod = JavaParserUtils.resolveCallExpression(testClass, expr, exprType);
                             CallableDeclaration invokedMethod = JavaParserUtils.resolveCallExpression(testClass, expr, exprType);
                             // If the focal method is not found, look at the methods and constructors in the focal class
                             invokedMethod = JavaParserUtils.resolveCallExpression(invokedClass, expr, exprType);
@@ -1583,17 +1597,16 @@ public class TestUtils {
                                     if (!(invokedMethodUsage == null)) {
                                         Path fullyQualifiedClassNameLastExpressionPath = FileUtils.getFQNPath(invokedMethodUsage.declaringType().getQualifiedName());
                                         Path classFileInvokedMethodUsagePath = repoSourcePath.resolve(fullyQualifiedClassNameLastExpressionPath);
-                                        CompilationUnit cuInvokedMethodUsage = null;
                                         if (Files.exists(classFileInvokedMethodUsagePath)) {
                                             try {
-                                                cuInvokedMethodUsage = JavaParserUtils.getCompilationUnit(classFileInvokedMethodUsagePath);
+                                                CompilationUnit cuInvokedMethodUsage = JavaParserUtils.getCompilationUnit(classFileInvokedMethodUsagePath);
+                                                invokedClass = cuInvokedMethodUsage.getPrimaryType().orElseThrow(() -> new NoPrimaryTypeException("[ERROR] - ClassFile from method usage, with no primary file."));
+                                                List<MethodDeclaration> candidateMethods = invokedClass.getMethods();
+                                                invokedMethod = JavaParserUtils.matchMethodUsageWithMethodDeclaration(invokedMethodUsage, candidateMethods);
                                             } catch (IOException e) {
                                                 logger.error("Error reading file: " + classFileInvokedMethodUsagePath);
                                             }
                                         }
-                                        invokedClass = cuInvokedMethodUsage.getPrimaryType().orElseThrow(() -> new NoPrimaryTypeException("[ERROR] - ClassFile from method usage, with no primary file."));
-                                        List<MethodDeclaration> candidateMethods = invokedClass.getMethods();
-                                        invokedMethod = JavaParserUtils.matchMethodUsageWithMethodDeclaration(invokedMethodUsage, candidateMethods);
                                     }
                                 }
                             }
@@ -1620,24 +1633,41 @@ public class TestUtils {
                                 }
                             }
                         }
-                        if (unparsedExpr.isVariableDeclarationExpr() && invokedClass != null) {
-                            VariableDeclarationExpr varExpr = unparsedExpr.asVariableDeclarationExpr();
-                            for (VariableDeclarator var : varExpr.getVariables()) {
-                                if (var.getType().isReferenceType()) {
-                                    if (!fromExternalLibrary) {
-                                        projectVariables.put(var.getNameAsString(), invokedClass);
-                                    } else {
-                                        librariesVariables.put(var.getNameAsString(), var.getType().resolve().asReferenceType());
-                                    }
-                                }
-                            }
-                        }
                     } catch (
                             NoFocalMethodMatchingException | NoPrimaryTypeException | UnrecognizedExprException |
                             CandidateCallableDeclarationNotFoundException | CandidateCallableMethodUsageNotFoundException |
                             MultipleCandidatesException | UnsolvedSymbolException | IllegalStateException e
                     ) {
                         logger.error(String.format("Error processing expression %s of test case %s", stmt, testName));
+                    }
+                }
+                if (unparsedExpr.isVariableDeclarationExpr() ) {
+                    VariableDeclarationExpr varExpr = unparsedExpr.asVariableDeclarationExpr();
+                    for (VariableDeclarator var : varExpr.getVariables()) {
+                        Type varType = var.getType();
+                        while (varType.isArrayType()) {
+                            varType = varType.asArrayType().getComponentType();
+                        }
+                        // TODO: Handle the case when the variable type is an array
+                        if (varType.isReferenceType()) {
+                            try {
+                                Path fqnReturnType = FileUtils.getFQNPath(varType.resolve().asReferenceType().getQualifiedName());
+                                Path classFilePath = repoSourcePath.resolve(fqnReturnType);
+                                CompilationUnit cuReturnType = null;
+                                if (Files.exists(classFilePath)) {
+                                    try {
+                                        cuReturnType = JavaParserUtils.getCompilationUnit(classFilePath);
+                                    } catch (IOException e) {
+                                        logger.error("Error reading file: " + classFilePath);
+                                    }
+                                    projectVariables.put(var.getNameAsString(), cuReturnType.getPrimaryType().orElseThrow(() -> new NoPrimaryTypeException("[ERROR] - ClassFile from method usage, with no primary file.")));
+                                } else {
+                                    librariesVariables.put(var.getNameAsString(), varType.resolve().asReferenceType());
+                                }
+                            } catch (UnsolvedSymbolException e) {
+                                logger.error("Unable to resolve variable type " + varType.toString() + " in test class " + testClass.getNameAsString());
+                            }
+                        }
                     }
                 }
             }
