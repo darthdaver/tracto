@@ -108,7 +108,16 @@ public class OraclesDataset {
             Optional<Path> sourceFilePath = splitTestClassPathsPair.getValue1();
             logger.info("Processing split test class {} to generate oracles datapoints", splitTestClassPath.toString().replace(repoRootPath.toString(), ""));
             if (sourceFilePath.isPresent()) {
-                oraclesDatapoints.addAll(TestUtils.processSplitTestClass(repoRootPath, splitTestClassPath, sourceFilePath.get()));
+                // Debugging
+                // if (splitTestClassPath.toString().replace(repoRootPath.toString(), "").contains("/torch-api/src/test/java/org/brightify/torch/util/async/AsyncRunnerTestTrattoSplit.java")) {
+                //     oraclesDatapoints.addAll(TestUtils.processSplitTestClass(repoRootPath, splitTestClassPath, sourceFilePath.get()));
+                // }
+                try {
+                    oraclesDatapoints.addAll(TestUtils.processSplitTestClass(repoRootPath, splitTestClassPath, sourceFilePath.get()));
+                } catch (Exception e) {
+                    logger.error("Error while processing split test class: {}", splitTestClassPath.toString().replace(repoRootPath.toString(), ""));
+                    logger.error("Error message: {}", e.getMessage());
+                }
             }
         }
         // TODO: Log statistics
