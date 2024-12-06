@@ -24,7 +24,7 @@ fi
 # Read the CSV file line by line and split into project_id, bug_id, and modified_classes fields
 while IFS=, read -r repo_id repo_url commit_sha; do
     cd "$ROOT_DIR"
-    if [ ! -d "${GITHUB_REPOS_TEMP_DIR}/${repo_id}" ]; then
+    if [ ! -d "${GITHUB_REPOS_TMP_DIR}/${repo_id}" ]; then
       # Clean modified_classes string from undesired white-spaces/line-breaks introduced with the CSV parsing
       commit_sha="${commit_sha//[$'\t\r\n ']/}"
       # Clone project
