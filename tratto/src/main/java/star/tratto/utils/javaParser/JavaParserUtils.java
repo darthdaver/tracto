@@ -113,27 +113,33 @@ public class JavaParserUtils {
             } else {
                 Path startPath = Paths.get(classPathElement);
                 try {
-                    boolean jarFilesFolder = false;
-                    try (DirectoryStream<Path> stream = Files.newDirectoryStream(startPath, "*.jar")) {
-                        for (Path entry : stream) {
-                            if (Files.isRegularFile(entry)) {
-                                jarFilesFolder = true;
+                    List<Path> libraryRootPaths = findPotentialProjectsRoots(Path.of(classPathElement));
+
+                    if (!libraryRootPaths.isEmpty()) {
+                        for(Path libraryRootPath : libraryRootPaths) {
+                            typeSolver.add(new JavaParserTypeSolver(libraryRootPath.toFile()));
+                        }
+                    } else {
+                        boolean jarFilesFolder = false;
+                        try (DirectoryStream<Path> stream = Files.newDirectoryStream(startPath, "*.jar")) {
+                            for (Path entry : stream) {
+                                if (Files.isRegularFile(entry)) {
+                                    jarFilesFolder = true;
+                                }
                             }
                         }
-                    }
-                    if (jarFilesFolder) {
-                        Files.walkFileTree(startPath, new SimpleFileVisitor<Path>() {
-                            @Override
-                            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                                // Check if the file is a .jar file
-                                if (file.toString().endsWith(".jar")) {
-                                    typeSolver.add(new JarTypeSolver(file));
+                        if (jarFilesFolder) {
+                            Files.walkFileTree(startPath, new SimpleFileVisitor<Path>() {
+                                @Override
+                                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                                    // Check if the file is a .jar file
+                                    if (file.toString().endsWith(".jar")) {
+                                        typeSolver.add(new JarTypeSolver(file));
+                                    }
+                                    return FileVisitResult.CONTINUE;
                                 }
-                                return FileVisitResult.CONTINUE;
-                            }
-                        });
-                    } else {
-                        typeSolver.add(new JavaParserTypeSolver(Path.of(classPathElement).toFile()));
+                            });
+                        }
                     }
                 } catch (IOException e) {
                     e.printStackTrace();

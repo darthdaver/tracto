@@ -1,55 +1,154 @@
 #!/bin/bash
 
-# Main folder where the search begins
-MAIN_FOLDER="$1"
+# Get current directory
+current_dir=$(realpath "$(dirname "${BASH_SOURCE[@]}")")
+# Setup global variables
+source "${current_dir}/global_variables.sh"
+source "${UTILS_DIR}/init_sdkman.sh"
 
-if [ -z "$MAIN_FOLDER" ]; then
-    echo "Usage: $0 <path-to-main-folder>"
+# Add Maven bin directory to PATH temporarily
+export PATH="$MAVEN_BIN:$PATH"
+export PATH="$GRADLE_BIN:$PATH"
+export PATH="$ANT_BIN:$PATH"
+
+main_folder="$1"
+maven_default_repo="https://repo1.maven.org/maven2"
+
+# Function to check if a folder is a Maven project
+check_maven() {
+    [[ -f "pom.xml" ]] && return 0 || return 1
+}
+
+# Function to check if a folder is a Gradle project
+check_gradle() {
+    [[ -f "build.gradle" || -f "settings.gradle" ]] && return 0 || return 1
+}
+
+# Function to check if a folder is an Ant project
+check_ant() {
+    [[ -f "build.xml" ]] && return 0 || return 1
+}
+
+echo "Resolving dependencies for: $main_folder"
+# Main script execution
+if [[ -d "$main_folder" ]]; then
+    cd "$main_folder" || exit
+    global_failed_file="${main_folder}/global_failed_downloads.txt"
+    global_success_file="${main_folder}/global_successful_downloads.txt"
+    if [ -f "$global_failed_file" ]; then
+        # Remove the file
+        rm "$global_failed_file"
+    fi
+    if [ -f "$global_success_file" ]; then
+        # Remove the file
+        rm "$global_success_file"
+    fi
+    if check_maven; then
+      project_poms_analysis=$(python3 "${UTILS_DIR}/python/resolve_dependency.py" "$main_folder" 2>/dev/null)
+      pom_paths=$(echo "$project_poms_analysis" | jq -r 'keys[]')
+      for pom_path in $pom_paths; do
+          echo "Processing: $pom_path"
+          pom_dir=$(dirname $pom_path)
+          output_dir="$(realpath "$pom_dir")/tratto_libs"
+          decompiled_dir="$output_dir/decompiled"
+          dependencies=$(echo "$project_poms_analysis" | jq -r --arg key "$pom_path" '.[$key][0][]')
+          repositories=$(echo "$project_poms_analysis" | jq -r --arg key "$pom_path" '.[$key][1][]')
+          local_failed_file="${pom_dir}/local_failed_downloads.txt"
+          local_success_file="${pom_dir}/local_successful_downloads.txt"
+          if [ -f "$local_failed_file" ]; then
+              # Remove the file
+              rm "$local_failed_file"
+          fi
+          if [ -f "$local_success_file" ]; then
+              # Remove the file
+              rm "$local_success_file"
+          fi
+          if [ -d "$output_dir" ]; then
+              rm -r "$output_dir"
+          fi
+          mkdir -p "$decompiled_dir"
+          echo "$dependencies" | while read -r dep; do
+              IFS=':' read -r group_id artifact_id version <<< "$dep"
+              for repo in repositories; do
+                echo "Trying to download source JAR from: $repo"
+                if mvn dependency:get \
+                  -Dartifact="$group_id:$artifact_id:$version:jar:sources" \
+                  -DoutputDirectory="$output_dir" \
+                  -DremoteRepositories="$repo" \
+                  -Dpackaging=jar \
+                  -Doverwrite=true;
+                then
+                  echo "Downloaded: $group_id:$artifact_id:$version from $repo"
+                  if [ ! -d "$output_dir/sources" ]; then
+                      mkdir "$output_dir/sources"
+                  fi
+                  mvn dependency:copy -Dartifact="$group_id:$artifact_id:$version:jar:sources" -DoutputDirectory="$output_dir/sources" -Dclassifier=sources -Doverwrite=true
+                  echo "$group_id:$artifact_id:$version,sources" >> "$local_success_file"
+                  echo "$pom_dir,$group_id:$artifact_id:$version,sources" >> "$global_success_file"
+                else
+                    echo "Trying to download classes JAR from: $repo"
+                    if mvn dependency:get \
+                      -Dartifact="$group_id:$artifact_id:$version" \
+                      -DoutputDirectory="$output_dir/classes" \
+                      -DremoteRepositories="$repo" \
+                      -Doverwrite=true;
+                    then
+                      echo "Downloaded: $group_id:$artifact_id:$version from $repo"
+                      if [ ! -d "$output_dir/classes" ]; then
+                          mkdir "$output_dir/classes"
+                      fi
+                      mvn dependency:copy -Dartifact="$group_id:$artifact_id:$version" -DoutputDirectory="$output_dir/classes" -Doverwrite=true
+                      echo "$group_id:$artifact_id:$version,classes" >> "$local_success_file"
+                      echo "$pom_dir,$group_id:$artifact_id:$version,classes" >> "$global_success_file"
+                    else
+                        echo "$group_id:$artifact_id:$version,download-failed" >> "$local_failed_file"
+                        echo "$pom_dir,$group_id:$artifact_id:$version,download-failed" >> "$global_failed_file"
+                        echo "Error: Failed to download both source and classes JAR for $group_id:$artifact_id:$version"
+                    fi
+                fi
+              done
+          done
+          # Iterate over each ZIP file in the source directory
+          for jar_file in "$output_dir/sources"/*.jar; do
+              if [[ -f "$jar_file" ]]; then
+                # Extract the base name of the ZIP file (without extension)
+                base_name=$(basename "$jar_file" .jar)
+                # Create a destination folder for the extracted files
+                destination_folder="$decompiled_dir/$base_name"
+                mkdir -p "$destination_folder"
+                # Unzip the file into the destination folder
+                unzip -oq "$jar_file" -d "$destination_folder"
+                echo "Unzipped $jar_file to $destination_folder"
+              fi
+          done
+          # Iterate over each ZIP file in the classes directory
+          for jar_file in "$output_dir/classes"/*.jar; do
+              if [[ -f "$jar_file" ]]; then
+                # Extract the base name of the ZIP file (without extension)
+                base_name=$(basename "$jar_file" .jar)
+                # Create a destination folder for the extracted files
+                destination_folder="$decompiled_dir/$base_name"
+                mkdir -p "$destination_folder"
+                java -jar $FERNFLOWER_JAR $jar_file $destination_folder
+                # Unzip the file into the destination folder
+                unzip -oq "$destination_folder/$base_name.jar" -d "$destination_folder"
+                rm "$destination_folder/$base_name.jar"
+                echo "Unzipped $jar_file to $destination_folder"
+              fi
+          done
+      done
+      exit 0
+    elif check_gradle; then
+        echo "Gradle project skipped"
+        exit 1
+    elif check_ant; then
+        echo "Ant project skipped."
+        exit 1
+    else
+        echo "This folder is not a recognized Maven, Gradle, or Ant project."
+        exit 1
+    fi
+else
+    echo "Usage: $0 <directory>"
     exit 1
 fi
-
-# Find all build-related files in the directory hierarchy
-find "$MAIN_FOLDER" -type f \( -name "pom.xml" -o -name "build.gradle" -o -name "build.xml" \) | while read -r BUILD_FILE; do
-    # Determine the project directory and initialize lib folder
-    PROJECT_DIR=$(dirname "$BUILD_FILE")
-    LIB_DIR="$PROJECT_DIR/lib_tratto"
-    mkdir -p "$LIB_DIR"
-
-    echo "Processing project in: $PROJECT_DIR"
-
-    if [[ "$BUILD_FILE" == *pom.xml ]]; then
-        echo "Detected Maven project."
-        # Run Maven to download dependencies
-        (cd "$PROJECT_DIR" && mvn dependency:copy-dependencies -DoutputDirectory="$LIB_DIR")
-    elif [[ "$BUILD_FILE" == *build.gradle ]]; then
-        echo "Detected Gradle project."
-        # Add a temporary Gradle task to copy dependencies
-        TEMP_TASK="task copyDependencies(type: Copy) {
-    from configurations.runtimeClasspath
-    into '$LIB_DIR'
-}"
-        # Append the temporary task, run it, then remove it
-        echo "$TEMP_TASK" >> "$BUILD_FILE"
-        (cd "$PROJECT_DIR" && ./gradlew copyDependencies)
-        # Remove the temporary task
-        sed -i '/task copyDependencies/,/}/d' "$BUILD_FILE"
-
-    elif [[ "$BUILD_FILE" == *build.xml ]]; then
-        echo "Detected Ant project."
-        if grep -q "<ivy" "$BUILD_FILE"; then
-            echo "Detected Ivy dependency management."
-            # Resolve Ivy dependencies and copy to lib
-            (cd "$PROJECT_DIR" && ant resolve)
-            cp -r ~/.ivy2/cache/* "$LIB_DIR"
-        else
-            echo "Standard Ant project. Looking for <get> resources..."
-            # Parse and download <get> resources in build.xml
-            grep -oP '(?<=<get src=").*?(?=")' "$BUILD_FILE" | while read -r URL; do
-                wget -P "$LIB_DIR" "$URL"
-            done
-        fi
-    else
-        echo "Unrecognized build tool for $PROJECT_DIR. Skipping."
-    fi
-    echo "Dependencies for $PROJECT_DIR have been stored in $LIB_DIR."
-done

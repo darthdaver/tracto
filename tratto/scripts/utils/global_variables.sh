@@ -30,4 +30,5 @@ GRADLE_BIN="${SDKMAN_DIR}/candidates/gradle/${GRADLE_VERSION}/bin"
 ANT_BIN="${SDKMAN_DIR}/candidates/ant/${ANT_VERSION}/bin"
 
 # Jar
-TRATTO_JAR="target/tratto-jar-with-dependencies.jar"
+TRATTO_JAR="${ROOT_DIR}/target/tratto-jar-with-dependencies.jar"
+FERNFLOWER_JAR="${ROOT_DIR}/scripts/resources/fernflower.jar"

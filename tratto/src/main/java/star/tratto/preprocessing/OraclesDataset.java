@@ -220,7 +220,10 @@ public class OraclesDataset {
             Files.walkFileTree(repoRootPath, new SimpleFileVisitor<>() {
                 @Override
                 public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                    if (dir.getFileName().toString().equals(TrattoNamingConvention.LIB_FOLDER.getConventionName())) {
+                    if (
+                        dir.toString().endsWith(TrattoNamingConvention.SOURCE_LIB_FOLDER.getConventionName()) ||
+                        dir.toString().endsWith(TrattoNamingConvention.JAR_LIB_FOLDER.getConventionName())
+                    ) {
                         matchingPaths.add(dir);
                     }
                     return FileVisitResult.CONTINUE;
