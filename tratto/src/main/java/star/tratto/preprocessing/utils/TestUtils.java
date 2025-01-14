@@ -1,10 +1,7 @@
 package star.tratto.preprocessing.utils;
 
-import com.github.javaparser.JavaParser;
-import com.github.javaparser.ast.CompilationUnit;
-import com.github.javaparser.ast.ImportDeclaration;
-import com.github.javaparser.ast.NodeList;
-import com.github.javaparser.ast.Node;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.javaparser.ast.*;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.stmt.*;
@@ -13,6 +10,8 @@ import com.github.javaparser.resolution.MethodUsage;
 import com.github.javaparser.resolution.UnsolvedSymbolException;
 import com.github.javaparser.resolution.declarations.*;
 import com.github.javaparser.resolution.types.*;
+import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserClassDeclaration;
+import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserInterfaceDeclaration;
 import org.javatuples.Pair;
 import org.javatuples.Triplet;
 import org.slf4j.Logger;
@@ -20,7 +19,7 @@ import org.slf4j.LoggerFactory;
 import star.tratto.data.*;
 import star.tratto.preprocessing.builders.*;
 import star.tratto.preprocessing.components.*;
-import star.tratto.utils.FileUtils;
+import star.tratto.utils.FilesUtils;
 import star.tratto.utils.javaParser.JavaParserUtils;
 import star.tratto.utils.javaParser.visitors.declarations.FieldDeclarationVisitor;
 import star.tratto.utils.javaParser.visitors.statements.AssertStmtVisitor;
@@ -28,8 +27,6 @@ import star.tratto.utils.javaParser.visitors.expressions.MethodCallExprVisitor;
 import star.tratto.utils.javaParser.visitors.statements.helper.StmtVisitorHelper;
 
 import javax.swing.text.html.Option;
-import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -225,7 +222,7 @@ public class TestUtils {
                         // Add the original test case to the error test class
                         errorTestClass.addMember(originalTestCase);
                         // Save the error test class to the error output path
-                        FileUtils.writeJavaFile(errorOutputPath, errorCu);
+                        FilesUtils.writeJavaFile(errorOutputPath, errorCu);
                     }
                 }
             }
@@ -239,8 +236,8 @@ public class TestUtils {
                 testClass.addMember(splitTestCase);
             }
             // Save the split test class to the output paths (regular and test repository)
-            FileUtils.writeJavaFile(regularOutputPath, cu);
-            FileUtils.writeJavaFile(testRepoOutputPath, cu);
+            FilesUtils.writeJavaFile(regularOutputPath, cu);
+            FilesUtils.writeJavaFile(testRepoOutputPath, cu);
         } catch (IOException e) {
             logger.error("Error reading file: " + testFilePath);
         }
@@ -834,6 +831,8 @@ public class TestUtils {
             // Convert catch clause into an assertThrows statement
             Optional<Statement> assertThrowsStmt = generateAssertThrowsFromTryStmt(tryStmt);
             if (assertThrowsStmt.isPresent()) {
+                // Remove the method called added to the assertion
+                statements.remove(statements.size() - 2);
                 // Remove the fail() method call at the end of the try block
                 statements.remove(statements.size() - 1);
                 // Add the assertThrows statement to the flat try block
@@ -956,11 +955,16 @@ public class TestUtils {
      * @param repoRootPath the path to the repository to process
      * @param testFilePath the path to the test class to process
      * @param sourceFilePath the path to the corresponding source file, if available
-     * @return the list of oracle datapoints generated from the test cases of the test class
+     * @return the list of oracle datapoints generated from the test cases of the test class and a hashmap containing
+     * the logs of the errors encountered when processing each test cases (which invoked methods cannot be processed
+     * in each test case of the test class)
      */
-    public static List<OracleDatapoint> processSplitTestClass(Path repoRootPath, Path testFilePath, Path sourceFilePath) {
+    public static Pair<List<OracleDatapoint>, HashMap<String, HashMap<String, List<String>>>> processSplitTestClass(Path repoRootPath, Path testFilePath, Path sourceFilePath) {
         // Create a list to store the oracle datapoints
         List<OracleDatapoint> oracleDatapoints = new ArrayList<>();
+        // Create a map to store the processing errors of the test cases (which invoked methods cannot be processed in
+        // each test case of the test class)
+        HashMap<String, HashMap<String, List<String>>> testsProcessingErrors = new HashMap<>();
         // Process the test class and generate the corresponding oracles datapoints
         try {
             // Parse the test class and focal classes
@@ -970,7 +974,7 @@ public class TestUtils {
             TypeDeclaration testClass = cuTestClass.getPrimaryType().orElseThrow(() -> new IllegalStateException("Primary type not found in test class: " + testFilePath));
             TypeDeclaration focalClass = cuFocalClass.getPrimaryType().orElseThrow(() -> new IllegalStateException("Primary type not found in focal class: " + sourceFilePath));
             //
-            Path repoSourcePath = Path.of(sourceFilePath.toString().replace(FileUtils.getFQNPath((String) focalClass.getFullyQualifiedName().get()).toString(), ""));
+            Path repoSourcePath = Path.of(sourceFilePath.toString().replace(FilesUtils.getFQNPath((String) focalClass.getFullyQualifiedName().get()).toString(), ""));
             // Distribute the methods of the class according to their meaning (auxiliary, setup & tear down, test cases)
             Triplet<List<MethodDeclaration>, HashMap<String, MethodDeclaration>, HashMap<String, MethodDeclaration>> distributedMethods = distributeMethods(testClass.getMethods());
             // Set the list of all the test cases defined in the given test class
@@ -985,7 +989,7 @@ public class TestUtils {
             ClassTratto focalClassTratto = processFocalClass(focalClass, sourceFilePath);
             // Process test cases
             for (MethodDeclaration testCase : testCases) {
-                Pair<CallableTratto,List<CallableTratto>> invokedMethodsPair = processInvokedMethods(repoSourcePath, focalClass, testClass, testCase);
+                Pair<CallableTratto,List<CallableTratto>> invokedMethodsPair = processInvokedMethods(repoSourcePath, focalClass, testClass, testCase, testsProcessingErrors);
                 CallableTratto focalMethodTratto = invokedMethodsPair.getValue0();
                 List<CallableTratto> invokedMethods = invokedMethodsPair.getValue1();
                 CallableTratto testCaseTratto = processCallable(testClass, testCase, invokedMethods);
@@ -998,7 +1002,7 @@ public class TestUtils {
         } catch (IllegalStateException e) {
             logger.error(e.getMessage());
         }
-        return oracleDatapoints;
+        return new Pair<>(oracleDatapoints, testsProcessingErrors);
     }
 
     /**
@@ -1473,13 +1477,83 @@ public class TestUtils {
         return focalClassBuilder.build();
     }
 
-    private static Pair<CallableTratto,List<CallableTratto>> processInvokedMethods(Path repoSourcePath, TypeDeclaration focalClass, TypeDeclaration testClass, MethodDeclaration testCase) {
+    /**
+     * Process a type declaration to retrieve the list of related type declarations (extended and implemented classes), iteratively.
+     *
+     * @param referenceTypeDeclaration the reference type declaration to analyze
+     * @param repoSourcePath the root path of the repository where the type declaration is located
+     * @return the list of related type declarations (extended and implemented classes) of the reference type declaration
+     */
+    private static List<TypeDeclaration> getRelatedTypeDeclarations(TypeDeclaration referenceTypeDeclaration, Path repoSourcePath) {
+        // Define the list of related type declarations to return. Initially empty.
+        List<TypeDeclaration> relatedTypeDeclarations = new ArrayList<>();
+        // Define the list of extended and implemented types of the reference type declaration
+        List<ClassOrInterfaceType> extendedAndImplementedTypes = new ArrayList<>();
+        // Check if the reference type declaration is a class or interface declaration. In this case, retrieve the
+        // extended and implemented types.
+        if (referenceTypeDeclaration instanceof ClassOrInterfaceDeclaration) {
+            extendedAndImplementedTypes.addAll(((ClassOrInterfaceDeclaration) referenceTypeDeclaration).getExtendedTypes());
+            extendedAndImplementedTypes.addAll(((ClassOrInterfaceDeclaration) referenceTypeDeclaration).getImplementedTypes());
+        } else {
+            // Not a class or interface declaration. No extended or implemented types to retrieve. Return an empty list.
+            return relatedTypeDeclarations;
+        }
+        // Retrieve the compilation unit of the reference type declaration
+        CompilationUnit referenceTypeCu = (CompilationUnit) referenceTypeDeclaration.getParentNode().orElse(null);
+        // Retrieve the list of imports of the reference type compilation unit
+        NodeList<ImportDeclaration> referenceTypeImports = referenceTypeCu != null ? referenceTypeCu.getImports() : new NodeList<>();
+        // Retrieve the package of the reference type declaration
+        PackageDeclaration referenceTypePackage = referenceTypeCu != null ? referenceTypeCu.getPackageDeclaration().orElse(null) : null;
+        // Iterate over the extended and implemented types of the reference type declaration
+        // to collect the related type declarations (iteratively)
+        for (ClassOrInterfaceType extendedOrImplementedType : extendedAndImplementedTypes) {
+            // Retrieve the name of the extended or implemented type
+            String extendedOrImplementedTypeName = extendedOrImplementedType.getNameAsString();
+            // Define the fully qualified name of the extended or implemented type to resolve. Initially null.
+            String fqn = null;
+            // Check if the extended or implemented type is imported in the reference type compilation unit
+            for (ImportDeclaration referenceTypeImport : referenceTypeImports) {
+                String importName = referenceTypeImport.getNameAsString();
+                // Check if the import name ends with the name of the extended or implemented type
+                if (importName.endsWith(extendedOrImplementedTypeName)) {
+                    // Set the fully qualified name of the extended or implemented type and break the loop. The reference
+                    // type declaration is found in the imports.
+                    fqn = importName;
+                    break;
+                }
+            }
+            // Check if the fully qualified name of the extended or implemented type is still null. In this case, if
+            // the package of the reference type declaration is not null, set the fully qualified name of the extended
+            // or implemented type by concatenating the package name and the name of the extended or implemented type.
+            // The reference type can lie in the same package of the reference type declaration.
+            if (fqn == null && referenceTypePackage != null) {
+                fqn = referenceTypePackage.getNameAsString().concat("." + extendedOrImplementedTypeName);
+            }
+
+            if (fqn != null) {
+                Optional<TypeDeclaration> relatedTypeDeclaration = JavaParserUtils.retrieveTypeDeclarationFromFullyQualifiedName(fqn, repoSourcePath);
+                if (relatedTypeDeclaration.isPresent()) {
+                    relatedTypeDeclarations.add(relatedTypeDeclaration.get());
+                    relatedTypeDeclarations.addAll(getRelatedTypeDeclarations(relatedTypeDeclaration.get(), repoSourcePath));
+                }
+            }
+        }
+        return relatedTypeDeclarations;
+    }
+
+    private static Pair<CallableTratto,List<CallableTratto>> processInvokedMethods(Path repoSourcePath, TypeDeclaration focalClass, TypeDeclaration testClass, MethodDeclaration testCase, HashMap<String, HashMap<String, List<String>>> testsProcessingErrors) {
         // Define list of methods invoked in the test case
         List<CallableTratto> invokedMethods = new ArrayList<>();
         // Define the focal method to find. Initially null.
         CallableTratto focalMethod = null;
-        // Set identifier of the focal method
+        // Get the name of the test case
         String testName = testCase.getNameAsString();
+        // Get the name of the test class
+        String testClassName = testClass.getFullyQualifiedName().orElse(testClass.getNameAsString()).toString();
+        // Setup error map for the test class
+        testsProcessingErrors.putIfAbsent(testClassName, new HashMap<>());
+        // Setup error map for the test case
+        testsProcessingErrors.get(testClassName).putIfAbsent(testName, new ArrayList<>());
         try {
             // Get the list of all the statements within the test
             NodeList<Statement> statements = testCase
@@ -1498,30 +1572,35 @@ public class TestUtils {
 
             for (FieldDeclaration testClassField : testClass.findAll(FieldDeclaration.class)) {
                 for (VariableDeclarator variable : testClassField.getVariables()) {
-                    String variableName = variable.getNameAsString();
                     Type variableType = variable.getType();
                     while (variableType.isArrayType()) {
                         variableType = variableType.asArrayType().getComponentType();
                     }
                     // TODO: Handle the case when the variable type is an array
-                    if (variableType.isReferenceType()) {
+                    if (variableType.isReferenceType() && !variableType.resolve().isTypeVariable()) {
+                        ResolvedReferenceTypeDeclaration resolvedReferenceTypeDeclaration = variableType.resolve().asReferenceType().getTypeDeclaration().orElse(null);
+
+                        if (resolvedReferenceTypeDeclaration != null) {
+                            if (resolvedReferenceTypeDeclaration instanceof JavaParserClassDeclaration) {
+                                projectVariables.put(variable.getNameAsString(), ((JavaParserClassDeclaration) resolvedReferenceTypeDeclaration).getWrappedNode());
+                                continue;
+                            } else if (resolvedReferenceTypeDeclaration instanceof JavaParserInterfaceDeclaration) {
+                                projectVariables.put(variable.getNameAsString(), ((JavaParserInterfaceDeclaration) resolvedReferenceTypeDeclaration).getWrappedNode());
+                                continue;
+                            }
+                        }
                         try {
                             ResolvedReferenceType resolvedReferenceType = variableType.resolve().asReferenceType();
-                            Path fqnVarType = FileUtils.getFQNPath(resolvedReferenceType.getQualifiedName());
-                            Path classFilePath = repoSourcePath.resolve(fqnVarType);
-                            CompilationUnit cuVarType = null;
-                            if (Files.exists(classFilePath)) {
-                                try {
-                                    cuVarType = JavaParserUtils.getCompilationUnit(classFilePath);
-                                } catch (IOException e) {
-                                    logger.error("Error reading file: " + classFilePath);
-                                }
-                                projectVariables.put(variable.getNameAsString(), cuVarType.getPrimaryType().orElseThrow(() -> new NoPrimaryTypeException("[ERROR] - ClassFile from method usage, with no primary file.")));
+                            Optional<TypeDeclaration> resolvedTypeDeclaration = JavaParserUtils.retrieveTypeDeclarationFromFullyQualifiedName(resolvedReferenceType.getQualifiedName(), repoSourcePath);
+                            if (resolvedTypeDeclaration.isPresent()) {
+                                projectVariables.put(variable.getNameAsString(), resolvedTypeDeclaration.get());
                             } else {
-                                librariesVariables.put(variable.getNameAsString(), variableType.resolve().asReferenceType());
+                                librariesVariables.put(variable.getNameAsString(), resolvedReferenceType);
                             }
-                        } catch (UnsolvedSymbolException e) {
-                            logger.error("Unable to resolve variable type " + variableType.toString() + " in test class " + testClass.getNameAsString());
+                        } catch (Exception e) {
+                            String errorMsg = "Unable to resolve variable type " + variableType.toString() + " in test class " + testClass.getNameAsString();
+                            // logger.error(errorMsg);
+                            testsProcessingErrors.get(testClassName).get(testName).add(errorMsg + " | " + e.getMessage());
                         }
                     }
                 }
@@ -1577,38 +1656,65 @@ public class TestUtils {
                         if (!fromExternalLibrary) {
                             // Get the invoked method. The invoked method must be a method declaration or a constructor declaration.
                             // Start searching the method or constructor in the test class
-                            // CallableDeclaration invokedMethod = JavaParserUtils.resolveCallExpression(testClass, expr, exprType);
                             CallableDeclaration invokedMethod = JavaParserUtils.resolveCallExpression(testClass, expr, exprType);
                             // If the focal method is not found, look at the methods and constructors in the focal class
-                            invokedMethod = JavaParserUtils.resolveCallExpression(invokedClass, expr, exprType);
+                            if (invokedMethod == null) {
+                                invokedMethod = JavaParserUtils.resolveCallExpression(invokedClass, expr, exprType);
+                            }
                             // If the focal method is still not found, search it within the inherited methods of the focal class
                             if (invokedMethod == null) {
-                                if (exprType == CallableExprType.CONSTRUCTOR) {
-                                    String candidateClassPath = expr.asObjectCreationExpr().getType().resolve().asReferenceType().getQualifiedName();
-                                    Path fullyQualifiedCandidateFilePath = repoSourcePath.resolve(FileUtils.getFQNPath(candidateClassPath));
-                                    if (Files.exists(fullyQualifiedCandidateFilePath)) {
-                                        invokedClass = JavaParserUtils.getCompilationUnit(repoSourcePath.resolve(fullyQualifiedCandidateFilePath)).getPrimaryType().get();
-                                        invokedMethod = JavaParserUtils.resolveCallExpression(invokedClass, expr, exprType);
-                                        if (invokedMethod == null) {
-                                            throw new NoFocalMethodMatchingException("The constructor in the expression " + expr.toString() + " cannot be resolved in the given focal class " + invokedClass.getNameAsString());
+                                List<TypeDeclaration> relatedTypeDeclarations = getRelatedTypeDeclarations(invokedClass, repoSourcePath);
+                                relatedTypeDeclarations.add(0, invokedClass);
+                                for (TypeDeclaration relatedTypeDeclaration : relatedTypeDeclarations) {
+                                    invokedClass = relatedTypeDeclaration;
+                                    if (exprType == CallableExprType.CONSTRUCTOR) {
+                                        Type constructorType = expr.asObjectCreationExpr().getType();
+                                        while (constructorType.isArrayType()) {
+                                            constructorType = constructorType.asArrayType().getComponentType();
                                         }
-                                    }
-                                } else {
-                                    MethodUsage invokedMethodUsage = JavaParserUtils.searchCandidateMethodUsage(invokedClass, expr);
-                                    // If the focal method is still not found, raise an exception
-                                    if (!(invokedMethodUsage == null)) {
-                                        Path fullyQualifiedClassNameLastExpressionPath = FileUtils.getFQNPath(invokedMethodUsage.declaringType().getQualifiedName());
-                                        Path classFileInvokedMethodUsagePath = repoSourcePath.resolve(fullyQualifiedClassNameLastExpressionPath);
-                                        if (Files.exists(classFileInvokedMethodUsagePath)) {
-                                            try {
-                                                CompilationUnit cuInvokedMethodUsage = JavaParserUtils.getCompilationUnit(classFileInvokedMethodUsagePath);
-                                                invokedClass = cuInvokedMethodUsage.getPrimaryType().orElseThrow(() -> new NoPrimaryTypeException("[ERROR] - ClassFile from method usage, with no primary file."));
-                                                List<MethodDeclaration> candidateMethods = invokedClass.getMethods();
-                                                invokedMethod = JavaParserUtils.matchMethodUsageWithMethodDeclaration(invokedMethodUsage, candidateMethods);
-                                            } catch (IOException e) {
-                                                logger.error("Error reading file: " + classFileInvokedMethodUsagePath);
+                                        // TODO: Handle the case when the variable type is an array
+                                        if (constructorType.isReferenceType() && !constructorType.resolve().isTypeVariable()) {
+                                            ResolvedReferenceTypeDeclaration resolvedReferenceTypeDeclaration = constructorType.resolve().asReferenceType().getTypeDeclaration().orElse(null);
+                                            if (resolvedReferenceTypeDeclaration != null) {
+                                                if (resolvedReferenceTypeDeclaration instanceof JavaParserClassDeclaration) {
+                                                    invokedClass = ((JavaParserClassDeclaration) resolvedReferenceTypeDeclaration).getWrappedNode();
+                                                    invokedMethod = JavaParserUtils.resolveCallExpression(invokedClass, expr, exprType);
+                                                } else if (resolvedReferenceTypeDeclaration instanceof JavaParserInterfaceDeclaration) {
+                                                    invokedClass = ((JavaParserInterfaceDeclaration) resolvedReferenceTypeDeclaration).getWrappedNode();
+                                                    invokedMethod = JavaParserUtils.resolveCallExpression(invokedClass, expr, exprType);
+                                                }
+                                            }
+                                            if (invokedMethod == null) {
+                                                String candidateClassPath = constructorType.resolve().asReferenceType().getQualifiedName();
+                                                Optional<TypeDeclaration> resolvedTypeDeclaration = JavaParserUtils.retrieveTypeDeclarationFromFullyQualifiedName(candidateClassPath, repoSourcePath);
+                                                if (resolvedTypeDeclaration.isPresent()) {
+                                                    invokedClass = resolvedTypeDeclaration.get();
+                                                    invokedMethod = JavaParserUtils.resolveCallExpression(invokedClass, expr, exprType);
+                                                    if (invokedMethod == null) {
+                                                        if (expr.toString().equals("new " + invokedClass.getNameAsString() + "()")) {
+                                                            invokedMethod = new ConstructorDeclaration();
+                                                            invokedMethod.setName(invokedClass.getNameAsString());
+                                                        } else {
+                                                            throw new NoFocalMethodMatchingException("The constructor in the expression " + expr.toString() + " cannot be resolved in the given focal class " + invokedClass.getNameAsString());
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
+                                    } else {
+                                        MethodUsage invokedMethodUsage = JavaParserUtils.searchCandidateMethodUsage(invokedClass, expr);
+                                        // If the focal method is still not found, raise an exception
+                                        if (!(invokedMethodUsage == null)) {
+                                            Optional<TypeDeclaration> resolvedTypeDeclaration = JavaParserUtils.retrieveTypeDeclarationFromFullyQualifiedName(invokedMethodUsage.declaringType().getQualifiedName(), repoSourcePath);
+                                            if (resolvedTypeDeclaration.isPresent()) {
+                                                invokedClass = resolvedTypeDeclaration.get();
+                                                List<MethodDeclaration> candidateMethods = invokedClass.getMethods();
+                                                invokedMethod = JavaParserUtils.matchMethodUsageWithMethodDeclaration(invokedMethodUsage, candidateMethods);
+                                            }
+                                        }
+                                    }
+                                    if(invokedMethod != null) {
+                                        break;
                                     }
                                 }
                             }
@@ -1640,7 +1746,9 @@ public class TestUtils {
                             CandidateCallableDeclarationNotFoundException | CandidateCallableMethodUsageNotFoundException |
                             MultipleCandidatesException | UnsolvedSymbolException | IllegalStateException e
                     ) {
-                        logger.error(String.format("Error processing expression %s of test case %s", stmt, testName));
+                        String errorMsg = "Error processing statement " + stmt.toString() + " of test case " + testName;
+                        // logger.error(errorMsg);
+                        testsProcessingErrors.get(testClassName).get(testName).add(errorMsg + " | " + e.getMessage());
                     }
                 }
                 if (unparsedExpr.isVariableDeclarationExpr() ) {
@@ -1651,23 +1759,31 @@ public class TestUtils {
                             varType = varType.asArrayType().getComponentType();
                         }
                         // TODO: Handle the case when the variable type is an array
-                        if (varType.isReferenceType()) {
+                        if (varType.isReferenceType() && !varType.resolve().isTypeVariable()) {
+                            ResolvedReferenceTypeDeclaration resolvedReferenceTypeDeclaration = varType.resolve().asReferenceType().getTypeDeclaration().orElse(null);
+
+                            if (resolvedReferenceTypeDeclaration != null) {
+                                if (resolvedReferenceTypeDeclaration instanceof JavaParserClassDeclaration) {
+                                    projectVariables.put(var.getNameAsString(), ((JavaParserClassDeclaration) resolvedReferenceTypeDeclaration).getWrappedNode());
+                                    continue;
+                                } else if (resolvedReferenceTypeDeclaration instanceof JavaParserInterfaceDeclaration) {
+                                    projectVariables.put(var.getNameAsString(), ((JavaParserInterfaceDeclaration) resolvedReferenceTypeDeclaration).getWrappedNode());
+                                    continue;
+                                }
+                            }
+
                             try {
-                                Path fqnReturnType = FileUtils.getFQNPath(varType.resolve().asReferenceType().getQualifiedName());
-                                Path classFilePath = repoSourcePath.resolve(fqnReturnType);
-                                CompilationUnit cuReturnType = null;
-                                if (Files.exists(classFilePath)) {
-                                    try {
-                                        cuReturnType = JavaParserUtils.getCompilationUnit(classFilePath);
-                                    } catch (IOException e) {
-                                        logger.error("Error reading file: " + classFilePath);
-                                    }
-                                    projectVariables.put(var.getNameAsString(), cuReturnType.getPrimaryType().orElseThrow(() -> new NoPrimaryTypeException("[ERROR] - ClassFile from method usage, with no primary file.")));
+                                String fqnReturnType = varType.resolve().asReferenceType().getQualifiedName();
+                                Optional<TypeDeclaration> resolvedTypeDeclaration = JavaParserUtils.retrieveTypeDeclarationFromFullyQualifiedName(fqnReturnType, repoSourcePath);
+                                if (resolvedTypeDeclaration.isPresent()) {
+                                    projectVariables.put(var.getNameAsString(), resolvedTypeDeclaration.get());
                                 } else {
                                     librariesVariables.put(var.getNameAsString(), varType.resolve().asReferenceType());
                                 }
-                            } catch (UnsolvedSymbolException e) {
-                                logger.error("Unable to resolve variable type " + varType.toString() + " in test class " + testClass.getNameAsString());
+                            } catch (Exception e) {
+                                String errorMsg = "Unable to resolve variable type " + varType.toString() + " in test class " + testClass.getNameAsString();
+                                // logger.error(errorMsg);
+                                testsProcessingErrors.get(testClassName).get(testName).add(errorMsg + " | " + e.getMessage());
                             }
                         }
                     }
@@ -1680,7 +1796,8 @@ public class TestUtils {
                     testCase.getNameAsString(),
                     e.getClass().getName()
             );
-            logger.error(errMsg);
+            // logger.error(errMsg);
+            testsProcessingErrors.get(testClassName).get(testName).add(errMsg + " | " + e.getMessage());
         }
         return new Pair<>(focalMethod, invokedMethods);
     }

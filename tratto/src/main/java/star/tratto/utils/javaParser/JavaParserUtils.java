@@ -39,6 +39,7 @@ import org.javatuples.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import star.tratto.data.*;
+import star.tratto.utils.FilesUtils;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
@@ -97,7 +98,7 @@ public class JavaParserUtils {
     public static JavaParser setRepoJavaParser(Path repoRootPath, String classpath) {
         CombinedTypeSolver typeSolver = new CombinedTypeSolver();
         // TODO: Verify code without ReflectionTypeSolver and using java source code libraries
-        typeSolver.add(new ReflectionTypeSolver());
+        // typeSolver.add(new ReflectionTypeSolver());
         List<Path> repoProjectsPaths = findPotentialProjectsRoots(repoRootPath);
         for(Path projectPath : repoProjectsPaths) {
             typeSolver.add(new JavaParserTypeSolver(projectPath.toFile()));
@@ -592,18 +593,24 @@ public class JavaParserUtils {
     /**
      * Navigate the directories from the root of a given repository and find all the paths that matches
      * the common patterns identifying Java projects (both to source and test files) within it.
-     * @param repoRootPath the path to a Java repository (containing a single or multiple Java projects)
+     * @param rootPath the path to a Java repository (containing a single or multiple Java projects) or to a container of
+     *                 Java libraries (jars or source code)
      * @return a list of paths to the source code and the test code of the Java projects found within
      * the given repository.
      */
-    private static List<Path> findPotentialProjectsRoots(Path repoRootPath) {
+    private static List<Path> findPotentialProjectsRoots(Path rootPath) {
         // Define the list of potential projects roots and initialize it with an empty list
         List<Path> potentialProjectsRoots = new ArrayList<>();
+
+        if (rootPath.endsWith(TrattoNamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())) {
+            return FilesUtils.listDirectories(rootPath);
+        }
+
         // Walk the repository root path and find potential projects roots
         // Filter the paths contain the common patterns identifying Java projects
         // Collect the paths to the source code and the test code of the Java projects found
         try {
-            potentialProjectsRoots = Files.walk(repoRootPath)
+            potentialProjectsRoots = Files.walk(rootPath)
                     .filter(Files::isDirectory)
                     .map(path -> {
                         if(Files.exists(path.resolve("src/main/java"))) {
@@ -642,8 +649,9 @@ public class JavaParserUtils {
                     .filter(path -> path != null)
                     .collect(Collectors.toList());
         } catch (IOException e) {
-            logger.error("Error while trying to find potential projects roots in repository path {}: ", repoRootPath, e);
+            logger.error("Error while trying to find potential projects roots in repository path {}: ", rootPath, e);
         }
+        potentialProjectsRoots.add(rootPath);
         // Return the list of potential projects roots found within the repository
         return potentialProjectsRoots;
     }
@@ -770,6 +778,12 @@ public class JavaParserUtils {
                 if (callable.getParameters().size() == focalMethodArgs.size()) {
                     // Add method/constructor to candidates if the previous conditions are satisfied
                     candidatesCallables.add(callable);
+                } else if (callable.getParameters().size() > 0) {
+                    // Check if the number of parameters is the same, but the method/constructor is a varargs
+                    Parameter lastCandidateParam = (Parameter) callable.getParameters().getLast().get();
+                    if (lastCandidateParam.isVarArgs() && callable.getParameters().size() <= focalMethodArgs.size()) {
+                        candidatesCallables.add(callable);
+                    }
                 }
             }
         }
@@ -822,6 +836,12 @@ public class JavaParserUtils {
                 if (m.getNumberOfParams() == focalMethodArgs.size()) {
                     // Add method/constructor to candidates if the previous conditions are satisfied
                     candidates.add(m);
+                } else if (m.getNumberOfParams() > 0) {
+                    // Check if the number of parameters is the same, but the method/constructor is a varargs
+                    ResolvedParameterDeclaration lastCandidateParam = m.getParam(m.getNumberOfParams() - 1);
+                    if (lastCandidateParam.isVariadic() && m.getNumberOfParams() <= focalMethodArgs.size()) {
+                        candidates.add(m);
+                    }
                 }
             }
         }
@@ -868,9 +888,11 @@ public class JavaParserUtils {
             // Initialize the number of parameters in common with the current candidate to 0
             int paramsTypesInCommon = 0;
             // Iterate over the list of parameters of the current candidate method/constructor
-            for (int i = 0; i < candidate.getNumberOfParams(); i++) {
-                // Get the i-th parameter
-                ResolvedParameterDeclaration param = candidate.getParam(i);
+            for (int i = 0; i < focalMethodArgs.size(); i++) {
+                // Get the i-th parameter of the current candidate method/constructor (or the last parameter if the
+                // number of parameters of the candidate method/constructor is less than the number of parameters of
+                // the method call expression because the last param of the candidate method/constructor is a varargs)
+                ResolvedParameterDeclaration param = i < candidate.getNumberOfParams() ? candidate.getParam(i) : candidate.getLastParam();
                 // Get the type of the i-th parameter of the focal method call in the test
                 ResolvedType focalMethodArg = focalMethodArgs.get(i);
                 String focalMethodTypeName = focalMethodArgs.get(i).describe();
@@ -1027,9 +1049,11 @@ public class JavaParserUtils {
             // Initialize the number of parameters in common with the current candidate to 0
             int paramsTypesInCommon = 0;
             // Iterate over the list of parameters of the current candidate method/constructor
-            for (int i = 0; i < paramsList.size(); i++) {
-                // Get the i-th parameter
-                com.github.javaparser.ast.body.Parameter param = paramsList.get(i);
+            for (int i = 0; i < focalMethodArgs.size(); i++) {
+                // Get the i-th parameter of the current candidate method/constructor or the last parameter if the
+                // number of parameters of the current candidate method/constructor is less than the number of parameters
+                // of the focal method call expression (this happens when the last parameter is a varargs)
+                com.github.javaparser.ast.body.Parameter param = i < paramsList.size() ? paramsList.get(i) : paramsList.getLast().get();
                 // Get the type of the i-th parameter of the focal method call in the test
                 ResolvedType focalMethodArg = focalMethodArgs.get(i);
                 String focalMethodTypeName = focalMethodArgs.get(i).describe();
@@ -1038,7 +1062,7 @@ public class JavaParserUtils {
                     if (focalMethodArg.isArray() && !(param.getType().isArrayType() || param.isVarArgs())) {
                         continue;
                     }
-                    if (!focalMethodArg.isArray() && (param.getType().isArrayType() || param.isVarArgs())) {
+                    if (!focalMethodArg.isArray() && (param.getType().isArrayType())) {
                         continue;
                     }
                     if (focalMethodArg.describe().startsWith("java.util.List") && !param.getTypeAsString().startsWith("List")) {
@@ -1047,10 +1071,11 @@ public class JavaParserUtils {
                     if (!focalMethodArg.describe().startsWith("java.util.List") && param.getTypeAsString().startsWith("List")) {
                         continue;
                     }
-                    if (focalMethodArg.isArray() && (param.getType().isArrayType() || param.isVarArgs())) {
-                        if (param.isVarArgs() && (focalMethodArg.asArrayType().arrayLevel() > 1)) {
-                            continue;
-                        } else if (!param.isVarArgs() && (focalMethodArg.asArrayType().arrayLevel() != param.getType().asArrayType().getArrayLevel())) {
+                    if (focalMethodArg.isArray() && (param.getType().isArrayType())) {
+                        //if (param.isVarArgs() && (focalMethodArg.asArrayType().arrayLevel() > 1)) {
+                        //    continue;
+                        //} else
+                        if (!param.isVarArgs() && (focalMethodArg.asArrayType().arrayLevel() != param.getType().asArrayType().getArrayLevel())) {
                             continue;
                         }
                     }
@@ -1144,7 +1169,7 @@ public class JavaParserUtils {
     public static MethodUsage searchCandidateMethodUsage(TypeDeclaration typeDeclaration, Expression expr) throws CandidateCallableMethodUsageNotFoundException, MultipleCandidatesException {
         try {
             return iterateOverCandidatesMethodUsage(typeDeclaration.resolve().getAllMethods(), expr.asMethodCallExpr());
-        } catch (CandidateCallableMethodUsageNotFoundException | UnsolvedSymbolException e) {
+        } catch (CandidateCallableMethodUsageNotFoundException | UnsolvedSymbolException | IllegalStateException e) {
             return null;
         }
     }
@@ -1178,6 +1203,12 @@ public class JavaParserUtils {
                 if (methodUsage.getParamTypes().size() == focalMethodArgs.size()) {
                     // Add method/constructor to candidates if the previous conditions are satisfied
                     candidatesMethodUsage.add(methodUsage);
+                } else if (methodUsage.getParamTypes().size() > 0) {
+                    // Check if the number of parameters is the same, but the method/constructor is a varargs
+                    ResolvedType lastCandidateParam = methodUsage.getParamTypes().get(methodUsage.getParamTypes().size() - 1);
+                    if (lastCandidateParam.isArray() && methodUsage.getParamTypes().size() <= focalMethodArgs.size()) {
+                        candidatesMethodUsage.add(methodUsage);
+                    }
                 }
             }
         }
@@ -1205,9 +1236,11 @@ public class JavaParserUtils {
                 // Initialize the number of parameters in common with the current candidate to 0
                 int paramsTypesInCommon = 0;
                 // Iterate over the list of parameters of the current candidate method/constructor
-                for (int i = 0; i < paramsTypeList.size(); i++) {
-                    // Get the i-th parameter
-                    ResolvedType paramType = paramsTypeList.get(i);
+                for (int i = 0; i < focalMethodArgs.size(); i++) {
+                    // Get the i-th parameter of the current candidate method/constructor or the last parameter if the
+                    // number of parameters of the current candidate method/constructor is less than the number of parameters
+                    // of the focal method call expression (this happens when the last parameter is a varargs)
+                    ResolvedType paramType = i < paramsTypeList.size() ? paramsTypeList.get(i) : paramsTypeList.get(paramsTypeList.size() - 1);
                     // Get the type of the i-th parameter of the focal method call in the test
                     // prefix, as a string
                     String focalMethodTypeName = focalMethodArgs.get(i).calculateResolvedType().describe();
@@ -1361,7 +1394,57 @@ public class JavaParserUtils {
         return extendedClasses;
     }
 
+    /**
+     * Retrieve the last statement in a method declaration.
+     *
+     * @param callableDeclaration the method declaration to process
+     * @return the last statement in the method declaration
+     */
     public static Statement getLastStatementInMethodDeclaration(MethodDeclaration callableDeclaration) {
         return callableDeclaration.getBody().get().getStatements().getLast().get();
+    }
+
+    /**
+     * Retrieve the type declaration from the fully qualified name of the class and the root path of the repository where
+     * the class should be located (source code or decompiled library), or an empty optional if the class cannot be found.
+     *
+     * @param fqn the fully qualified name of the class to retrieve
+     * @param repoSourcePath the root path of the repository where the class should be located
+     * @return the type declaration of the class corresponding to the fully qualified name or an empty optional if the class
+     *        cannot be found
+     */
+    public static Optional<TypeDeclaration> retrieveTypeDeclarationFromFullyQualifiedName(String fqn, Path repoSourcePath) {
+        Path fqnPath = FilesUtils.getFQNPath(fqn);
+        Path referencePath = repoSourcePath;
+        List<Path> candidatePrefixPaths = new ArrayList<>();
+        candidatePrefixPaths.add(repoSourcePath);
+        boolean hasLibFolder = FilesUtils.hasChildDirectory(referencePath, TrattoNamingConvention.LIB_FOLDER.getConventionName());
+        while(!hasLibFolder || referencePath.getParent() == null) {
+            referencePath = referencePath.getParent();
+            hasLibFolder = FilesUtils.hasChildDirectory(referencePath, TrattoNamingConvention.LIB_FOLDER.getConventionName());
+        }
+        if (hasLibFolder) {
+            candidatePrefixPaths = FilesUtils.listDirectories(
+                    referencePath.resolve(TrattoNamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())
+            );
+        }
+        candidatePrefixPaths.add(repoSourcePath);
+        for(Path candidatePrefixPath : candidatePrefixPaths) {
+            Path classFilePath = candidatePrefixPath.resolve(fqnPath);
+            if (Files.exists(classFilePath)) {
+                try {
+                    CompilationUnit cu = JavaParserUtils.getCompilationUnit(classFilePath);
+                    if (cu.getPrimaryType().isPresent()) {
+                        return Optional.of(cu.getPrimaryType().get());
+                    } else {
+                        return Optional.empty();
+                    }
+                } catch (IOException e) {
+                    logger.error("Error reading file: " + classFilePath);
+                    return Optional.empty();
+                }
+            }
+        }
+        return Optional.empty();
     }
 }

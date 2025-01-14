@@ -1,20 +1,27 @@
 package star.tratto.utils;
 
 import com.github.javaparser.ast.CompilationUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.FileAttribute;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
  * This class provides file input and output utilities, such as: creating, copying, moving, writing, reading, etc.
  */
-public class FileUtils {
+public class FilesUtils {
+    private static final Logger log = LoggerFactory.getLogger(FilesUtils.class);
+
     /** Do not instantiate this class. */
-    private FileUtils() {
+    private FilesUtils() {
         throw new UnsupportedOperationException("This class cannot be instantiated.");
     }
 
@@ -73,8 +80,8 @@ public class FileUtils {
      */
     public static Path getProjectRootAbsolutePath() {
         // Get the absolute path to the current class:
-        // [path_to_root]/target/classes/star/tratto/utils/FileUtils.class
-        Path absPathToCurrentClass = Path.of(FileUtils.class.getResource("FileUtils.class").getPath());
+        // [path_to_root]/target/classes/star/tratto/utils/FilesUtils.class
+        Path absPathToCurrentClass = Path.of(FilesUtils.class.getResource("FilesUtils.class").getPath());
         // Return the path to the root of the Tratto project (6 levels up from the current class)
         return absPathToCurrentClass.getParent().getParent().getParent().getParent().getParent().getParent();
     }
@@ -133,5 +140,32 @@ public class FileUtils {
         } catch (IOException e) {
             throw new Error("Error when trying to delete the directory " + dirPath, e);
         }
+    }
+
+    /**
+     * List the directories in the given path.
+     * @param path the path to list directories from
+     * @return the list of directories in the given path. An empty list if the path does not exist or is not a directory.
+     */
+    public static List<Path> listDirectories(Path path) {
+        if (!Files.exists(path) || !Files.isDirectory(path)) {
+            return new ArrayList<>();
+        }
+        try {
+            return Files.list(path).filter(Files::isDirectory).collect(Collectors.toList());
+        } catch (IOException e) {
+            log.error("Error when trying to list directories in path " + path, e);
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Check if the given path has a child directory with the given name.
+     * @param parent the parent path
+     * @param child the name of the child directory
+     * @return true if the parent path has a child directory with the given name, false otherwise.
+     */
+    public static boolean hasChildDirectory(Path parent, String child) {
+        return listDirectories(parent).stream().anyMatch(p -> p.getFileName().toString().equals(child));
     }
 }
