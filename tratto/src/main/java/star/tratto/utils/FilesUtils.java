@@ -151,8 +151,8 @@ public class FilesUtils {
         if (!Files.exists(path) || !Files.isDirectory(path)) {
             return new ArrayList<>();
         }
-        try {
-            return Files.list(path).filter(Files::isDirectory).collect(Collectors.toList());
+        try (Stream<Path> stream = Files.list(path)) {  // Ensure the stream is closed
+            return stream.filter(Files::isDirectory).collect(Collectors.toList());
         } catch (IOException e) {
             log.error("Error when trying to list directories in path " + path, e);
             return new ArrayList<>();

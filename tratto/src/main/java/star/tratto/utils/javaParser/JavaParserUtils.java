@@ -695,15 +695,18 @@ public class JavaParserUtils {
             if (exprType == CallableExprType.METHOD) {
                 // Try to resolve the method call expression to a method declaration
                 MethodCallExpr methodCallExpr = callExpr.asMethodCallExpr();
-                focalMethod = (MethodDeclaration) methodCallExpr.resolve().toAst().orElseThrow(() -> new UnsolvedSymbolException(methodCallExpr.getNameAsString()));
-                // Retrieve the method within the type declaration to avoid to lose the symbol solver functionality
-                for (MethodDeclaration m : (List<MethodDeclaration>) typeDeclaration.getMethods()) {
-                    if (m.getDeclarationAsString(true, true, true).equals(focalMethod.getDeclarationAsString(true, true, true))) {
-                        return m;
+                Node resolvedCallExpr = methodCallExpr.resolve().toAst().orElseThrow(() -> new UnsolvedSymbolException(methodCallExpr.getNameAsString()));
+                if (resolvedCallExpr instanceof MethodDeclaration) {
+                    focalMethod = (MethodDeclaration) resolvedCallExpr;
+                    // Retrieve the method within the type declaration to avoid to lose the symbol solver functionality
+                    for (MethodDeclaration m : (List<MethodDeclaration>) typeDeclaration.getMethods()) {
+                        if (m.getDeclarationAsString(true, true, true).equals(focalMethod.getDeclarationAsString(true, true, true))) {
+                            return m;
+                        }
                     }
+                    //logger.error("Resolved method {} not found in type declaration {}", focalMethod.getNameAsString(), typeDeclaration.getNameAsString());
+                    return focalMethod;
                 }
-                //logger.error("Resolved method {} not found in type declaration {}", focalMethod.getNameAsString(), typeDeclaration.getNameAsString());
-                return focalMethod;
             } else if (exprType == CallableExprType.CONSTRUCTOR) {
                 // Try to resolve the constructor call expression to a constructor declaration
                 ObjectCreationExpr constructorCallExpr = callExpr.asObjectCreationExpr();

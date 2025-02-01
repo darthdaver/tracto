@@ -42,6 +42,9 @@ import java.util.stream.Collectors;
  */
 public class TestUtils {
 
+    /** A unique id for placeholder variable names when inserting oracles. */
+    private static int variableID = 0;
+
     /** The logger for the class. */
     private static final Logger logger = LoggerFactory.getLogger(TestUtils.class);
 
@@ -307,7 +310,7 @@ public class TestUtils {
                         blockStatementsType,
                         recursionLevel + 1
                 );
-                // Update the split test case with the last generated from the do statement
+                // Update the split test case with the last generated from the block statement
                 splitTestCase = result.getValue0();
                 // Update the split test case body
                 splitTestCaseBody = splitTestCase.getBody().get();
@@ -343,6 +346,13 @@ public class TestUtils {
             } else if (statement.isExpressionStmt()) {
                 // Get the expression from the statement
                 Expression currentExpr = statement.asExpressionStmt().getExpression();
+                // Check if the expression is a variable declaration expression and extract the initializer, if present
+                if (currentExpr.isVariableDeclarationExpr()) {
+                    Optional<Expression> initializer = currentExpr.asVariableDeclarationExpr().getVariable(0).getInitializer();
+                    if (initializer.isPresent()) {
+                        currentExpr = initializer.get();
+                    }
+                }
                 // Check if the expression is an assertion
                 if (currentExpr.isMethodCallExpr() && JUnitAssertionType.isJUnitAssertion(currentExpr.asMethodCallExpr().getNameAsString())) {
                     // Add the statement to the flat body
@@ -367,7 +377,7 @@ public class TestUtils {
                                         blockStatementsType,
                                         recursionLevel + 1
                                 );
-                                // Update the split test case with the last generated from the do statement
+                                // Update the split test case with the last generated from the expression statement
                                 splitTestCase = result.getValue0();
                                 // Update the split test case body
                                 splitTestCaseBody = splitTestCase.getBody().get();
@@ -884,21 +894,43 @@ public class TestUtils {
             // Check if the last method call (fail method) has a comment. If so, use it as the fail message
             if (failMethodCall.getArguments().size() > 0) {
                 if (failMethodCall.getArguments().get(0).isStringLiteralExpr()) {
-                    failMessage = failMethodCall.getArguments().get(0).asStringLiteralExpr().asString();
+                    // The replaceAll method is used to escape double quotes in the fail message (not escaped by the asString() method)
+                    failMessage = failMethodCall.getArguments().get(0).asStringLiteralExpr().asString().replaceAll("\"", "\\\\\"");
                 }
+            }
+            // Check if the last method call is an assignment or a variable declaration
+            if (lastMethodCall.isAssignExpr()) {
+                lastMethodCall = lastMethodCall.asAssignExpr().getValue();
+            } else if (lastMethodCall.isVariableDeclarationExpr()) {
+                lastMethodCall = lastMethodCall.asVariableDeclarationExpr().getVariables().get(0).getInitializer().get();
+            }
+            LambdaExpr lambdaExpr;
+            if (lastMethodCall.isMethodCallExpr() && JUnitAssertionType.isJUnitAssertion(lastMethodCall.asMethodCallExpr().getNameAsString()) && lastMethodCall.asMethodCallExpr().getNameAsString().equals("assertThrows")) {
+                BlockStmt lambdaBody = new BlockStmt();
+                ThrowStmt throwStmt = new ThrowStmt(lastMethodCall);
+                lambdaBody.addStatement(throwStmt);
+                lambdaExpr = new LambdaExpr(new NodeList<>(), lambdaBody, true);
+            } else {
+                lambdaExpr = new LambdaExpr(new NodeList<>(), new ExpressionStmt(lastMethodCall), true);
             }
             // Create the assertThrows statement
             MethodCallExpr assertThrowsCall = new MethodCallExpr(JUnitAssertionType.ASSERT_THROWS.getAssertionMethodName());
             // Add the arguments to the assertThrows statement (exception class and last method call)
             NodeList<Expression> arguments = new NodeList<>();
             arguments.add(new ClassExpr(exceptionClass));
-            arguments.add(lastMethodCall);
+            arguments.add(lambdaExpr);
             if (!failMessage.isEmpty()) {
                 arguments.add(new StringLiteralExpr(failMessage));
             }
             assertThrowsCall.setArguments(arguments);
+            VariableDeclarator variableDeclarator = new VariableDeclarator(
+                    new ClassOrInterfaceType(null, exceptionClass.asString()),
+                    "e" + variableID++,
+                    assertThrowsCall
+            );
+            VariableDeclarationExpr variableDeclarationExpr = new VariableDeclarationExpr(variableDeclarator);
             // Create an expression statement for the assertThrows call
-            Statement assertStmt = new ExpressionStmt(assertThrowsCall);
+            Statement assertStmt = new ExpressionStmt(variableDeclarationExpr);
             return Optional.of(assertStmt);
         }
         return Optional.empty();
@@ -1484,7 +1516,7 @@ public class TestUtils {
      * @param repoSourcePath the root path of the repository where the type declaration is located
      * @return the list of related type declarations (extended and implemented classes) of the reference type declaration
      */
-    private static List<TypeDeclaration> getRelatedTypeDeclarations(TypeDeclaration referenceTypeDeclaration, Path repoSourcePath) {
+    private static List<TypeDeclaration> getRelatedTypeDeclarations(TypeDeclaration referenceTypeDeclaration, Path repoSourcePath, Set<String> visited) {
         // Define the list of related type declarations to return. Initially empty.
         List<TypeDeclaration> relatedTypeDeclarations = new ArrayList<>();
         // Define the list of extended and implemented types of the reference type declaration
@@ -1530,11 +1562,16 @@ public class TestUtils {
                 fqn = referenceTypePackage.getNameAsString().concat("." + extendedOrImplementedTypeName);
             }
 
-            if (fqn != null) {
-                Optional<TypeDeclaration> relatedTypeDeclaration = JavaParserUtils.retrieveTypeDeclarationFromFullyQualifiedName(fqn, repoSourcePath);
-                if (relatedTypeDeclaration.isPresent()) {
-                    relatedTypeDeclarations.add(relatedTypeDeclaration.get());
-                    relatedTypeDeclarations.addAll(getRelatedTypeDeclarations(relatedTypeDeclaration.get(), repoSourcePath));
+            if (fqn != null && !visited.contains(fqn)) {
+                visited.add(fqn);
+                try {
+                    Optional<TypeDeclaration> relatedTypeDeclaration = JavaParserUtils.retrieveTypeDeclarationFromFullyQualifiedName(fqn, repoSourcePath);
+                    if (relatedTypeDeclaration.isPresent()) {
+                        relatedTypeDeclarations.add(relatedTypeDeclaration.get());
+                        relatedTypeDeclarations.addAll(getRelatedTypeDeclarations(relatedTypeDeclaration.get(), repoSourcePath, visited));
+                    }
+                } catch (Exception e) {
+                    logger.error("Error retrieving related type declaration: " + fqn);
                 }
             }
         }
@@ -1663,7 +1700,7 @@ public class TestUtils {
                             }
                             // If the focal method is still not found, search it within the inherited methods of the focal class
                             if (invokedMethod == null) {
-                                List<TypeDeclaration> relatedTypeDeclarations = getRelatedTypeDeclarations(invokedClass, repoSourcePath);
+                                List<TypeDeclaration> relatedTypeDeclarations = getRelatedTypeDeclarations(invokedClass, repoSourcePath, new HashSet<>());
                                 relatedTypeDeclarations.add(0, invokedClass);
                                 for (TypeDeclaration relatedTypeDeclaration : relatedTypeDeclarations) {
                                     invokedClass = relatedTypeDeclaration;
