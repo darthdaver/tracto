@@ -7,7 +7,6 @@ output*/
 src/main/resources/tmp/
 src/main/resources/log4j2.properties
 src/main/java/star/tratto/preprocessing/TokensDataset.java
-src/main/java/star/tratto/lsp
 target/
 tmp/
 # Excel files:

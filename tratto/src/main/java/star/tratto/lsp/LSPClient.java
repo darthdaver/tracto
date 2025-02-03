@@ -9,7 +9,7 @@ import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.jsonrpc.messages.Message;
 import org.eclipse.lsp4j.services.LanguageServer;
-import star.tratto.utils.FileUtils;
+import star.tratto.utils.FilesUtils;
 
 import java.io.*;
 import java.net.URI;
@@ -46,7 +46,7 @@ public class LSPClient {
 
         ProcessBuilder processBuilder = new ProcessBuilder(command);
         // Create the directories to the data path if they do not exist
-        FileUtils.createDirectories(dataPath);
+        FilesUtils.createDirectories(dataPath);
         // Launch server
         this.process = processBuilder.start();
         InputStream inputStream = process.getInputStream();

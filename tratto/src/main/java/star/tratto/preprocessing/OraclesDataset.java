@@ -45,7 +45,10 @@ public class OraclesDataset {
         // Define list of oracles datapoints
         List<OracleDatapoint> oraclesDatapoints = new ArrayList<>();
         // Generate directories to output path if they do not exist
-        FilesUtils.createDirectories(outputPath);
+        Path outputDatasetPath = outputPath.resolve("dataset");
+        Path outputStatisticsPath = outputPath.resolve("statistics");
+        FilesUtils.createDirectories(outputDatasetPath);
+        FilesUtils.createDirectories(outputStatisticsPath);
         // Log step 1
         logger.info("1. Repository classes analysis...");
         // Setup the repository root path for JavaParser
@@ -97,7 +100,7 @@ public class OraclesDataset {
         // Iterate over the original test class files and split the test cases at any occurrence of an assertion
         for (Path testClassPath : testFilePaths) {
             logger.info("Splitting test class: {}", testClassPath.toString().replace(repoRootPath.toString(), ""));
-            Path splitTestClassPath = TestUtils.splitTest(repoRootPath, testClassPath, Paths.get(outputPath.toString(), "test-split"));
+            Path splitTestClassPath = TestUtils.splitTest(repoRootPath, testClassPath, Paths.get(outputPath.toString(), "test-split", projectIdentifier));
             splittedTestFilePaths.add(new Pair<>(splitTestClassPath, Optional.ofNullable(mappedTests.get(testClassPath))));
         }
         // Update java parser considering the new split files generated within the repository
@@ -146,7 +149,7 @@ public class OraclesDataset {
             // Check if adding this data point exceeds the max file size
             if (currentChunkSize + dataPointSize > maxFileSizeBytes && !currentChunk.isEmpty()) {
                 // Write current chunk to a file
-                writeChunkToFile(currentChunk, fileCounter++, outputPath, projectIdentifier, objectMapper);
+                writeChunkToFile(currentChunk, fileCounter++, outputDatasetPath.resolve(projectIdentifier), projectIdentifier, objectMapper);
                 // Start a new chunk
                 currentChunk = new ArrayList<>();
                 currentChunkSize = 0;
@@ -157,15 +160,15 @@ public class OraclesDataset {
         }
         // Write the last chunk if any
         if (!currentChunk.isEmpty()) {
-            writeChunkToFile(currentChunk, fileCounter++, outputPath, projectIdentifier, objectMapper);
+            writeChunkToFile(currentChunk, fileCounter++, outputDatasetPath.resolve(projectIdentifier), projectIdentifier, objectMapper);
         }
         // Store statistics
         statistics.put("oracleDatapoints", oraclesDatapoints.size());
         String statisticsJSON = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(statistics);
         String errorsStatisticsJSON = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(errorsStatistics);
         // Write statistics to file
-        FilesUtils.writeJSONFile(Paths.get(outputPath.toString(), String.format("statistics-%s.json", projectIdentifier)), statisticsJSON);
-        FilesUtils.writeJSONFile(Paths.get(outputPath.toString(), String.format("errors-statistics-%s.json", projectIdentifier)), errorsStatisticsJSON);
+        FilesUtils.writeJSONFile(Paths.get(outputDatasetPath.resolve(projectIdentifier).toString(), String.format("statistics-%s.json", projectIdentifier)), statisticsJSON);
+        FilesUtils.writeJSONFile(Paths.get(outputStatisticsPath.resolve(projectIdentifier).toString(), String.format("errors-statistics-%s.json", projectIdentifier)), errorsStatisticsJSON);
     }
 
     /**
