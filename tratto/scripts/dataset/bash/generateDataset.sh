@@ -17,10 +17,10 @@ export PATH="$GRADLE_BIN:$PATH"
 export PATH="$ANT_BIN:$PATH"
 
 M2T_REPO_LIST=${1:-$M2T_REPO_LIST}
-maven_projects_file="${main_folder}/maven_projects.csv"
-gradle_projects_file="${main_folder}/gradle_projects.csv"
-ant_projects_file="${main_folder}/ant_projects.csv"
-unprocessed_projects_file="${main_folder}/unprocessed_projects.csv"
+maven_projects_file="${ROOT_DIR}/maven_projects.csv"
+gradle_projects_file="${ROOT_DIR}/gradle_projects.csv"
+ant_projects_file="${ROOT_DIR}/ant_projects.csv"
+unprocessed_projects_file="${ROOT_DIR}/unprocessed_projects.csv"
 
 if [ ! -e "${TRATTO_JAR}" ]; then
   cd "${ROOT_DIR}"
@@ -87,9 +87,9 @@ while IFS=, read -r repo_id repo_url commit_sha; do
       echo "Cloning project: ${repo_id}."
       git clone "${repo_url}" "${GITHUB_REPOS_TMP_DIR}/${repo_id}"|| echo "Error cloning repository: ${repo_url}" >&2
       # Checkout specific commit version of the project
-      echo "Checkout commit version: ${repo_id} - ${commit_sha}." echo "Error checking out commit: ${commit_sha} in repo: ${repo_id}" >&2
+      echo "Checkout commit version: ${repo_id} - ${commit_sha}."
       cd "${GITHUB_REPOS_TMP_DIR}/${repo_id}"
-      git checkout "${commit_sha}"
+      git checkout "${commit_sha}" || echo "Error checking out commit: ${commit_sha} in repo: ${repo_id}" >&2
     fi
     project_type=$(scan_projects "${GITHUB_REPOS_TMP_DIR}/${repo_id}")
     if [ "$project_type" == "maven" ]; then
