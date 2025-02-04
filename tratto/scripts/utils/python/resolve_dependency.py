@@ -52,7 +52,7 @@ def resolve_property_in_dependency(dep_attr_text, properties_dict, pom_root, pom
                 else:
                     raise Exception(f"Parent {parent_id} not found in the dictionary")
             except Exception as e:
-                Exception(f"Error when processing parent of {properties_dict['project.groupId']}:{properties_dict['project.artifactId']} in {pom_id}")
+                raise Exception(f"Error when processing parent of {properties_dict['project.groupId']}:{properties_dict['project.artifactId']} in {pom_id}")
     return dep_attr_text
 
 def find_dependency(dependencies, group_id, artifact_id):
@@ -87,7 +87,7 @@ def resolve_dependency_version(group_id, artifact_id, raw_version, properties_di
             else:
                 raise Exception(f"Parent {parent_id} not found in the dictionary")
         except Exception as e:
-            Exception(f"Error when processing parent of dependency {group_id}:{artifact_id} in {pom_id}")
+            raise Exception(f"Error when processing parent of dependency {group_id}:{artifact_id} in {pom_id}")
 
 def retrieve_pom_files(root_directory):
     pom_files = []
@@ -119,7 +119,8 @@ def get_properties_as_dict(pom_xml):
     }
     if properties is not None:
         for property in properties:
-            properties_dict[property.tag.replace("{http://maven.apache.org/POM/4.0.0}", "")] = property.text.strip()
+            if property.text is not None:
+                properties_dict[property.tag.replace("{http://maven.apache.org/POM/4.0.0}", "")] = property.text.strip()
     return properties_dict
 
 def resolve_pom_dependencies(pom_id, pom_xml, pom_xml_dict):

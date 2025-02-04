@@ -44,5 +44,5 @@ public record CallableTratto(
         /* The body of the method or constructor. */
         String body,
         /* The list of methods invoked within the method or constructor. It can be null. */
-        List<CallableTratto> invokedMethod
+        List<CallableTratto> invokedMethods
 ) {}

@@ -19,7 +19,7 @@ public class CallableBuilder {
     private TypeTratto returnType;
     private String javadoc;
     private String body;
-    private List<CallableTratto> invokedMethod;
+    private List<CallableTratto> invokedMethods;
 
     public CallableTratto build() {
         return new CallableTratto(
@@ -32,7 +32,7 @@ public class CallableBuilder {
                 this.returnType,
                 this.javadoc,
                 this.body,
-                this.invokedMethod
+                this.invokedMethods
         );
     }
 
@@ -130,9 +130,9 @@ public class CallableBuilder {
     /**
      * Set the list of methods invoked within the method. it can be null.
      *
-     * @param invokedMethod the list of methods invoked within the method. It can be null
+     * @param invokedMethods the list of methods invoked within the method. It can be null
      */
-    public void setInvokedMethods(List<CallableTratto> invokedMethod) {
-        this.invokedMethod = invokedMethod;
+    public void setInvokedMethods(List<CallableTratto> invokedMethods) {
+        this.invokedMethods = invokedMethods;
     }
 }
