@@ -67,7 +67,7 @@ scan_projects() {
         echo "maven"
     elif [ -f "$dir/build.gradle" ] || [ -f "$dir/build.gradle.kts" ] || [ -f "settings.gradle" ]; then
         echo "gradle"
-    elif [ -f "$dir/build.xml" ]; then
+    elif [ -f "$dir/build.xml" ] || [ -f "$dir/build/build.xml" ]; then
         echo "ant"
     else
         echo "unprocessed"

@@ -51,8 +51,10 @@ if [[ -d "$main_folder" ]]; then
           pom_dir=$(dirname $pom_path)
           output_dir="$(realpath "$pom_dir")/tratto_libs"
           decompiled_dir="$output_dir/decompiled"
-          dependencies=$(echo "$project_poms_analysis" | jq -r --arg key "$pom_path" '.[$key][0][]')
-          repositories=$(echo "$project_poms_analysis" | jq -r --arg key "$pom_path" '.[$key][1][]')
+          # Convert dependencies to an array
+          IFS=$'\n' read -r -d '' -a dependencies <<< $(echo "$project_poms_analysis" | jq -r --arg key "$pom_path" '.[$key][0][]')
+          IFS=$'\n' read -r -d '' -a repositories <<< $(echo "$project_poms_analysis" | jq -r --arg key "$pom_path" '.[$key][1][]')
+          repositories=("$maven_default_repo" "${repositories[@]}")
           local_failed_file="${pom_dir}/local_failed_downloads.txt"
           local_success_file="${pom_dir}/local_successful_downloads.txt"
           if [ -f "$local_failed_file" ]; then
@@ -67,75 +69,77 @@ if [[ -d "$main_folder" ]]; then
               rm -r "$output_dir"
           fi
           mkdir -p "$decompiled_dir"
-          echo "$dependencies" | while read -r dep; do
-              IFS=':' read -r group_id artifact_id version <<< "$dep"
-              for repo in repositories; do
-                echo "Trying to download source JAR from: $repo"
-                if mvn dependency:get \
-                  -Dartifact="$group_id:$artifact_id:$version:jar:sources" \
-                  -DoutputDirectory="$output_dir" \
-                  -DremoteRepositories="$repo" \
-                  -Dpackaging=jar \
-                  -Doverwrite=true;
-                then
-                  echo "Downloaded: $group_id:$artifact_id:$version from $repo"
-                  if [ ! -d "$output_dir/sources" ]; then
-                      mkdir "$output_dir/sources"
-                  fi
-                  mvn dependency:copy -Dartifact="$group_id:$artifact_id:$version:jar:sources" -DoutputDirectory="$output_dir/sources" -Dclassifier=sources -Doverwrite=true
-                  echo "$group_id:$artifact_id:$version,sources" >> "$local_success_file"
-                  echo "$pom_dir,$group_id:$artifact_id:$version,sources" >> "$global_success_file"
-                else
-                    echo "Trying to download classes JAR from: $repo"
-                    if mvn dependency:get \
-                      -Dartifact="$group_id:$artifact_id:$version" \
-                      -DoutputDirectory="$output_dir/classes" \
-                      -DremoteRepositories="$repo" \
-                      -Doverwrite=true;
-                    then
-                      echo "Downloaded: $group_id:$artifact_id:$version from $repo"
-                      if [ ! -d "$output_dir/classes" ]; then
-                          mkdir "$output_dir/classes"
-                      fi
-                      mvn dependency:copy -Dartifact="$group_id:$artifact_id:$version" -DoutputDirectory="$output_dir/classes" -Doverwrite=true
-                      echo "$group_id:$artifact_id:$version,classes" >> "$local_success_file"
-                      echo "$pom_dir,$group_id:$artifact_id:$version,classes" >> "$global_success_file"
-                    else
-                        echo "$group_id:$artifact_id:$version,download-failed" >> "$local_failed_file"
-                        echo "$pom_dir,$group_id:$artifact_id:$version,download-failed" >> "$global_failed_file"
-                        echo "Error: Failed to download both source and classes JAR for $group_id:$artifact_id:$version"
+          if [ ${#dependencies[@]} -gt 0 ]; then
+            echo "$dependencies" | while read -r dep; do
+                IFS=':' read -r group_id artifact_id version <<< "$dep"
+                for repo in "${repositories[@]}"; do
+                  echo "Trying to download source JAR of '$group_id:$artifact_id:$version' from '$repo'"
+                  if mvn dependency:get \
+                    -Dartifact="$group_id:$artifact_id:$version:jar:sources" \
+                    -DoutputDirectory="$output_dir" \
+                    -DremoteRepositories="$repo" \
+                    -Dpackaging=jar \
+                    -Doverwrite=true;
+                  then
+                    echo "Downloaded: $group_id:$artifact_id:$version from $repo"
+                    if [ ! -d "$output_dir/sources" ]; then
+                        mkdir "$output_dir/sources"
                     fi
+                    mvn dependency:copy -Dartifact="$group_id:$artifact_id:$version:jar:sources" -DoutputDirectory="$output_dir/sources" -Dclassifier=sources -Doverwrite=true
+                    echo "$group_id:$artifact_id:$version,sources" >> "$local_success_file"
+                    echo "$pom_dir,$group_id:$artifact_id:$version,sources" >> "$global_success_file"
+                  else
+                      echo "Trying to download classes JAR of '$group_id:$artifact_id:$version' from '$repo'"
+                      if mvn dependency:get \
+                        -Dartifact="$group_id:$artifact_id:$version" \
+                        -DoutputDirectory="$output_dir/classes" \
+                        -DremoteRepositories="$repo" \
+                        -Doverwrite=true;
+                      then
+                        echo "Downloaded: $group_id:$artifact_id:$version from $repo"
+                        if [ ! -d "$output_dir/classes" ]; then
+                            mkdir "$output_dir/classes"
+                        fi
+                        mvn dependency:copy -Dartifact="$group_id:$artifact_id:$version" -DoutputDirectory="$output_dir/classes" -Doverwrite=true
+                        echo "$group_id:$artifact_id:$version,classes" >> "$local_success_file"
+                        echo "$pom_dir,$group_id:$artifact_id:$version,classes" >> "$global_success_file"
+                      else
+                          echo "$group_id:$artifact_id:$version,download-failed" >> "$local_failed_file"
+                          echo "$pom_dir,$group_id:$artifact_id:$version,download-failed" >> "$global_failed_file"
+                          echo "Error: Failed to download both source and classes JAR for $group_id:$artifact_id:$version"
+                      fi
+                  fi
+                done
+            done
+            # Iterate over each ZIP file in the source directory
+            for jar_file in "$output_dir/sources"/*.jar; do
+                if [[ -f "$jar_file" ]]; then
+                  # Extract the base name of the ZIP file (without extension)
+                  base_name=$(basename "$jar_file" .jar)
+                  # Create a destination folder for the extracted files
+                  destination_folder="$decompiled_dir/$base_name"
+                  mkdir -p "$destination_folder"
+                  # Unzip the file into the destination folder
+                  unzip -oq "$jar_file" -d "$destination_folder"
+                  echo "Unzipped $jar_file to $destination_folder"
                 fi
-              done
-          done
-          # Iterate over each ZIP file in the source directory
-          for jar_file in "$output_dir/sources"/*.jar; do
-              if [[ -f "$jar_file" ]]; then
-                # Extract the base name of the ZIP file (without extension)
-                base_name=$(basename "$jar_file" .jar)
-                # Create a destination folder for the extracted files
-                destination_folder="$decompiled_dir/$base_name"
-                mkdir -p "$destination_folder"
-                # Unzip the file into the destination folder
-                unzip -oq "$jar_file" -d "$destination_folder"
-                echo "Unzipped $jar_file to $destination_folder"
-              fi
-          done
-          # Iterate over each ZIP file in the classes directory
-          for jar_file in "$output_dir/classes"/*.jar; do
-              if [[ -f "$jar_file" ]]; then
-                # Extract the base name of the ZIP file (without extension)
-                base_name=$(basename "$jar_file" .jar)
-                # Create a destination folder for the extracted files
-                destination_folder="$decompiled_dir/$base_name"
-                mkdir -p "$destination_folder"
-                java -jar $FERNFLOWER_JAR $jar_file $destination_folder
-                # Unzip the file into the destination folder
-                unzip -oq "$destination_folder/$base_name.jar" -d "$destination_folder"
-                rm "$destination_folder/$base_name.jar"
-                echo "Unzipped $jar_file to $destination_folder"
-              fi
-          done
+            done
+            # Iterate over each ZIP file in the classes directory
+            for jar_file in "$output_dir/classes"/*.jar; do
+                if [[ -f "$jar_file" ]]; then
+                  # Extract the base name of the ZIP file (without extension)
+                  base_name=$(basename "$jar_file" .jar)
+                  # Create a destination folder for the extracted files
+                  destination_folder="$decompiled_dir/$base_name"
+                  mkdir -p "$destination_folder"
+                  java -jar $FERNFLOWER_JAR $jar_file $destination_folder
+                  # Unzip the file into the destination folder
+                  unzip -oq "$destination_folder/$base_name.jar" -d "$destination_folder"
+                  rm "$destination_folder/$base_name.jar"
+                  echo "Unzipped $jar_file to $destination_folder"
+                fi
+            done
+          fi
       done
       exit 0
     elif check_gradle; then

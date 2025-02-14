@@ -2,11 +2,9 @@ package star.tratto.preprocessing;
 
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.javaparser.JavaParser;
 import org.javatuples.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import star.tratto.data.TestCaseParsingType;
 import star.tratto.data.TrattoNamingConvention;
 import star.tratto.preprocessing.components.OracleDatapoint;
 import star.tratto.preprocessing.utils.JavaFileCollector;
@@ -115,13 +113,13 @@ public class OraclesDataset {
             Optional<Path> sourceFilePath = splitTestClassPathsPair.getValue1();
             logger.info("Processing split test class {} to generate oracles datapoints", splitTestClassPath.toString().replace(repoRootPath.toString(), ""));
             if (sourceFilePath.isPresent()) {
-                 // Debugging
-                  // if (splitTestClassPath.toString().replace(repoRootPath.toString(), "").contains("SynL1COlciSceneTransformProviderTestTrattoSplit")) {
-                  //    Pair<List<OracleDatapoint>, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(repoRootPath, splitTestClassPath, sourceFilePath.get());
-                  //    List<OracleDatapoint> splitTestClassOraclesDatapoints = processedSplitTestClassResult.getValue0();
-                  //    HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();
-                  //    oraclesDatapoints.addAll(splitTestClassOraclesDatapoints);
-                  // }
+                // Debugging
+                // if (splitTestClassPath.toString().replace(repoRootPath.toString(), "").contains("SynL1COlciSceneTransformProviderTestTrattoSplit")) {
+                //    Pair<List<OracleDatapoint>, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(repoRootPath, splitTestClassPath, sourceFilePath.get());
+                //    List<OracleDatapoint> splitTestClassOraclesDatapoints = processedSplitTestClassResult.getValue0();
+                //    HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();
+                //    oraclesDatapoints.addAll(splitTestClassOraclesDatapoints);
+                // }
                 try {
                     Pair<List<OracleDatapoint>, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(repoRootPath, splitTestClassPath, sourceFilePath.get());
                     List<OracleDatapoint> splitTestClassOraclesDatapoints = processedSplitTestClassResult.getValue0();
@@ -222,7 +220,7 @@ public class OraclesDataset {
 
     private static void writeChunkToFile(List<OracleDatapoint> chunk, int fileCounter, Path outputPath, String projectIdentifier, ObjectMapper objectMapper) throws IOException {
         Path outputFile = Paths.get(outputPath.toString(), String.format("oracles-datapoints-%s-%d.json", projectIdentifier, fileCounter));
-
+        FilesUtils.createFile(outputFile);
         try (BufferedWriter writer = Files.newBufferedWriter(outputFile, StandardCharsets.UTF_8);
              JsonGenerator jsonGenerator = objectMapper.getFactory().createGenerator(writer)) {
             objectMapper.writeValue(jsonGenerator, chunk);
