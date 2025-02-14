@@ -1,6 +1,5 @@
 package star.tratto.preprocessing.utils;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.javaparser.ast.*;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.*;
@@ -26,7 +25,6 @@ import star.tratto.utils.javaParser.visitors.statements.AssertStmtVisitor;
 import star.tratto.utils.javaParser.visitors.expressions.MethodCallExprVisitor;
 import star.tratto.utils.javaParser.visitors.statements.helper.StmtVisitorHelper;
 
-import javax.swing.text.html.Option;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -981,7 +979,7 @@ public class TestUtils {
     }
 
     /**
-     * Process the test class of a given repository to generate all the oracles datapoints {@link OracleDatapoint}
+     * Process the test class of a given repository to generate all the oracles datapoints {@link TestClassOracleDatapoints}
      * from its test cases.
      *
      * @param repoRootPath the path to the repository to process
@@ -991,12 +989,14 @@ public class TestUtils {
      * the logs of the errors encountered when processing each test cases (which invoked methods cannot be processed
      * in each test case of the test class)
      */
-    public static Pair<List<OracleDatapoint>, HashMap<String, HashMap<String, List<String>>>> processSplitTestClass(Path repoRootPath, Path testFilePath, Path sourceFilePath) {
+    public static Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processSplitTestClass(Path repoRootPath, Path testFilePath, Path sourceFilePath) {
         // Create a list to store the oracle datapoints
         List<OracleDatapoint> oracleDatapoints = new ArrayList<>();
         // Create a map to store the processing errors of the test cases (which invoked methods cannot be processed in
         // each test case of the test class)
         HashMap<String, HashMap<String, List<String>>> testsProcessingErrors = new HashMap<>();
+        // Instantiate a TestClassOracleDatapoints builder
+        TestClassOracleDatapointsBuilder testClassOracleDatapointsBuilder = new TestClassOracleDatapointsBuilder();
         // Process the test class and generate the corresponding oracles datapoints
         try {
             // Parse the test class and focal classes
@@ -1019,22 +1019,27 @@ public class TestUtils {
             TestClassTratto testClassTratto = processTestClass(testClass, testFilePath, distributedMethods);
             // Process focal class
             ClassTratto focalClassTratto = processFocalClass(focalClass, sourceFilePath);
+            testClassOracleDatapointsBuilder.setTestClass(testClassTratto);
+            testClassOracleDatapointsBuilder.setFocalClass(focalClassTratto);
             // Process test cases
             for (MethodDeclaration testCase : testCases) {
                 Pair<CallableTratto,List<CallableTratto>> invokedMethodsPair = processInvokedMethods(repoSourcePath, focalClass, testClass, testCase, testsProcessingErrors);
+                // TODO: Focal method excluded from the analysis for the moment
                 CallableTratto focalMethodTratto = invokedMethodsPair.getValue0();
                 List<CallableTratto> invokedMethods = invokedMethodsPair.getValue1();
                 CallableTratto testCaseTratto = processCallable(testClass, testCase, invokedMethods);
                 // TODO: Check id the last statement in the test case is an assertion or not
                 String target = JavaParserUtils.getLastStatementInMethodDeclaration(testCase).toString();
-                oracleDatapoints.add(new OracleDatapoint(testCaseTratto, focalMethodTratto, testClassTratto, focalClassTratto, target));
+                oracleDatapoints.add(new OracleDatapoint(testCaseTratto, target));
             }
+            // Set the list of oracle datapoints generated from the test cases of the test class
+            testClassOracleDatapointsBuilder.setDatapoints(oracleDatapoints);
         } catch (IOException e) {
             logger.error("Error reading file: " + testFilePath);
         } catch (IllegalStateException e) {
             logger.error(e.getMessage());
         }
-        return new Pair<>(oracleDatapoints, testsProcessingErrors);
+        return new Pair<>(testClassOracleDatapointsBuilder.build(), testsProcessingErrors);
     }
 
     /**

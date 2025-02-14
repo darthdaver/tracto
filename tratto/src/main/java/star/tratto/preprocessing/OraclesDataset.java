@@ -3,10 +3,11 @@ package star.tratto.preprocessing;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.javatuples.Pair;
+import org.javatuples.Quartet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import star.tratto.data.TrattoNamingConvention;
-import star.tratto.preprocessing.components.OracleDatapoint;
+import star.tratto.preprocessing.components.TestClassOracleDatapoints;
 import star.tratto.preprocessing.utils.JavaFileCollector;
 import star.tratto.preprocessing.utils.TestUtils;
 import star.tratto.utils.FilesUtils;
@@ -41,7 +42,7 @@ public class OraclesDataset {
         // Define statistics hash map
         HashMap<String, Integer> statistics = new HashMap<>();
         // Define list of oracles datapoints
-        List<OracleDatapoint> oraclesDatapoints = new ArrayList<>();
+        List<TestClassOracleDatapoints> testClassesOracleDatapoints = new ArrayList<>();
         // Generate directories to output path if they do not exist
         Path outputDatasetPath = outputPath.resolve("dataset");
         Path outputStatisticsPath = outputPath.resolve("statistics");
@@ -105,7 +106,7 @@ public class OraclesDataset {
         JavaParserUtils.setRepoJavaParser(repoRootPath, classpath);
         // Convert statistics to JSON
         ObjectMapper objectMapper = new ObjectMapper();
-        int counter = 0;
+        int oraclesDatapoints = 0;
         HashMap<String,HashMap<String, HashMap<String, List<String>>>> errorsStatistics = new HashMap<>();
         // Iterate over the original test class files and split the test cases at any occurrence of an assertion
         for (Pair<Path, Optional<Path>> splitTestClassPathsPair : splittedTestFilePaths) {
@@ -115,16 +116,18 @@ public class OraclesDataset {
             if (sourceFilePath.isPresent()) {
                 // Debugging
                 // if (splitTestClassPath.toString().replace(repoRootPath.toString(), "").contains("SynL1COlciSceneTransformProviderTestTrattoSplit")) {
-                //    Pair<List<OracleDatapoint>, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(repoRootPath, splitTestClassPath, sourceFilePath.get());
-                //    List<OracleDatapoint> splitTestClassOraclesDatapoints = processedSplitTestClassResult.getValue0();
+                //    Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(repoRootPath, splitTestClassPath, sourceFilePath.get());
+                //    TestClassOracleDatapoints splitTestClasstestClassesOracleDatapoints = processedSplitTestClassResult.getValue0();
                 //    HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();
-                //    oraclesDatapoints.addAll(splitTestClassOraclesDatapoints);
+                //    oraclesDatapoints += splitTestClasstestClassesOracleDatapoints.datapoints().size();
+                //    testClassesOracleDatapoints.add(splitTestClasstestClassesOracleDatapoints);
                 // }
                 try {
-                    Pair<List<OracleDatapoint>, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(repoRootPath, splitTestClassPath, sourceFilePath.get());
-                    List<OracleDatapoint> splitTestClassOraclesDatapoints = processedSplitTestClassResult.getValue0();
+                    Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(repoRootPath, splitTestClassPath, sourceFilePath.get());
+                    TestClassOracleDatapoints splitTestClasstestClassesOracleDatapoints = processedSplitTestClassResult.getValue0();
                     HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();
-                    oraclesDatapoints.addAll(splitTestClassOraclesDatapoints);
+                    testClassesOracleDatapoints.add(splitTestClasstestClassesOracleDatapoints);
+                    oraclesDatapoints += splitTestClasstestClassesOracleDatapoints.datapoints().size();
                     errorsStatistics.put(splitTestClassPath.toString().replace(repoRootPath.toString(), ""), splitTestClassErrorsStatistics);
                 } catch (Exception e) {
                     logger.error("Error while processing split test class: {}", splitTestClassPath.toString().replace(repoRootPath.toString(), ""));
@@ -134,13 +137,14 @@ public class OraclesDataset {
         }
         // TODO: Log statistics
         // Log info data
-        logger.info("Oracle datapoints generated: {}", oraclesDatapoints.size());
+        logger.info("Test classes processed: {}", testClassesOracleDatapoints.size());
+        logger.info("Oracles datapoints generated: {}", oraclesDatapoints);
         int maxFileSizeBytes = 50 * 1024 * 1024; // 50 MB
         int fileCounter = 0;
-        List<OracleDatapoint> currentChunk = new ArrayList<>();
+        List<TestClassOracleDatapoints> currentChunk = new ArrayList<>();
         long currentChunkSize = 0;
 
-        for (OracleDatapoint dataPoint : oraclesDatapoints) {
+        for (TestClassOracleDatapoints dataPoint : testClassesOracleDatapoints) {
             // Convert individual data points to JSON to estimate their size
             String dataPointJSON = objectMapper.writeValueAsString(dataPoint);
             long dataPointSize = dataPointJSON.getBytes(StandardCharsets.UTF_8).length;
@@ -161,7 +165,7 @@ public class OraclesDataset {
             writeChunkToFile(currentChunk, fileCounter++, outputDatasetPath.resolve(projectIdentifier), projectIdentifier, objectMapper);
         }
         // Store statistics
-        statistics.put("oracleDatapoints", oraclesDatapoints.size());
+        statistics.put("oracleDatapoints", testClassesOracleDatapoints.size());
         String statisticsJSON = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(statistics);
         String errorsStatisticsJSON = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(errorsStatistics);
         // Write statistics to file
@@ -218,7 +222,7 @@ public class OraclesDataset {
         return excludedClasses;
     }
 
-    private static void writeChunkToFile(List<OracleDatapoint> chunk, int fileCounter, Path outputPath, String projectIdentifier, ObjectMapper objectMapper) throws IOException {
+    private static void writeChunkToFile(List<TestClassOracleDatapoints> chunk, int fileCounter, Path outputPath, String projectIdentifier, ObjectMapper objectMapper) throws IOException {
         Path outputFile = Paths.get(outputPath.toString(), String.format("oracles-datapoints-%s-%d.json", projectIdentifier, fileCounter));
         FilesUtils.createFile(outputFile);
         try (BufferedWriter writer = Files.newBufferedWriter(outputFile, StandardCharsets.UTF_8);
