@@ -79,6 +79,7 @@ if [[ -d "$main_folder" ]]; then
                     -DoutputDirectory="$output_dir" \
                     -DremoteRepositories="$repo" \
                     -Dpackaging=jar \
+                    -Dmaven.artifact.threads=1 \
                     -Doverwrite=true;
                   then
                     echo "Downloaded: $group_id:$artifact_id:$version from $repo"
@@ -94,6 +95,7 @@ if [[ -d "$main_folder" ]]; then
                         -Dartifact="$group_id:$artifact_id:$version" \
                         -DoutputDirectory="$output_dir/classes" \
                         -DremoteRepositories="$repo" \
+                        -Dmaven.artifact.threads=1 \
                         -Doverwrite=true;
                       then
                         echo "Downloaded: $group_id:$artifact_id:$version from $repo"

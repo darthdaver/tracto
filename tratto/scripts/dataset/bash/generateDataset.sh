@@ -99,12 +99,6 @@ while IFS=, read -r repo_id repo_url commit_sha; do
         # Setup dependencies
         bash "${UTILS_DIR}/resolve_dependencies.sh" "${GITHUB_REPOS_TMP_DIR}/${repo_id}"
       fi
-      cd "$ROOT_DIR"
-      # Setup java libraries paths
-      classpath="${LIB_DIR}/java8:${LIB_DIR}/java11:${LIB_DIR}/java17"
-      # Generate Oracle dataset
-      #sdk use java $JAVA17
-      #java -jar "${TRATTO_JAR}" "oracles-dataset" "${GITHUB_REPOS_TMP_DIR}/${repo_id}" "${OUTPUT_DIR}/${repo_id}" "${classpath}"
     elif [ "$project_type" == "gradle" ]; then
       echo "Gradle project detected"
       echo "${repo_id},${repo_url},${commit_sha}" >> "$gradle_projects_file"
@@ -115,4 +109,10 @@ while IFS=, read -r repo_id repo_url commit_sha; do
       echo "Unprocessed project"
       echo "${repo_id},${repo_url},${commit_sha}" >> "$unprocessed_projects_file"
     fi
+    cd "$ROOT_DIR"
+    # Setup java libraries paths
+    classpath="${LIB_DIR}/java8:${LIB_DIR}/java11:${LIB_DIR}/java17"
+    # Generate Oracle dataset
+    sdk use java $JAVA17
+    java -jar "${TRATTO_JAR}" "oracles-dataset" "${GITHUB_REPOS_TMP_DIR}/${repo_id}" "${OUTPUT_DIR}" "${ROOT_DIR}"
 done < "$M2T_REPO_LIST"
