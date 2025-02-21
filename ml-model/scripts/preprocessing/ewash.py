@@ -3,6 +3,9 @@ import sys
 import json
 import csv
 import logging
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
+
 from src.preprocessing.EWash import EWash
 
 # Setup the logger
@@ -63,7 +66,8 @@ if __name__ == '__main__':
         # Read the JSON file and load the data
         with open(file_path, 'r') as json_file:
             test_classes_datapoints = json.load(json_file)
-        output_file_path = os.path.join(output_path, filename.replace(".json", ".csv"))
+        output_file_path = os.path.join(output_path, os.path.basename(filename).replace(".json", ".csv"))
+        print(output_file_path)
         # Open the CSV file for writing the dataset
         with open(output_file_path, 'w', newline='') as csv_file:
             writer = csv.writer(csv_file)
@@ -94,6 +98,6 @@ if __name__ == '__main__':
                     # Update stats
                     update_stats(stats, test_class['identifier'], test_prefix['signature'], tgt, exceeded, num_tokens)
         # Save statistics
-        with open(os.path.join(output_path, filename.replace(".json", "_stats.json")), 'w') as stats_file:
+        with open(os.path.join(output_path, os.path.basename(filename).replace(".json", "_stats.json")), 'w') as stats_file:
             json.dump(stats, stats_file)
     logger.info(f"Processing completed.")

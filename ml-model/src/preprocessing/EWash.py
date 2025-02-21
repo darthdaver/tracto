@@ -1,14 +1,16 @@
 import os
-import sys
 import json
-import csv
 import logging
 from transformers import AutoTokenizer
+
+logs_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "logs")
+if not os.path.exists(logs_path):
+    os.makedirs(logs_path)
 
 # Setup the logger
 logger = logging.getLogger("E-WASH")
 logging.basicConfig(
-    filename=os.path.join(os.path.dirname(os.path.abspath(__file__)),"ewash-oracles.log"),
+    filename=os.path.join(logs_path, "ewash.log"),
     level=logging.INFO,
     format="[%(levelname)s] | %(name)s] | %(message)s"
 )
@@ -54,7 +56,7 @@ class EWash:
         """
         logger.info("Custom path to configuration file not provided. Loading default configuration file for the E-WASH approach.")
         # Default path to the configuration file for the E-WASH approach
-        path = os.path.join(os.path.abspath(os.path.dirname(__file__)), '..', 'resources', 'e-wash_config.json')
+        path = os.path.join(os.path.abspath(os.path.dirname(__file__)), '..', 'resources', 'ewash_config.json')
         # Load the configuration file for the E-WASH approach
         with open(path, 'r') as config_file:
             ewash_config = json.load(config_file)
