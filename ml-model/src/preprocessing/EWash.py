@@ -43,8 +43,8 @@ class EWash:
         :param tgt: the target oracle
         :param config: the configuration object
         """
-        self.ewash_dict = self.initialize_ewash(tp, tc, fc, tgt)
         self.ewash_config = self.load_default_ewash_config() if not config else config
+        self.ewash_dict = self.initialize_ewash(tp, tc, fc, tgt)
         self.tokenizer = AutoTokenizer.from_pretrained(self.ewash_config['tokenizer'])
 
     def load_default_ewash_config(self):
@@ -78,7 +78,10 @@ class EWash:
         :param tuple: the tuple containing the information (javadoc, signature, body) about the method or field
         :return: the string containing the information about the method or field
         """
-        return f"{tuple[0]}{tuple[1]}{tuple[2]}"
+        javadoc = tuple[0] + "\n" if len(tuple[0]) > 0 else ""
+        signature = tuple[1]
+        body = tuple[2]
+        return f"{javadoc}{signature}{body}"
 
     @staticmethod
     def tuples_info_2_str(tuples):
@@ -112,7 +115,8 @@ class EWash:
         exceeded_limit = False
         # Iterate over the elements and add them sequentially to the input
         for i, el in enumerate(original_elements):
-            info_counter  = self.count_tokens(el[info_type])
+            tuple = tupled_elements[i]
+            info_counter = self.count_tokens(el[info_type])
             # Check if the input length limit is not exceeded before adding the current field
             if (ewash_counter + info_counter) > max_length:
                 exceeded_limit = True
@@ -120,13 +124,18 @@ class EWash:
                 continue
             # Update the flag: at least one field was added to the input
             element_added = True
-            tuple = tupled_elements[i]
             if info_type == 'javadoc':
-                tuple = (f"{el[info_type]}\n", tuple[1], tuple[2])
+                # When adding the javadoc, the signature must be always present in the tuple
+                # (otherwise the javadoc alone is not identifiable)
+                # tuple = (f"{el[info_type]}\n", f"{el['signature']}\n", tuple[2])
+                tuple = (f"{el[info_type]}", tuple[1], tuple[2])
             elif info_type == 'signature' or info_type == 'fullSignature':
-                tuple = (tuple[0], f"{el[info_type]}\n", tuple[2])
+                tuple = (tuple[0], f"{el[info_type]}", tuple[2])
             elif info_type == 'body':
-                tuple = (tuple[0], tuple[1], f"{tuple[info_type]}\n")
+                # When adding the body, the signature must be always present in the tuple
+                # (otherwise the body alone is not identifiable)
+                # tuple = (tuple[0], el['signature'], f"{el[info_type].replace(el['signature'],"")}\n")
+                tuple = (tuple[0], tuple[1], f"{el[info_type]}\n")
             tupled_elements[i] = tuple
             # Update the counter of the tokens in the input
             ewash_counter += info_counter
@@ -142,32 +151,31 @@ class EWash:
         normalized_section = {}
         for s_type in section.keys():
             if s_type == 'fields':
-                if "fullSignature" in section[s_type]:
-                    # Normalize the label "fullSignature" to "fields" for the fields in the section
-                    normalized_section[s_type] = [{"signature": f["fullSignature"]} for f in section[s_type]]
-                elif "fields" in section[s_type]:
-                    # If already normalized, return the fields
-                    normalized_section[s_type] = section[s_type]
-                else:
-                    # Raise an error if the labels in the section are unexpected
-                    raise ValueError(
-                        f"Unexpected labels ({', '.join(section[s_type])}) in the section {section} for the type {s_type}")
-            elif s_type == 'methods':
-                if "invokedMethods" in section:
-                    # Return the invoked methods in the section
-                    normalized_section[s_type] = section['invokedMethods']
-                elif "auxiliaryMethods" in section and "setupTearDownMethods" in section:
-                    # Concatenate the auxiliary methods and the setup/teardown methods and return them
-                    normalized_section[s_type] = section[s_type]['auxiliaryMethods'] + section[s_type][
-                        'setupTearDownMethods']
-                elif "constructors" in section and "methods" in section:
-                    # Concatenate the constructors and the methods and return them
-                    normalized_section[s_type] = section['constructors'] + section['methods']
-                else:
-                    # Raise an error if the labels in the section are unexpected
-                    raise ValueError(
-                        f"Unexpected labels ({', '.join(section.keys())}) in the section {section} for the type {s_type}")
-            elif s_type in ['identifier', 'signature', 'javadoc', 'body']:
+                if not "fields" in normalized_section:
+                    normalized_section['fields'] = []
+                fields = section[s_type]
+                if len(fields) > 0:
+                    if "fullSignature" in section[s_type][0]:
+                        # Normalize the label "fullSignature" to "fields" for the fields in the section
+                        normalized_section[s_type] = [{"signature": f["fullSignature"]} for f in section[s_type]]
+                    elif "signature" in section[s_type][0]:
+                        # If already normalized, return the fields
+                        normalized_section[s_type] = section[s_type]
+                    else:
+                        # Raise an error if the labels in the section are unexpected
+                        raise ValueError(f"Unexpected labels ({', '.join(section[s_type])}) in the section {section} for the type {s_type}")
+            elif s_type in ["invokedMethods", "methods", "auxiliaryMethods", "setupTeardownMethods"]:
+                if not "methods" in normalized_section:
+                    normalized_section['methods'] = []
+
+                for m in section[s_type]:
+                    if m['body'] is None:
+                        normalized_section['methods'].append({ **m, "body": "" })
+                    else:
+                        m['body'] = m['body'].replace(m['signature'], "").strip()
+                        m['body'] = m['body'] if not m['body'] == ";" else ""
+                        normalized_section['methods'].append(m)
+            elif s_type in ['identifier', 'package', 'packageIdentifier', 'signature', 'javadoc', 'body']:
                 # Return the body of the section
                 normalized_section[s_type] = section[s_type]
         return normalized_section
@@ -223,8 +231,8 @@ class EWash:
         base_src = "// Test prefix\n"
         # Find the index of the target oracle in the test prefix
         assertion_idx = tp['body'].rfind(tgt)
-        if assertion_idx == -1:
-            tp['body'] = tp['body'][0:assertion_idx] + tp['body'][assertion_idx + len(tgt):]
+        if assertion_idx != -1:
+            tp['body'] = tp['body'][0:assertion_idx].strip() + tp['body'][assertion_idx + len(tgt):]
         else:
             logger.error(f"Target oracle not found in the test prefix {tp['identifier']} of {tc['identifier']}: {tgt}")
         base_src += f"{tp['body']}\n\n"
@@ -234,18 +242,19 @@ class EWash:
         # Store the base input string in the ewash dictionary
         ewash_dict['base_src'] = base_src
         # Iterate over the sections of the input (test prefix, test class, focal class)
-        for section_id in self.ewash_config['order']:
+        for section_id in self.ewash_config['sections']:
             # Get the information about the current section to process (test prefix, test class, or focal class)
             current_section = tp if section_id == 'test_prefix' else tc if section_id == 'test_class' else fc
-            # Store the original section in the ewash dictionary
-            ewash_dict[section_id]['original'] = current_section
-            # Set the intro comments for the current section
-            ewash_dict[section_id] = {"intros": intros[section_id]}
-            # Initialize the list containing the tuples of the fields/methods that are progressively enriched with
-            # signatures, javadocs and bodies. The first element of the tuple is the javadoc, the second is the
-            # signature, and the third is the body (the order reflects the order of the information in a java class)
-            ewash_dict[section_id]['tuples'] = {
-                t: [("", "", "") for _ in current_section[t]] for t in self.ewash_config[section_id].keys()
+            # Initialize the section in the ewash dictionary
+            ewash_dict[section_id] = {
+                # Store the original section in the ewash dictionary
+                "original": current_section,
+                # Set the intro comments for the current section
+                "intros": intros[section_id],
+                # Initialize the list containing the tuples of the fields/methods that are progressively enriched with
+                # signatures, javadocs and bodies. The first element of the tuple is the javadoc, the second is the
+                # signature, and the third is the body (the order reflects the order of the information in a java class)
+                "tuples": { t: [("","","") for _ in current_section[t]] for t in self.ewash_config[section_id].keys() }
             }
         # Return the initialized ewash dictionary
         return ewash_dict
@@ -265,7 +274,7 @@ class EWash:
         ewash_str = self.generate_input()
         # Returns a tuple containing the input string generated, the flag indicating if the input length limit was exceeded,
         # and the number of tokens in the input string
-        return ewash_str, exceeded_limit, self.count_tokens(self.tokenizer, ewash_str)
+        return ewash_str, exceeded_limit, self.count_tokens(ewash_str)
 
     def generate_input(self):
         """
@@ -275,7 +284,7 @@ class EWash:
         :return: the input string for the model using the E-WASH strategy selected (cascade or incremental)
         """
         # Initialize the input string with the input already provided (test prefix and assertion mask)
-        ewash_str = self.base_src
+        ewash_str = self.ewash_dict['base_src']
         # Set the outer and inner loop to process the sections and types according to the approach used (cascade or incremental)
         outer_loop = self.ewash_config['sections'] if self.ewash_config['strategy'] == 'cascade' else self.ewash_config['types']
         inner_loop = self.ewash_config['types'] if self.ewash_config['strategy'] == 'cascade' else self.ewash_config['sections']
@@ -284,10 +293,10 @@ class EWash:
             for i_id in inner_loop:
                 section = self.ewash_dict[o_id] if self.ewash_config['strategy'] == 'cascade' else self.ewash_dict[i_id]
                 s_type = i_id if self.ewash_config['strategy'] == 'cascade' else o_id
-                if s_type in section:
+                if s_type in section['original']:
                     if section['intros'][s_type]['flag']:
                         ewash_str += section['intros'][s_type]['label']
-                        ewash_str += self.tuples_info_2_str(section['tuples'][s_type])
+                        ewash_str += self.tuples_info_2_str(section['tuples'][s_type]) + "\n"
         logger.info(f"E-wash string generated.")
         return ewash_str
 
@@ -301,16 +310,16 @@ class EWash:
         :return: A boolean indicating if the input length limit was exceeded during the collection of the information and
         the simulation of the input string with the information progressively added.
         """
-        # Count the number of tokens in the input string at the beginning
-        ewash_counter = self.count_tokens(self.tokenizer, self.base_src)
-        # Check if the input length limit is not exceeded before adding any information
-        if ewash_counter > self.ewash_config['max_length']:
-            logger.info(f"The base input exceeds the input length limit.")
-            return True
         # Get input max length
         max_length = self.ewash_config['max_length']
         # Initialize flag to check if the input length limit was exceeded
         exceeded_limit = False
+        # Count the number of tokens in the input string at the beginning
+        ewash_counter = self.count_tokens(self.ewash_dict['base_src'])
+        # Check if the input length limit is not exceeded before adding any information
+        if ewash_counter > self.ewash_config['max_length']:
+            logger.info(f"The base input exceeds the input length limit.")
+            return True
         # Set the outer and inner loop to process the sections and types according to the approach used (cascade or incremental)
         outer_loop = self.ewash_config['sections'] if self.ewash_config['strategy'] == 'cascade' else self.ewash_config['types']
         inner_loop = self.ewash_config['types'] if self.ewash_config['strategy'] == 'cascade' else self.ewash_config['sections']
@@ -323,40 +332,38 @@ class EWash:
                 section_id = o_id if self.ewash_config['strategy'] == 'cascade' else i_id
                 section = self.ewash_dict[o_id] if self.ewash_config['strategy'] == 'cascade' else self.ewash_dict[i_id]
                 s_type = i_id if self.ewash_config['strategy'] == 'cascade' else o_id
-                if s_type in section:
+                if s_type in section['original']:
                     # Get the original elements (fields or methods) and the tuples of the fields or methods
                     original_elements = section['original'][s_type]
                     tupled_elements = section['tuples'][s_type]
                     # Get the intro comment for the current section type
                     intro_str = section['intros'][s_type]['label']
-                    # Check if the intro comment is already added to the input string
-                    intro_flag = section['intros'][s_type]['flag']
-                    intro_counter = self.count_tokens(self.tokenizer, intro_str)
+                    intro_counter = self.count_tokens(intro_str)
                     # Check if the input length limit is not exceeded before adding the elements of the current type
-                    if not intro_flag and ((ewash_counter + intro_counter) > self.ewash_config['max_length']):
-                        logger.info(f"The intro comment for the {section_id} {s_type}s exceeds the input length limit.")
+                    if not section['intros'][s_type]['flag'] and ((ewash_counter + intro_counter) > self.ewash_config['max_length']):
+                        logger.info(f"The intro comment for the {section_id} {s_type} exceeds the input length limit.")
                         continue
                     # Check if for the current type, the section has elements to add
-                    if len(section[s_type]) == 0:
+                    if len(section['original']) == 0:
                         logger.info(f"No {s_type}s to add for the {section_id}")
                         continue
                     # Iterate over the different part of the information to add (signature, javadoc, body), in the order defined
                     # in the configuration file
-                    for idx_info, info_type in self.ewash_config[section_id][s_type]:
+                    for info_type in self.ewash_config[section_id][s_type]:
                         logger.info(f"Adding {section_id} {s_type} {info_type}s to the input")
                         # Update the tuples of the fields or methods with the given information type
                         updated_ewash_counter, exceeded_limit, element_added = self.update_tupled_elements(
-                            ewash_counter + intro_counter if not intro_flag else ewash_counter,
+                            ewash_counter + intro_counter if not section['intros'][s_type]['flag'] else ewash_counter,
                             info_type,
                             original_elements,
                             tupled_elements,
                             max_length
                         )
                         if element_added:
-                            intro_flag = True
+                            section['intros'][s_type]['flag'] = True
                             # Update the counter of the tokens in the input
                             ewash_counter = updated_ewash_counter
                         # The update of the tuples was successful (the input length limit was not exceeded)
-                        logger.info(f"Successfully added {section_id} fields {info_type}s to the input.")
+                        logger.info(f"Successfully added {section_id} fields {info_type} to the input.")
         logger.info(f"E-wash processing completed.")
         return exceeded_limit
