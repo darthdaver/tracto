@@ -3,11 +3,11 @@
     "methods": ["signature", "javadoc", "body"]
   },
   "test_class" : {
-    "fields" : ["fullSignature"],
+    "fields" : ["signature"],
     "methods": ["signature", "javadoc", "body"]
   },
   "focal_class" : {
-    "fields" : ["fullSignature"],
+    "fields" : ["signature"],
     "methods": ["signature", "javadoc", "body"]
   },
   "tokenizer" : "codellama/CodeLlama-7b-hf",
@@ -15,5 +15,5 @@
   "sections" : ["test_prefix", "test_class", "focal_class"],
   "types" : ["methods", "fields"],
   "strategy": "cascade",
-  "max_length" : 2015
+  "max_length" : 128000
 }
