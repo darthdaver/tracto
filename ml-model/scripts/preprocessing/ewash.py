@@ -73,7 +73,6 @@ if __name__ == '__main__':
         with open(file_path, 'r') as json_file:
             test_classes_datapoints = json.load(json_file)
         output_file_path = os.path.join(output_path, os.path.basename(filename).replace(".json", ".csv"))
-        print(output_file_path)
         # Open the CSV file for writing the dataset
         with open(output_file_path, 'w', newline='') as csv_file:
             writer = csv.writer(csv_file)
@@ -90,7 +89,7 @@ if __name__ == '__main__':
                 tc = EWash.normalize_section(tc)
                 fc = EWash.normalize_section(fc)
                 # Iterate over the datapoints in the test class and create the corresponding input for the model
-                for d in tcs_d['datapoints']:
+                for i_d,d in enumerate(tcs_d['datapoints']):
                     # Get the test prefix of the datapoint and the target oracle to generate
                     tp = EWash.normalize_section(d['testPrefix'])
                     oracle = d['target']
@@ -99,10 +98,14 @@ if __name__ == '__main__':
                         # Get target (the whole oracle)
                         tgt = oracle
                         try:
-                            # Initialize the E-WASH dictionary
-                            ewash = EWash(tp, tc, fc, oracle, intros, ewash_config)
-                            # Generate the input string for the model using the E-WASH approach
-                            src, exceeded, num_tokens = ewash.run()
+                            if i_d == 0:
+                                # Initialize the E-WASH dictionary
+                                ewash = EWash(tp, tc, fc, oracle, intros, ewash_config)
+                                # Generate the input string for the model using the E-WASH approach
+                                src, exceeded, num_tokens = ewash.run(['test_prefix', 'test_class', 'focal_class'])
+                            else:
+                                ewash.update(intros, tp, oracle)
+                                src, exceeded, num_tokens = ewash.run(['test_prefix'])
                             # Write the input and the target oracle to the CSV file
                             writer.writerow([src, oracle])
                             # Update stats
@@ -111,7 +114,7 @@ if __name__ == '__main__':
                             # Update stats
                             update_stats(stats, tc['identifier'], tp['signature'], tgt, True, -1)
                     elif ewash_config['type'] == "tokens":
-                        for s in d['tokenSteps']:
+                        for i_s,s in enumerate(d['tokenSteps']):
                             if "target" in s:
                                 # Get partial oracle already generated
                                 partial_oracle = s['partialSnippet']
@@ -121,10 +124,25 @@ if __name__ == '__main__':
                                 print(f"Processing step. Partial oracle: {partial_oracle}, next token: {tgt}")
                                 tokens = EWash.normalize_section(s)
                                 try:
-                                    # Initialize the E-WASH dictionary
-                                    ewash = EWash(tp, tc, fc, oracle, intros, ewash_config, partial_oracle, tokens)
-                                    # Generate the input string for the model using the E-WASH approach
-                                    src, exceeded, num_tokens = ewash.run()
+                                    if i_d == 0:
+                                        # Initialize the E-WASH dictionary
+                                        ewash = EWash(tp, tc, fc, oracle, intros, ewash_config, partial_oracle, tokens)
+                                        # Generate the input string for the model using the E-WASH approach
+                                        src, exceeded, num_tokens = ewash.run(['test_prefix', 'test_class', 'focal_class'])
+                                    else:
+                                        try:
+                                            if i_s == 0:
+                                                ewash.update(intros, tp, oracle, partial_oracle, tokens)
+                                                src, exceeded, num_tokens = ewash.run(['test_prefix'])
+                                            else:
+                                                ewash.update(intros, tp, oracle, partial_oracle, tokens)
+                                                src, exceeded, num_tokens = ewash.run([])
+                                        except ValueError as e:
+                                            logger.error(f"Exceeded input limit when updating the input string with the next token: {tgt}. It is necessary to reinitialize the E-WASH dictionary.")
+                                            # Initialize the E-WASH dictionary
+                                            ewash = EWash(tp, tc, fc, oracle, intros, ewash_config, partial_oracle, tokens)
+                                            # Generate the input string for the model using the E-WASH approach
+                                            src, exceeded, num_tokens = ewash.run(['test_prefix', 'test_class', 'focal_class'])
                                     # Write the input and the target oracle to the CSV file
                                     writer.writerow([src, tgt])
                                     # Update stats
