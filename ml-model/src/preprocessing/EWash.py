@@ -1,5 +1,5 @@
 import os
-import json
+import re
 import logging
 from transformers import AutoTokenizer
 
@@ -33,7 +33,7 @@ class EWash:
     approach fits in the input length limit of the model, otherwise the input string only the information added before the
     limit was exceeded.
     """
-    def __init__(self, tp, tc, fc, tgt, config=None):
+    def __init__(self, tp, tc, fc, oracle, intros, config, partial_oracle=None, tokens=None):
         """
         Initialize the E-wash class with the information about the test prefix, the test class, the focal class, and the
         target oracle to generate. The configuration file for the E-WASH approach can be provided as an argument, otherwise
@@ -42,25 +42,18 @@ class EWash:
         :param tp: the test prefix to process
         :param tc: the test class where the test prefix is defined
         :param fc: the focal class corresponding to the test class
-        :param tgt: the target oracle
+        :param oracle: the whole oracle to generate
+        :param intros: the intro comments for the sections of the input
         :param config: the configuration object
+        :param partial_oracle: the partial oracle generated so far (in case of oracle generation at token level). None if
+        the configuration file is set to 'oracles' generation. Different from None if the configuration file is set to
+        'tokens' generation.
+        :param tokens: the dictionary containing the lists of eligible tokens grouped by type. None if the configuration
+        file is set to 'oracles' generation. Different from None if the configuration file is set to 'tokens' generation.
         """
-        self.ewash_config = self.load_default_ewash_config() if not config else config
-        self.ewash_dict = self.initialize_ewash(tp, tc, fc, tgt)
+        self.ewash_config = config
         self.tokenizer = AutoTokenizer.from_pretrained(self.ewash_config['tokenizer'])
-
-    def load_default_ewash_config(self):
-        """
-        Load the default configuration file for the E-WASH approach.
-        :return: the content of the default configuration file for the E-WASH approach as a dictionary
-        """
-        logger.info("Custom path to configuration file not provided. Loading default configuration file for the E-WASH approach.")
-        # Default path to the configuration file for the E-WASH approach
-        path = os.path.join(os.path.abspath(os.path.dirname(__file__)), '..', 'resources', 'ewash_config.json')
-        # Load the configuration file for the E-WASH approach
-        with open(path, 'r') as config_file:
-            ewash_config = json.load(config_file)
-        return ewash_config
+        self.ewash_dict = self.initialize_ewash(intros, tp, tc, fc, oracle, partial_oracle, tokens)
 
     def count_tokens(self, input_text):
         """
@@ -130,7 +123,8 @@ class EWash:
                 # When adding the javadoc, the signature must be always present in the tuple
                 # (otherwise the javadoc alone is not identifiable)
                 # tuple = (f"{el[info_type]}\n", f"{el['signature']}\n", tuple[2])
-                tuple = (f"{el[info_type]}", tuple[1], tuple[2])
+                clean_javadoc = "\n".join([ l.strip() + " " if l.strip().startswith("*") else l.strip() for i,l in el[info_type].split("\n")])
+                tuple = (clean_javadoc, tuple[1], tuple[2])
             elif info_type == 'signature' or info_type == 'fullSignature':
                 tuple = (tuple[0], f"{el[info_type]}", tuple[2])
             elif info_type == 'body':
@@ -180,67 +174,78 @@ class EWash:
             elif s_type in ['identifier', 'package', 'packageIdentifier', 'signature', 'javadoc', 'body']:
                 # Return the body of the section
                 normalized_section[s_type] = section[s_type]
+            elif s_type in ['nextPossibleProjectTokens', 'nextPossibleJavaTokens', 'nextPossibleGenericTokens']:
+                # Remove redundant information from the section label
+                ns_type = s_type.replace("nextPossible", "")
+                # Normalize Java to Python label
+                ns_type = ''.join([f"_{c.lower()}" if c.isupper() else c for c in ns_type[0].lower() + ns_type[1:]])
+                normalized_section[ns_type] = section[s_type]
         return normalized_section
 
-    def initialize_ewash(self, tp, tc, fc, tgt):
+    def initialize_ewash(self, intros, tp, tc, fc, oracle, partial_oracle=None, tokens=None):
         """
         Initialize the dictionary with the structured information of the datapoint to assemble the model input of the datapoint
+        :param intros: the intro comments for the sections of the input
         :param tp: the test prefix to process
         :param tc: the test class where the test prefix is defined
         :param fc: the focal class corresponding to the test class
-        :param tgt: the target oracle
+        :param oracle: the whole oracle to generate
+        :param partial_oracle: the partial oracle generated so far (in case of oracle generation at token level). None if
+        the configuration file is set to 'oracles' generation. Different from None if the configuration file is set to
+        'tokens' generation.
+        :param tokens: the dictionary containing the lists of eligible tokens grouped by type. None if the configuration
+        file is set to 'oracles' generation. Different from None if the configuration file is set to 'tokens' generation.
         :return: a dictionary containing the structured information of the datapoint, divided per test prefix, test class,
         and focal class. The dictionary contains the original information of the test prefix, test class, and focal class,
         the intro comments for the sections, and initializes the tuples of the fields and methods that will be progressively
         enriched with signatures, javadocs, and bodies. It also initializes the intro comments for each section of the input
         with flag False (the comments will be added only if at least a piece of information of one element in the section
-        will be added to the final input). FInally, the dictionary contains the base input string (always present in the input).
+        will be added to the final input). Finally, the dictionary contains the base input string (always present in the input).
+        If the configuration file is set to 'tokens' generation, the dictionary contains also the lists of candidate tokens
+        to add to the input, divided by type.
         """
         # Initialize ewash dictionary
         ewash_dict = {}
-        # Intro comments
-        intros = {
-            "test_prefix": {
-                "methods": {
-                    "label": f"// Invoked methods in test prefix\n",
-                    "flag": False
-                }
-            },
-            "test_class": {
-                "fields": {
-                    "label": f"// Fields defined in test class\n",
-                    "flag": False
-                },
-                "methods": {
-                    "label": f"// Methods defined in test class\n",
-                    "flag": False
-                }
-            },
-            "focal_class": {
-                "fields": {
-                    "label": f"// Fields defined in focal class\n",
-                    "flag": False
-                },
-                "methods": {
-                    "label": f"// Constructors and methods defined in focal class\n",
-                    "flag": False
-                }
-            }
-        }
-
         # Genetrate the base input string (always present in the input)
         # Add the test prefix to the input (src) (removing the target oracle to produce from the body)
         base_src = "// Test prefix\n"
         # Find the index of the target oracle in the test prefix
-        assertion_idx = tp['body'].rfind(tgt)
+        tp_lines = tp['body'].split("\n")
+        assertion_idx = -1
+        for i, line in enumerate(tp_lines):
+            if re.sub(r'\s+', '', oracle) in re.sub(r'\s+', '', line):
+                assertion_idx = i
+                break
         if assertion_idx != -1:
-            tp['body'] = tp['body'][0:assertion_idx].strip() + tp['body'][assertion_idx + len(tgt):]
+            # Remove the target oracle from the test prefix
+            base_src += "\n".join([ l for i,l in enumerate(tp_lines) if i != assertion_idx ]) + "\n\n"
         else:
-            logger.error(f"Target oracle not found in the test prefix {tp['identifier']} of {tc['identifier']}: {tgt}")
-        base_src += f"{tp['body']}\n\n"
+            logger.error(f"Target oracle not found in the test prefix {tp['signature']} of {tc['identifier']}: {oracle}")
+            raise ValueError(f"Target oracle not found in the test prefix {tp['signature']} of {tc['identifier']}: {oracle}")
         # Add the oracle mask the model has to generate
         base_src += "// Assertion\n"
-        base_src += f"{self.ewash_config['mask_token']}\n\n"
+        if self.ewash_config['type'] == "oracles":
+            base_src += f"{self.ewash_config['mask_token']}\n\n"
+        else:
+            base_src += f"{partial_oracle}{self.ewash_config['mask_token']}\n\n"
+        # Check if the input length limit exceeded the input length limit when adding the test prefix and the assertion mask
+        if self.count_tokens(base_src) > self.ewash_config['max_length']:
+            # Raise an error if the base input (test prefix + assertion mask) exceeds the input length limit because
+            # no useful information can be added to the input
+            logger.error(f"The base input (test prefix + assertion mask) exceeds the input length limit.")
+            raise ValueError(f"The base input (test prefix + assertion mask) exceeds the input length limit.")
+        # If the configuration file is set to 'tokens' generation, add the candidate tokens to the input
+        if self.ewash_config['type'] == "tokens":
+            for t_type in self.ewash_config['tokens']:
+                base_src += intros['tokens'][t_type]['label']
+                base_src += f"[ {', '.join(tokens[t_type])} ]\n"
+            base_src += "\n"
+        # Check if the input length limit exceeded the input length limit when adding the tokens
+        if self.count_tokens(base_src) > self.ewash_config['max_length']:
+            # Raise an error if the base input (test prefix + assertion mask + tokens) exceeds the input length limit because
+            # not all the eligible tokens can be added to the input
+            logger.error(f"The base input (test prefix + assertion mask + tokens) exceeds the input length limit.")
+            raise ValueError(f"The base input (test prefix + assertion mask + tokens) exceeds the input length limit.")
         # Store the base input string in the ewash dictionary
         ewash_dict['base_src'] = base_src
         # Iterate over the sections of the input (test prefix, test class, focal class)
@@ -257,6 +262,13 @@ class EWash:
                 # signatures, javadocs and bodies. The first element of the tuple is the javadoc, the second is the
                 # signature, and the third is the body (the order reflects the order of the information in a java class)
                 "tuples": { t: [("","","") for _ in current_section[t]] for t in self.ewash_config[section_id].keys() }
+            }
+        # If the configuration file is set to 'tokens' generation, store the lists of candidate tokens to add to the
+        # input, divided by type
+        if self.ewash_config['type'] == "tokens":
+            ewash_dict['tokens'] = {
+                "intros": intros['tokens'],
+                **tokens
             }
         # Return the initialized ewash dictionary
         return ewash_dict

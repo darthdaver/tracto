@@ -10,10 +10,12 @@
     "fields" : ["signature"],
     "methods": ["signature", "javadoc", "body"]
   },
+  "tokens": ["project_tokens", "java_tokens", "generic_tokens"],
   "tokenizer" : "codellama/CodeLlama-7b-hf",
   "mask_token" : "<extra_id_0>",
   "sections" : ["test_prefix", "test_class", "focal_class"],
   "types" : ["methods", "fields"],
   "strategy": "cascade",
+  "type": "tokens",
   "max_length" : 128000
 }
