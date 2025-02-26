@@ -62,8 +62,8 @@ class EWash:
         :param input_text: the input text to encode
         :return: the number of tokens in the input text
         """
-        # Tokenize the input text encoding it with the model's tokenizer (considering the special tokens)
-        tokens = self.tokenizer.encode(input_text, add_special_tokens=True)
+        # Tokenize the input text encoding it with the model's tokenizer (not considering the special tokens)
+        tokens = self.tokenizer.encode(input_text, add_special_tokens=False)
         # Return the number of tokens in the input text
         return len(tokens)
 
@@ -205,11 +205,14 @@ class EWash:
         ewash_dict = {}
         # Generate the base input string (always present in the input)
         # Add the test prefix to the input (src) (removing the target oracle to produce from the body)
+        # Add the tokens of the new base input string to the counter
+        base_src = self.generate_base_src(intros, tp, oracle, partial_oracle, tokens)
         try:
-            base_src = self.generate_base_src(intros, tp, oracle, partial_oracle, tokens)
-        except ValueError as e:
-            logger.error(e)
-            raise e
+            self.update_counter(base_src)
+        except ValueError:
+            err_msg = "The base input (test prefix + assertion mask [+ tokens]) exceeds the input length limit."
+            logger.error(err_msg)
+            raise ValueError(err_msg)
         # Store the base input string in the ewash dictionary
         ewash_dict['base_src'] = base_src
         # Iterate over the sections of the input (test prefix, test class, focal class)
@@ -217,13 +220,6 @@ class EWash:
             # Get the information about the current section to process (test prefix, test class, or focal class)
             current_section = tp if section_id == 'test_prefix' else tc if section_id == 'test_class' else fc
             ewash_dict[section_id] = self.initialize_section(section_id, current_section, intros[section_id])
-        # If the configuration file is set to 'tokens' generation, store the lists of candidate tokens to add to the
-        # input, divided by type
-        if self.ewash_config['type'] == "tokens":
-            ewash_dict['tokens'] = {
-                "intros": intros['tokens'],
-                **tokens
-            }
         # Return the initialized ewash dictionary
         return ewash_dict
 
@@ -298,13 +294,13 @@ class EWash:
         try:
             self.update_counter(base_src)
         except ValueError:
-            # Subtract the tokens of the old base input string from the counter
+            # Re-add the tokens of the old base input string to the counter
             self.update_counter(self.ewash_dict['base_src'], action="add")
             raise ValueError("The base input (test prefix + assertion mask [+ tokens]) exceeds the input length limit.")
         # Store the base input string in the ewash dictionary
         self.ewash_dict['base_src'] = base_src
 
-    def update(self, intros, tp, oracle, partial_oracle=None, tokens=None):
+    def update(self, intros, tp, oracle, partial_oracle=None, tokens=None, update_section=False):
         """
         Update the E-WASH dictionary with the new information about the test prefix, the oracle to generate, the partial
         oracle and the tokens. Update the base input string (test prefix + assertion mask, if the configuration file is set
@@ -318,25 +314,17 @@ class EWash:
         'tokens' generation.
         :param tokens: the dictionary containing the lists of eligible tokens grouped by type. None if the configuration
         file is set to 'oracles' generation. Different from None if the configuration file is set to 'tokens' generation.
+        :param update_section: a flag indicating if the section should be updated (True) or not (False). If True, the
+        current section is removed and replaced with the new one.
         """
         # Generate the base input string (always present in the input)
         # Add the test prefix to the input (src) (removing the target oracle to produce from the body)
-        try:
-            base_src = self.generate_base_src(intros, tp, oracle, partial_oracle, tokens)
-        except ValueError as e:
-            logger.error(e)
-            raise e
-        # Store the base input string in the ewash dictionary
-        self.ewash_dict['base_src'] = base_src
-        # Update the test prefix in the ewash dictionary
-        self.ewash_dict['test_prefix'] = self.initialize_section('test_prefix', tp, intros['test_prefix'])
-        # If the configuration file is set to 'tokens' generation, store the lists of candidate tokens to add to the
-        # input, divided by type
-        if self.ewash_config['type'] == "tokens":
-            self.ewash_dict['tokens'] = {
-                "intros": intros['tokens'],
-                **tokens
-            }
+        self.update_base_src(intros, tp, oracle, partial_oracle, tokens)
+        if update_section:
+            # Remove the information of the test prefix from the ewash dictionary
+            self.remove_section_info('test_prefix')
+            # Update the test prefix in the ewash dictionary
+            self.ewash_dict['test_prefix'] = self.initialize_section('test_prefix', tp, intros['test_prefix'])
 
     def update_counter(self, content, action="add"):
         """
@@ -373,18 +361,22 @@ class EWash:
             "tuples": {t: [("", "", "") for _ in section[t]] for t in self.ewash_config[section_id].keys()}
         }
 
-    def run(self, sections):
+    def run(self, sections, update_section=False):
         """
         Run the E-WASH approach to generate the input string for the model. The methods collect the information and then
         generate the input string for the model using the E-WASH approach. The method returns a tuple containing the input
         string generated, the flag indicating if the input length limit was exceeded at least once, and the number of
         tokens in the final input.
         :param collect_info: a flag indicating if the information should be collected before generating the input string
+        :param sections: the sections to process (e.g. test prefix, test class, focal class)
+        :param update_section: a flag indicating if the method is call only for specific section update. In that case, if
+        the limit is exceeded, the method will raise an exception because the whole collection should be repeated from
+        scratch.
         :return: a tuple containing the input string generated, the flag indicating if the input length limit was exceeded,
         and the number of tokens in the input string
         """
         # Collect e-wash information
-        exceeded_limit = self.collect_ewash_info(sections)
+        exceeded_limit = self.collect_ewash_info(sections, update_section)
         # Generate the input string for the model using the E-WASH approach
         ewash_str = self.generate_input()
         # Returns a tuple containing the input string generated, the flag indicating if the input length limit was exceeded,
@@ -439,27 +431,34 @@ class EWash:
         del self.ewash_dict[section_id]
 
     def collect_section_info(self, section_id, section_type, section):
+        """
+        Collect the information for a specific section type (fields or methods) of the section (test prefix, test class, or
+        focal class).
+        :param section_id: the id of the section to process (test prefix, test class, or focal class)
+        :param section_type: the type of the section to process
+        :param section: the section to process
+        :return: a boolean indicating if the input length limit was exceeded during the collection of the information
+        """
         # Initialize flag to check if the input length limit was exceeded
         exceeded_limit = False
         # Get the original elements (fields or methods) and the tuples of the fields or methods
         original_elements = section['original'][section_type]
         tupled_elements = section['tuples'][section_type]
-        # Get max length
-        max_length = self.ewash_config['max_length']
         # Get the intro comment for the current section type
         intro_str = section['intros'][section_type]['label']
-        intro_counter = self.count_tokens(intro_str)
-        # Check if the input length limit is not exceeded before adding the elements of the current type
-        if not section['intros'][section_type]['flag'] and ((self.counter + intro_counter) > max_length):
+        # Add the intro comment for the current section type to the input if not already added. The intro comment will be
+        # maintened in the input only if at least a piece of information of one element in the section will be added to the
+        # final input, otherwise the intro comment will be removed from the input (the flag is still not updated)
+        if not section['intros'][section_type]['flag']:
             try:
                 self.update_counter(intro_str, action="add")
             except ValueError:
                 logger.info(f"The intro comment for the {section_id} {section_type} exceeds the input length limit.")
-                return
+                return True
         # Check if for the current type, the section has elements to add
         if len(section['original']) == 0:
             logger.info(f"No {section_type}s to add for the {section_id}")
-            return
+            return False
         # Iterate over the different part of the information to add (signature, javadoc, body), in the order defined
         # in the configuration file
         for info_type in self.ewash_config[section_id][section_type]:
@@ -473,12 +472,13 @@ class EWash:
             if element_added:
                 # Update the flag: at least one field was added to the input
                 section['intros'][section_type]['flag'] = True
-            else:
-                # Update the counter of the tokens in the input, subtracting the intro comment cause no element was added
-                self.update_counter(intro_str, action="subtract")
+        # Check if the flag for the intro comment is still False (no element was added to the input)
+        if not section['intros'][section_type]['flag']:
+            # Remove the intro comment for the current section type from the input as no element was added to the input
+            self.update_counter(intro_str, action="subtract")
         return exceeded_limit
 
-    def collect_ewash_info(self, sections):
+    def collect_ewash_info(self, sections, update_section=False):
         """
         Collect all the information to generate the input for the model using the E-WASH approach, progressively integrating
         the information, according to the strategy defined in the configuration file (cascade or incremental). The method
@@ -486,6 +486,9 @@ class EWash:
         exceeded or all the information is added to the input string. The method returns a boolean indicating if the input
         length limit was exceeded during the collection of the information.
         :param sections: the sections to process (e.g. test prefix, test class, focal class)
+        :param update_section: a flag indicating if the method is call only for specific section update. In that case, if
+        the limit is exceeded, the method will raise an exception because the whole collection should be repeated from
+        scratch.
         :return: A boolean indicating if the input length limit was exceeded during the collection of the information and
         the simulation of the input string with the information progressively added.
         """
@@ -507,6 +510,9 @@ class EWash:
                     if s_type in section['original']:
                         result = self.collect_section_info(section_id, s_type, section)
                         if result:
+                            if update_section:
+                                logger.error(f"Updating section {section_id} {s_type} exceeds the input length limit.")
+                                raise ValueError(f"Updating section {section_id} {s_type} exceeds the input length limit.")
                             exceeded_limit = True
         logger.info(f"E-wash processing completed.")
         return exceeded_limit

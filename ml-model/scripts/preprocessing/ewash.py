@@ -124,7 +124,7 @@ if __name__ == '__main__':
                                 print(f"Processing step. Partial oracle: {partial_oracle}, next token: {tgt}")
                                 tokens = EWash.normalize_section(s)
                                 try:
-                                    if i_d == 0:
+                                    if i_d == 0 and i_s == 0:
                                         # Initialize the E-WASH dictionary
                                         ewash = EWash(tp, tc, fc, oracle, intros, ewash_config, partial_oracle, tokens)
                                         # Generate the input string for the model using the E-WASH approach
@@ -132,14 +132,14 @@ if __name__ == '__main__':
                                     else:
                                         try:
                                             if i_s == 0:
-                                                ewash.update(intros, tp, oracle, partial_oracle, tokens)
-                                                src, exceeded, num_tokens = ewash.run(['test_prefix'])
+                                                ewash.update(intros, tp, oracle, partial_oracle, tokens, True)
+                                                src, exceeded, num_tokens = ewash.run(['test_prefix'], True)
                                             else:
                                                 ewash.update(intros, tp, oracle, partial_oracle, tokens)
-                                                src, exceeded, num_tokens = ewash.run([])
+                                                src, exceeded, num_tokens = ewash.run([], True)
                                         except ValueError as e:
                                             logger.error(f"Exceeded input limit when updating the input string with the next token: {tgt}. It is necessary to reinitialize the E-WASH dictionary.")
-                                            # Initialize the E-WASH dictionary
+                                            # Re-initialize the E-WASH dictionary
                                             ewash = EWash(tp, tc, fc, oracle, intros, ewash_config, partial_oracle, tokens)
                                             # Generate the input string for the model using the E-WASH approach
                                             src, exceeded, num_tokens = ewash.run(['test_prefix', 'test_class', 'focal_class'])
