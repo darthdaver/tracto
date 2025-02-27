@@ -103,6 +103,19 @@ public class TestUtils {
 
     }
 
+    public static JUnitVersion getJunitVersion(NodeList<ImportDeclaration> imports) {
+        for (ImportDeclaration importDeclaration : imports) {
+            if (importDeclaration.getNameAsString().contains("junit")) {
+                if (importDeclaration.getNameAsString().contains("jupiter")) {
+                    return JUnitVersion.JUNIT5;
+                } else {
+                    return JUnitVersion.JUNIT4;
+                }
+            }
+        }
+        throw new IllegalStateException("No JUnit version found in the imports");
+    }
+
     /**
      * Split the test cases in the test class, at any occurrence of an assertion.
      * For example, given the following pseudo test class:
@@ -154,9 +167,11 @@ public class TestUtils {
      * @param repoRootPath the path to the root of the repository
      * @param testFilePath the path to the test class file
      * @param outputPath the path to the split test class file
+     * @throws IllegalStateException if no JUnit version is found in the imports and the test class cannot include
+     * assertions
      * @return the path to the split test class file
      */
-    public static Path splitTest(Path repoRootPath, Path testFilePath, Path outputPath) {
+    public static Path splitTest(Path repoRootPath, Path testFilePath, Path outputPath) throws IllegalStateException {
         String testFileRelativePath = testFilePath.toString().replace(repoRootPath.getParent().toString(), "");
         // Regular output path for report analysis
         Path regularOutputPath = Paths.get(outputPath.toString(), "regular", testFileRelativePath.replace(".java", TrattoNamingConvention.TEST_SPLIT_FILE.getConventionName()));
@@ -169,7 +184,8 @@ public class TestUtils {
         try {
             // Parse the test class
             CompilationUnit cu = JavaParserUtils.getCompilationUnit(testFilePath);
-
+            // Get Junit version
+            JUnitVersion junitVersion = TestUtils.getJunitVersion(cu.getImports());
             // Get the list of all the methods defined within the test class
             List<MethodDeclaration> testClassMethods = cu.findAll(MethodDeclaration.class);
             // Distribute the methods of the class according to their meaning
@@ -192,6 +208,7 @@ public class TestUtils {
                     testCaseMold.setBody(new BlockStmt());
                     // Parse the statements of the original test case and split it into multiple test cases
                     Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                            junitVersion,
                             originalTestCaseStatements,
                             testCaseMold,
                             0,
@@ -259,6 +276,7 @@ public class TestUtils {
      * The method returns the last test prefix generated, and the list of the intermediary test prefixes, split at any
      * occurrence of an assertion.
      *
+     * @param junitVersion the version of JUnit used in the test class
      * @param statements the list of statements to parse
      * @param testCaseMold the mold of the test case
      * @param startIdx the index of the split test cases
@@ -269,6 +287,7 @@ public class TestUtils {
      * @throws IllegalStateException if an error occurs while parsing the statements of the block
      */
     private static Pair<MethodDeclaration, List<MethodDeclaration>> parseStatementsBlock(
+            JUnitVersion junitVersion,
             List<Statement> statements,
             MethodDeclaration testCaseMold,
             int startIdx,
@@ -301,6 +320,7 @@ public class TestUtils {
             } else if (statement.isBlockStmt()) {
                 // Parse the statements of the do body and split it into multiple test cases
                 Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                        junitVersion,
                         statement.asBlockStmt().getStatements(),
                         splitTestCase,
                         idx,
@@ -326,6 +346,7 @@ public class TestUtils {
                 addStatement(doStmtClone, splitTestCaseBody, blockStatementsType);
                 // Parse the statements of the do body and split it into multiple test cases
                 Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                        junitVersion,
                         new ArrayList<>(Arrays.asList(doStmtBody)),
                         splitTestCase,
                         idx,
@@ -368,6 +389,7 @@ public class TestUtils {
                             if (auxiliaryMethods.get(methodName).getBody().isPresent()) {
                                 // Parse the statements of the do body and split it into multiple test cases
                                 Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                                        junitVersion,
                                         auxiliaryMethods.get(methodName).getBody().get().getStatements(),
                                         splitTestCase,
                                         idx,
@@ -405,6 +427,7 @@ public class TestUtils {
                 addStatement(forEachStmtClone, splitTestCaseBody, blockStatementsType);
                 // Parse the statements of the for each body and split it into multiple test cases
                 Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                        junitVersion,
                         new ArrayList<>(Arrays.asList(forEachStmtBody)),
                         splitTestCase,
                         idx,
@@ -430,6 +453,7 @@ public class TestUtils {
                 addStatement(forStmtClone, splitTestCaseBody, blockStatementsType);
                 // Parse the statements of the for body and split it into multiple test cases
                 Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                        junitVersion,
                         new ArrayList<>(Arrays.asList(forStmtBody)),
                         splitTestCase,
                         idx,
@@ -482,6 +506,7 @@ public class TestUtils {
                     }
                     // Parse the statements of the if body and split it into multiple test cases
                     Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                            junitVersion,
                             new ArrayList<>(Arrays.asList(ifStmtBody)),
                             splitTestCase,
                             idx,
@@ -510,6 +535,7 @@ public class TestUtils {
                 addStatement(synchronizedStmtClone, splitTestCaseBody, blockStatementsType);
                 // Parse the statements of the synchronized body and split it into multiple test cases
                 Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                        junitVersion,
                         new ArrayList<>(Arrays.asList(synchronizedStmtBody)),
                         splitTestCase,
                         idx,
@@ -541,6 +567,7 @@ public class TestUtils {
                     addStatement(switchStmtClone, splitTestCaseBody, blockStatementsType);
                     // Parse the statements of the switch entry and split it into multiple test cases
                     Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                            junitVersion,
                             switchEntry.getStatements(),
                             splitTestCase,
                             idx,
@@ -573,9 +600,10 @@ public class TestUtils {
                     }
                 }
                 // Flatten the try statement into a block statement
-                BlockStmt flatTryStmt = flatTryStmt(tryStmt);
+                BlockStmt flatTryStmt = flatTryStmt(junitVersion, tryStmt);
                 // Parse the statements of the synchronized body and split it into multiple test cases
                 Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                        junitVersion,
                         new ArrayList<>(flatTryStmt.getStatements()),
                         splitTestCase,
                         idx,
@@ -601,6 +629,7 @@ public class TestUtils {
                 addStatement(whileStmtClone, splitTestCaseBody, blockStatementsType);
                 // Parse the statements of the while body and split it into multiple test cases
                 Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                        junitVersion,
                         new ArrayList<>(Arrays.asList(whileStmtBody)),
                         splitTestCase,
                         idx,
@@ -827,17 +856,18 @@ public class TestUtils {
      *     <li>If the {@code TryStmt} contains a catch clause, the last statement in the try block must be a fail() method call</li>
      * </ul>
      *
+     * @param junitVersion the version of JUnit used in the test class
      * @param tryStmt the try statement to flatten
      * @return the flat try block
      */
-    private static BlockStmt flatTryStmt(TryStmt tryStmt) {
+    private static BlockStmt flatTryStmt(JUnitVersion junitVersion, TryStmt tryStmt) {
         BlockStmt flatTryStmt = new BlockStmt();
         // Get the list of statements from the try block
         List<Statement> statements = new ArrayList<>(tryStmt.getTryBlock().getStatements());
         // Check if the try statement contains a catch clause, in which case collect the statements within it
         if (tryStmt.getCatchClauses().size() == 1) {
             // Convert catch clause into an assertThrows statement
-            Optional<Statement> assertThrowsStmt = generateAssertThrowsFromTryStmt(tryStmt);
+            Optional<Statement> assertThrowsStmt = generateAssertThrowsFromTryStmt(junitVersion, tryStmt);
             if (assertThrowsStmt.isPresent()) {
                 // Remove the method called added to the assertion
                 statements.remove(statements.size() - 2);
@@ -867,10 +897,11 @@ public class TestUtils {
      * class from the catch clause and the last method call in the try block. If the last method call is a fail() method
      * call, the message of the fail() method is used as the message of the assertThrows statement.
      *
+     * @param junitVersion the version of JUnit used in the test class
      * @param tryStmt the try statement to generate the assertThrows statement from
      * @return the assertThrows statement, if the fail() method call is found in the try block. An empty optional otherwise.
      */
-    private static Optional<Statement> generateAssertThrowsFromTryStmt(TryStmt tryStmt) {
+    private static Optional<Statement> generateAssertThrowsFromTryStmt(JUnitVersion junitVersion, TryStmt tryStmt) {
         // Get catch clause
         CatchClause catchClause = tryStmt.getCatchClauses().get(0);
         // Get the exception class from the catch clause
@@ -918,7 +949,11 @@ public class TestUtils {
             arguments.add(new ClassExpr(exceptionClass));
             arguments.add(lambdaExpr);
             if (!failMessage.isEmpty()) {
-                arguments.add(new StringLiteralExpr(failMessage));
+                if (junitVersion == JUnitVersion.JUNIT4) {
+                    arguments.addFirst(new StringLiteralExpr(failMessage));
+                } else if (junitVersion == JUnitVersion.JUNIT5) {
+                    arguments.add(new StringLiteralExpr(failMessage));
+                }
             }
             assertThrowsCall.setArguments(arguments);
             VariableDeclarator variableDeclarator = new VariableDeclarator(
@@ -982,14 +1017,13 @@ public class TestUtils {
      * Process the test class of a given repository to generate all the oracles datapoints {@link TestClassOracleDatapoints}
      * from its test cases.
      *
-     * @param repoRootPath the path to the repository to process
      * @param testFilePath the path to the test class to process
      * @param sourceFilePath the path to the corresponding source file, if available
      * @return the list of oracle datapoints generated from the test cases of the test class and a hashmap containing
      * the logs of the errors encountered when processing each test cases (which invoked methods cannot be processed
      * in each test case of the test class)
      */
-    public static Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processSplitTestClass(Path repoRootPath, Path testFilePath, Path sourceFilePath) {
+    public static Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processSplitTestClass(Path testFilePath, Path sourceFilePath) {
         // Create a list to store the oracle datapoints
         List<OracleDatapoint> oracleDatapoints = new ArrayList<>();
         // Create a map to store the processing errors of the test cases (which invoked methods cannot be processed in
@@ -1005,7 +1039,9 @@ public class TestUtils {
             // Get the primary type of the test and focal classes
             TypeDeclaration testClass = cuTestClass.getPrimaryType().orElseThrow(() -> new IllegalStateException("Primary type not found in test class: " + testFilePath));
             TypeDeclaration focalClass = cuFocalClass.getPrimaryType().orElseThrow(() -> new IllegalStateException("Primary type not found in focal class: " + sourceFilePath));
-            //
+            // Get junit version used in the test class
+            JUnitVersion junitVersion = TestUtils.getJunitVersion(cuTestClass.getImports());
+            // Get the path of the source directory of the repository
             Path repoSourcePath = Path.of(sourceFilePath.toString().replace(FilesUtils.getFQNPath((String) focalClass.getFullyQualifiedName().get()).toString(), ""));
             // Distribute the methods of the class according to their meaning (auxiliary, setup & tear down, test cases)
             Triplet<List<MethodDeclaration>, HashMap<String, MethodDeclaration>, HashMap<String, MethodDeclaration>> distributedMethods = distributeMethods(testClass.getMethods());
@@ -1019,6 +1055,7 @@ public class TestUtils {
             TestClassTratto testClassTratto = processTestClass(testClass, testFilePath, distributedMethods);
             // Process focal class
             ClassTratto focalClassTratto = processFocalClass(focalClass, sourceFilePath);
+            testClassOracleDatapointsBuilder.setJunitVersion(junitVersion.getVersion());
             testClassOracleDatapointsBuilder.setTestClass(testClassTratto);
             testClassOracleDatapointsBuilder.setFocalClass(focalClassTratto);
             // Process test cases
@@ -1029,7 +1066,8 @@ public class TestUtils {
                 List<CallableTratto> invokedMethods = invokedMethodsPair.getValue1();
                 CallableTratto testCaseTratto = processCallable(testClass, testCase, invokedMethods);
                 // TODO: Check id the last statement in the test case is an assertion or not
-                String target = JavaParserUtils.getLastStatementInMethodDeclaration(testCase).toString();
+                // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
+                String target = JavaParserUtils.getLastStatementInMethodDeclaration(testCase).toString().replaceAll("Assert.", "");
                 oracleDatapoints.add(new OracleDatapoint(testCaseTratto, target));
             }
             // Set the list of oracle datapoints generated from the test cases of the test class
@@ -1886,7 +1924,8 @@ public class TestUtils {
         callableBuilder.setSignature(JavaParserUtils.getCallableSignature(callableDeclaration));
         callableBuilder.setThrownExceptions(JavaParserUtils.getExceptionsAsString(callableDeclaration.getThrownExceptions()));
         callableBuilder.setJavadoc(JavaParserUtils.getCallableJavadoc(callableDeclaration));
-        callableBuilder.setBody(JavaParserUtils.getCallableSourceCode(callableDeclaration));
+        // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
+        callableBuilder.setBody(JavaParserUtils.getCallableSourceCode(callableDeclaration).replaceAll("Assert.", ""));
         // TODO: Manage invoked methods recursion in the improved version of the dataset
         callableBuilder.setInvokedMethods(invokedMethods); // avoid recursion in the first version of the dataset
         if (callableDeclaration instanceof MethodDeclaration) {

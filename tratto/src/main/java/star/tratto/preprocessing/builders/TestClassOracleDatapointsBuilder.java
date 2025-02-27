@@ -5,16 +5,27 @@ import java.util.List;
 
 public class TestClassOracleDatapointsBuilder {
 
+    private String junitVersion;
     private TestClassTratto testClass;
     private ClassTratto focalClass;
     private List<OracleDatapoint> datapoints;
 
     public TestClassOracleDatapoints build() {
         return new TestClassOracleDatapoints(
+            this.junitVersion,
             this.testClass,
             this.focalClass,
             this.datapoints
         );
+    }
+
+    /**
+     * Set the junit version of the TestClassOracleDatapoints.
+     *
+     * @param junitVersion the junit version used in the test class to generate assertions
+     */
+    public void setJunitVersion(String junitVersion) {
+        this.junitVersion = junitVersion;
     }
 
     /**

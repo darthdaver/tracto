@@ -99,8 +99,12 @@ public class OraclesDataset {
         // Iterate over the original test class files and split the test cases at any occurrence of an assertion
         for (Path testClassPath : testFilePaths) {
             logger.info("Splitting test class: {}", testClassPath.toString().replace(repoRootPath.toString(), ""));
-            Path splitTestClassPath = TestUtils.splitTest(repoRootPath, testClassPath, Paths.get(outputPath.toString(), "test-split", projectIdentifier));
-            splittedTestFilePaths.add(new Pair<>(splitTestClassPath, Optional.ofNullable(mappedTests.get(testClassPath))));
+            try {
+                Path splitTestClassPath = TestUtils.splitTest(repoRootPath, testClassPath, Paths.get(outputPath.toString(), "test-split", projectIdentifier));
+                splittedTestFilePaths.add(new Pair<>(splitTestClassPath, Optional.ofNullable(mappedTests.get(testClassPath))));
+            } catch (IllegalStateException e) {
+                logger.error("No JUnit version is found in the imports and the test class cannot include assertions.");
+            }
         }
         // Update java parser considering the new split files generated within the repository
         JavaParserUtils.setRepoJavaParser(repoRootPath, classpath);
@@ -116,14 +120,14 @@ public class OraclesDataset {
             if (sourceFilePath.isPresent()) {
                 // Debugging
                 // if (splitTestClassPath.toString().replace(repoRootPath.toString(), "").contains("SynL1COlciSceneTransformProviderTestTrattoSplit")) {
-                //    Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(repoRootPath, splitTestClassPath, sourceFilePath.get());
+                //    Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(splitTestClassPath, sourceFilePath.get());
                 //    TestClassOracleDatapoints splitTestClasstestClassesOracleDatapoints = processedSplitTestClassResult.getValue0();
                 //    HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();
                 //    oraclesDatapoints += splitTestClasstestClassesOracleDatapoints.datapoints().size();
                 //    testClassesOracleDatapoints.add(splitTestClasstestClassesOracleDatapoints);
                 // }
                 try {
-                    Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(repoRootPath, splitTestClassPath, sourceFilePath.get());
+                    Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(splitTestClassPath, sourceFilePath.get());
                     TestClassOracleDatapoints splitTestClasstestClassesOracleDatapoints = processedSplitTestClassResult.getValue0();
                     HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();
                     testClassesOracleDatapoints.add(splitTestClasstestClassesOracleDatapoints);
