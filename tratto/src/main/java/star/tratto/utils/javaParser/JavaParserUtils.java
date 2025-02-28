@@ -1408,6 +1408,17 @@ public class JavaParserUtils {
     }
 
     /**
+     * Remove the last statement in a method declaration.
+     *
+     * @param callableDeclaration the method declaration to process
+     * @return the method declaration without the last statement
+     */
+    public static MethodDeclaration removeLastStatementInMethodDeclaration(MethodDeclaration callableDeclaration) {
+        callableDeclaration.getBody().get().getStatements().removeLast();
+        return callableDeclaration;
+    }
+
+    /**
      * Retrieve the type declaration from the fully qualified name of the class and the root path of the repository where
      * the class should be located (source code or decompiled library), or an empty optional if the class cannot be found.
      *

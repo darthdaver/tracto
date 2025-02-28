@@ -1064,7 +1064,8 @@ public class TestUtils {
                 // TODO: Focal method excluded from the analysis for the moment
                 CallableTratto focalMethodTratto = invokedMethodsPair.getValue0();
                 List<CallableTratto> invokedMethods = invokedMethodsPair.getValue1();
-                CallableTratto testCaseTratto = processCallable(testClass, testCase, invokedMethods);
+                MethodDeclaration testPrefix = JavaParserUtils.removeLastStatementInMethodDeclaration(testCase);
+                CallableTratto testCaseTratto = processCallable(testClass, testPrefix, invokedMethods);
                 // TODO: Check id the last statement in the test case is an assertion or not
                 // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
                 String target = JavaParserUtils.getLastStatementInMethodDeclaration(testCase).toString().replaceAll("Assert.", "");
