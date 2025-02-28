@@ -247,21 +247,7 @@ class EWash:
         """
         # Add the test prefix to the input (src) (removing the target oracle to produce from the body)
         base_src = "// Test prefix\n"
-        if self.ewash_config['scope'] == "training":
-            # Find the index of the target oracle in the test prefix
-            tp_lines = tp['body'].split("\n")
-            assertion_idx = -1
-            for i, line in enumerate(tp_lines):
-                if re.sub(r'\s+', '', oracle) in re.sub(r'\s+', '', line):
-                    assertion_idx = i
-                    break
-            if assertion_idx != -1:
-                # Remove the target oracle from the test prefix
-                base_src += "\n".join([l for i, l in enumerate(tp_lines) if i != assertion_idx]) + "\n\n"
-            else:
-                raise ValueError(f"Target oracle ({oracle}) not found in the test prefix {tp['signature']} (training configuration).")
-        else:
-            base_src += f"{tp['body']}\n\n"
+        base_src += f"{tp['body']}\n\n"
         # Add Junit Version
         base_src += "// Junit Version\n"
         base_src += f"{ju_v}\n\n"
