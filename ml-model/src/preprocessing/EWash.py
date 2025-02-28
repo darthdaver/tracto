@@ -33,7 +33,7 @@ class EWash:
     approach fits in the input length limit of the model, otherwise the input string only the information added before the
     limit was exceeded.
     """
-    def __init__(self, tp, tc, fc, oracle, intros, config, partial_oracle=None, tokens=None):
+    def __init__(self, tp, tc, fc, ju_v, oracle, intros, config, partial_oracle=None, tokens=None):
         """
         Initialize the E-wash class with the information about the test prefix, the test class, the focal class, and the
         target oracle to generate. The configuration file for the E-WASH approach can be provided as an argument, otherwise
@@ -42,6 +42,7 @@ class EWash:
         :param tp: the test prefix to process
         :param tc: the test class where the test prefix is defined
         :param fc: the focal class corresponding to the test class
+        :param ju_v: the version of Junit used in the test class
         :param oracle: the whole oracle to generate
         :param intros: the intro comments for the sections of the input
         :param config: the configuration object
@@ -54,7 +55,7 @@ class EWash:
         self.counter = 0
         self.ewash_config = config
         self.tokenizer = AutoTokenizer.from_pretrained(self.ewash_config['tokenizer'])
-        self.ewash_dict = self.initialize_ewash(intros, tp, tc, fc, oracle, partial_oracle, tokens)
+        self.ewash_dict = self.initialize_ewash(intros, tp, tc, fc, ju_v, oracle, partial_oracle, tokens)
 
     def count_tokens(self, input_text):
         """
@@ -179,13 +180,14 @@ class EWash:
                 normalized_section[ns_type] = section[s_type]
         return normalized_section
 
-    def initialize_ewash(self, intros, tp, tc, fc, oracle, partial_oracle=None, tokens=None):
+    def initialize_ewash(self, intros, tp, tc, fc, ju_v, oracle, partial_oracle=None, tokens=None):
         """
         Initialize the dictionary with the structured information of the datapoint to assemble the model input of the datapoint
         :param intros: the intro comments for the sections of the input
         :param tp: the test prefix to process
         :param tc: the test class where the test prefix is defined
         :param fc: the focal class corresponding to the test class
+        :param ju_v: the version of Junit used in the test class
         :param oracle: the whole oracle to generate
         :param partial_oracle: the partial oracle generated so far (in case of oracle generation at token level). None if
         the configuration file is set to 'oracles' generation. Different from None if the configuration file is set to
@@ -206,7 +208,7 @@ class EWash:
         # Generate the base input string (always present in the input)
         # Add the test prefix to the input (src) (removing the target oracle to produce from the body)
         # Add the tokens of the new base input string to the counter
-        base_src = self.generate_base_src(intros, tp, oracle, partial_oracle, tokens)
+        base_src = self.generate_base_src(intros, tp, ju_v, oracle, partial_oracle, tokens)
         try:
             self.update_counter(base_src)
         except ValueError:
@@ -215,6 +217,8 @@ class EWash:
             raise ValueError(err_msg)
         # Store the base input string in the ewash dictionary
         ewash_dict['base_src'] = base_src
+        # Store the junit version
+        ewash_dict['junit_version'] = ju_v
         # Iterate over the sections of the input (test prefix, test class, focal class)
         for section_id in self.ewash_config['sections']:
             # Get the information about the current section to process (test prefix, test class, or focal class)
@@ -223,13 +227,14 @@ class EWash:
         # Return the initialized ewash dictionary
         return ewash_dict
 
-    def generate_base_src(self, intros, tp, oracle, partial_oracle=None, tokens=None):
+    def generate_base_src(self, intros, tp, ju_v, oracle, partial_oracle=None, tokens=None):
         """
         Generate the base input string for the model using the E-WASH approach, assembling the test prefix and the assertion
         mask (always present in the input). The method returns the base input string with the test prefix and the assertion mask
         or raise an exception if the input length limit is exceeded.
         :param intros: the intro comments for the sections of the input
         :param tp: the test prefix to process
+        :param ju_v: the version of Junit used in the test class
         :param oracle: the whole oracle to generate
         :param partial_oracle: the partial oracle generated so far (in case of oracle generation at token level). None if
         the configuration file is set to 'oracles' generation. Different from None if the configuration file is set to
@@ -257,6 +262,9 @@ class EWash:
                 raise ValueError(f"Target oracle ({oracle}) not found in the test prefix {tp['signature']} (training configuration).")
         else:
             base_src += f"{tp['body']}\n\n"
+        # Add Junit Version
+        base_src += "// Junit Version\n"
+        base_src += f"{ju_v}\n\n"
         # Add the oracle mask the model has to generate
         base_src += "// Assertion\n"
         if self.ewash_config['type'] == "oracles":
@@ -272,11 +280,12 @@ class EWash:
         # Return the base input string
         return base_src
 
-    def update_base_src(self, intros, tp, oracle, partial_oracle=None, tokens=None):
+    def update_base_src(self, intros, tp, ju_v, oracle, partial_oracle=None, tokens=None):
         """
         Update the base input string in the ewash dictionary already initialized.
         :param intros: the intro comments for the sections of the input
         :param tp: the test prefix to process
+        :param ju_v: the version of Junit used in the test class
         :param oracle: the whole oracle to generate
         :param partial_oracle: the partial oracle generated so far (in case of oracle generation at token level). None if
         the configuration file is set to 'oracles' generation. Different from None if the configuration file is set to
@@ -287,7 +296,7 @@ class EWash:
         """
         # Generate the base input string (always present in the input)
         # Add the test prefix to the input (src) (removing the target oracle to produce from the body)
-        base_src = self.generate_base_src(intros, tp, oracle, partial_oracle, tokens)
+        base_src = self.generate_base_src(intros, tp, ju_v, oracle, partial_oracle, tokens)
         # Subtract the tokens of the old base input string from the counter
         self.update_counter(self.ewash_dict['base_src'], action="subtract")
         # Add the tokens of the new base input string to the counter
@@ -300,7 +309,7 @@ class EWash:
         # Store the base input string in the ewash dictionary
         self.ewash_dict['base_src'] = base_src
 
-    def update(self, intros, tp, oracle, partial_oracle=None, tokens=None, update_section=False):
+    def update(self, intros, tp, ju_v, oracle, partial_oracle=None, tokens=None, update_section=False):
         """
         Update the E-WASH dictionary with the new information about the test prefix, the oracle to generate, the partial
         oracle and the tokens. Update the base input string (test prefix + assertion mask, if the configuration file is set
@@ -308,6 +317,7 @@ class EWash:
         'tokens' generation).
         :param intros: the intro comments for the sections of the input
         :param tp: the test prefix to process
+        :param ju_v: the version of Junit used in the test class
         :param oracle: the whole oracle to generate
         :param partial_oracle: the partial oracle generated so far (in case of oracle generation at token level). None if
         the configuration file is set to 'oracles' generation. Different from None if the configuration file is set to
@@ -319,7 +329,7 @@ class EWash:
         """
         # Generate the base input string (always present in the input)
         # Add the test prefix to the input (src) (removing the target oracle to produce from the body)
-        self.update_base_src(intros, tp, oracle, partial_oracle, tokens)
+        self.update_base_src(intros, tp, ju_v, oracle, partial_oracle, tokens)
         if update_section:
             # Remove the information of the test prefix from the ewash dictionary
             self.remove_section_info('test_prefix')

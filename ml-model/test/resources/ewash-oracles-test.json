@@ -1,5 +1,6 @@
 [
   {
+    "junitVersion": "Junit 4",
     "testClass": {
       "identifier": "test-Class0",
       "packageIdentifier": "com.example.test.ewash",
@@ -193,6 +194,7 @@
     ]
   },
   {
+    "junitVersion": "JUnit 4",
     "testClass": {
       "identifier": "test-Class1",
       "packageIdentifier": "com.example.test.ewash",
