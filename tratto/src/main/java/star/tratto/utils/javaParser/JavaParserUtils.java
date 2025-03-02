@@ -1433,7 +1433,7 @@ public class JavaParserUtils {
         List<Path> candidatePrefixPaths = new ArrayList<>();
         candidatePrefixPaths.add(repoSourcePath);
         boolean hasLibFolder = FilesUtils.hasChildDirectory(referencePath, TrattoNamingConvention.LIB_FOLDER.getConventionName());
-        while(!hasLibFolder || referencePath.getParent() == null) {
+        while(!hasLibFolder && !(referencePath.getParent() == null)) {
             referencePath = referencePath.getParent();
             hasLibFolder = FilesUtils.hasChildDirectory(referencePath, TrattoNamingConvention.LIB_FOLDER.getConventionName());
         }

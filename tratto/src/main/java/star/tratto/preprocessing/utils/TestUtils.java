@@ -1060,16 +1060,16 @@ public class TestUtils {
             testClassOracleDatapointsBuilder.setFocalClass(focalClassTratto);
             // Process test cases
             for (MethodDeclaration testCase : testCases) {
-                Pair<CallableTratto,List<CallableTratto>> invokedMethodsPair = processInvokedMethods(repoSourcePath, focalClass, testClass, testCase, testsProcessingErrors);
+                String target = JavaParserUtils.getLastStatementInMethodDeclaration(testCase).toString().replaceAll("Assert.", "");
+                MethodDeclaration testPrefix = JavaParserUtils.removeLastStatementInMethodDeclaration(testCase);
+                Pair<CallableTratto,List<CallableTratto>> invokedMethodsPair = processInvokedMethods(repoSourcePath, focalClass, testClass, testPrefix, testsProcessingErrors);
                 // TODO: Focal method excluded from the analysis for the moment
                 CallableTratto focalMethodTratto = invokedMethodsPair.getValue0();
                 List<CallableTratto> invokedMethods = invokedMethodsPair.getValue1();
-                MethodDeclaration testPrefix = JavaParserUtils.removeLastStatementInMethodDeclaration(testCase);
-                CallableTratto testCaseTratto = processCallable(testClass, testPrefix, invokedMethods);
+                CallableTratto testPrefixTratto = processCallable(testClass, testPrefix, invokedMethods);
                 // TODO: Check id the last statement in the test case is an assertion or not
                 // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
-                String target = JavaParserUtils.getLastStatementInMethodDeclaration(testCase).toString().replaceAll("Assert.", "");
-                oracleDatapoints.add(new OracleDatapoint(testCaseTratto, target));
+                oracleDatapoints.add(new OracleDatapoint(testPrefixTratto, target));
             }
             // Set the list of oracle datapoints generated from the test cases of the test class
             testClassOracleDatapointsBuilder.setDatapoints(oracleDatapoints);
@@ -1880,7 +1880,8 @@ public class TestUtils {
             // logger.error(errMsg);
             testsProcessingErrors.get(testClassName).get(testName).add(errMsg + " | " + e.getMessage());
         }
-        return new Pair<>(focalMethod, invokedMethods);
+        // Remove duplicates from the list of invoked methods and return the focal method and the set of invoked methods (as list)
+        return new Pair<>(focalMethod, new ArrayList<>(new LinkedHashSet<>(invokedMethods)));
     }
 
     /**
