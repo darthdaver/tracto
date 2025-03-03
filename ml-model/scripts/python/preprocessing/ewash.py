@@ -64,7 +64,14 @@ if __name__ == '__main__':
     # Initialize statistics
     stats = {}
     # Collect files to process
-    files = [f for f in os.listdir(input_path) if f.endswith('.json')] if os.path.isdir(input_path) else [input_path]
+    if os.path.isdir(input_path):
+        files = []
+        for root, dirs, files in os.walk(input_path):
+            for file in files:
+                if file.endswith('.json'):
+                    files.append(os.path.join(root, file))
+    else:
+        files = [input_path]
     # Process each JSON file in the original json dataset
     for filename in files:
         logger.info(f'Processing file {filename}')
