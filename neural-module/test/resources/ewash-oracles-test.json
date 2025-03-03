@@ -1,0 +1,390 @@
+[
+  {
+    "junitVersion": "Junit 4",
+    "testClass": {
+      "identifier": "test-Class0",
+      "packageIdentifier": "com.example.test.ewash",
+      "fields": [
+        {
+          "fullSignature": "private static final int[] testClassField0"
+        }
+      ],
+      "auxiliaryMethods": [],
+      "setupTeardownMethods": [{
+          "signature": "public static void setupTearDown0() throws Exception",
+          "javadoc": "/**\n * This is a setup method for the test class.\n * \n * <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer nec odio. Praesent libero. Sed cursus ante dapibus diam. Sed nisi. Nulla quis sem at nibh elementum imperdiet. Duis sagittis ipsum. Praesent mauris. Fusce nec tellus sed augue semper porta. Mauris massa. Vestibulum lacinia arcu eget nulla. \n * \n * <p>Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Curabitur sodales ligula in libero. Sed dignissim lacinia nunc. Curabitur tortor. Pellentesque nibh. Aenean quam. In scelerisque sem at dolor. Maecenas mattis. Sed convallis tristique sem. Proin ut ligula vel nunc egestas porttitor. Morbi lectus risus, iaculis vel, suscipit quis, luctus non, massa. Fusce ac turpis quis ligula lacinia aliquet. Mauris ipsum. Nulla metus metus, ullamcorper vel, tincidunt sed, euismod in, nibh. Quisque volutpat condimentum velit. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos.\n */",
+          "body": "public static void setupTearDown0() throws Exception {\n    System.out.println(\\\"creerCompte\\\");\n    String login = \\\"\\\";\n    String mdp = \\\"\\\";\n    ConnexionServeur instance = new ConnexionServeur();\n    Boolean expResult = null;\n    Boolean result = instance.creerCompte(login, mdp);\n    assertEquals(expResult, result);\n}"
+      },
+      {
+          "signature": "public void setupTearDown1()",
+          "javadoc": "/**\n * Setup Teardown 1.\n * \n * This method tests the first functionality.\n */",
+          "body": "public void setupTearDown1() {\n    // Test code here\n    int a = 1;\n    int b = 2;\n    int sum = a + b;\n    System.out.println(sum);\n}"
+      },
+      {
+          "signature": "public void setupTearDown2()",
+          "javadoc": "",
+          "body": "public void setupTearDown2() {\n    // Test code here\n    String str = \\\"Hello\\\";\n    System.out.println(str);\n}"
+      },
+      {
+          "signature": "public void setupTearDown3()",
+          "javadoc": "/**\n * Setup Teardown 3.\n * \n * This method tests the third functionality.\n * \n * It includes multiple steps.\n */",
+          "body": ""
+      },
+      {
+          "signature": "public void setupTearDown4()",
+          "javadoc": "/**\n * Setup Teardown 4.\n */",
+          "body": "public void setupTearDown4() {\n    // Test code here\n    boolean flag = true;\n    if (flag) {\n        System.out.println(\\\"Flag is true\\\");\n    }\n}"
+      },
+      {
+          "signature": "public void setupTearDown5()",
+          "javadoc": "/**\n * Setup Teardown 5.\n * \n * This method tests the fifth functionality.\n */",
+          "body": "public void setupTearDown5() {\n    // Test code here\n    double x = 10.5;\n    double y = 20.5;\n    double result = x * y;\n    System.out.println(result);\n}"
+      },
+      {
+          "signature": "public void setupTearDown6()",
+          "javadoc": "/**\n * Setup Teardown 6.\n */",
+          "body": null
+      },
+      {
+          "signature": "public void setupTearDown7()",
+          "javadoc": "/**\n * Setup Teardown 7.\n * \n * This method tests the seventh functionality.\n */",
+          "body": "public void setupTearDown7() {\n    // Test code here\n    List<String> list = new ArrayList<>();\n    list.add(\\\"item1\\\");\n    list.add(\\\"item2\\\");\n    System.out.println(list);\n}"
+      },
+      {
+          "signature": "public void setupTearDown8()",
+          "javadoc": "/**\n * Setup Teardown 8.\n * \n * This method tests the eighth functionality.\n */",
+          "body": "public void setupTearDown8() {\n    // Test code here\n    Map<String, Integer> map = new HashMap<>();\n    map.put(\\\"key1\\\", 1);\n    map.put(\\\"key2\\\", 2);\n    System.out.println(map);\n}"
+      },
+      {
+          "signature": "public void setupTearDown9()",
+          "javadoc": "/**\n * Setup Teardown 9.\n * \n * This method tests the ninth functionality.\n */",
+          "body": "public void setupTearDown9() {\n    // Test code here\n    String[] array = {\\\"one\\\", \\\"two\\\", \\\"three\\\"};\n    for (String item : array) {\n        System.out.println(item);\n    }\n}"
+      },
+      {
+          "signature": "public void setupTearDown10()",
+          "javadoc": "/**\n * Setup Teardown 10.\n * \n * This method tests the tenth functionality.\n */",
+          "body": "public void setupTearDown10() {\n    // Test code here\n    int[] numbers = {1, 2, 3, 4, 5};\n    int sum = 0;\n    for (int number : numbers) {\n        sum += number;\n    }\n    System.out.println(sum);\n}"
+      }]
+    },
+    "focalClass": {
+      "identifier": "focal-Class0",
+      "packageIdentifier": "com.example.test.ewash",
+      "fields": [
+        {
+          "fullSignature": "private static final int[] focalClassField0;"
+        },
+        {
+          "fullSignature": "public static final int[] focalClassField1;"
+        },
+        {
+          "fullSignature": "private static final int[] focalClassField2;"
+        }
+      ],
+      "constructors": [
+        {
+          "signature": "public FocalClass0()",
+          "javadoc": "/**\n * This is a constructor for the focal class.\n */",
+          "body": "public FocalClass0() {\n    // Constructor code here\n    System.out.println(\\\"Constructor called\\\");\n}"
+        },
+        {
+          "signature": "public FocalClass0(int a)",
+          "javadoc": "/**\n * This is a constructor for the focal class.\n * \n * @param a The value of a.\n */",
+          "body": "public FocalClass0(int a) {\n    // Constructor code here\n    System.out.println(\\\"Constructor called with a = \\\" + a);\n}"
+        },
+        {
+          "signature": "public FocalClass0(int a, int b)",
+          "javadoc": "/**\n * This is a constructor for the focal class.\n * \n * @param a The value of a.\n * @param b The value of b.\n */",
+          "body": "public FocalClass0(int a, int b) {\n    // Constructor code here\n    System.out.println(\\\"Constructor called with a = \\\" + a + \\\" and b = \\\" + b);\n}"
+        }
+      ],
+      "methods" : [
+        {
+          "signature": "public void focalClassMethod0()",
+          "javadoc": "/**\n * This is a method for the focal class.\n */",
+          "body": "public void focalClassMethod0() {\n    // Method code here\n    System.out.println(\\\"Method called\\\");\n}"
+        },
+        {
+          "signature": "public void focalClassMethod1()",
+          "javadoc": "/**\n * This is a method for the focal class.\n * \n * This method tests the first functionality.\n */",
+          "body": "public void focalClassMethod1() {\n    // Method code here\n    int a = 1;\n    int b = 2;\n    int sum = a + b;\n    System.out.println(sum);\n}"
+        },
+        {
+          "signature": "public void focalClassMethod2()",
+          "javadoc": "/**\n * This is a method for the focal class.\n * \n * This method tests the second functionality.\n */",
+          "body": "public void focalClassMethod2() {\n    // Method code here\n    String str = \\\"Hello\\\";\n    System.out.println(str);\n}"
+        },
+        {
+          "signature": "public void focalClassMethod3()",
+          "javadoc": "",
+          "body": "public void focalClassMethod3();"
+        },
+        {
+          "signature": "public void focalClassMethod4()",
+          "javadoc": "",
+          "body": null
+        },
+        {
+          "signature": "public void focalClassMethod5()",
+          "javadoc": "",
+          "body": null
+        }
+      ]
+    },
+    "datapoints": [
+      {
+        "testPrefix": {
+          "signature": "public void testPrefix0()",
+          "javadoc": "/**\n * This is a test prefix method.\n * \n * This method tests the first functionality.\n */",
+          "body": "public void testPrefix0() {\n    // Test code here\n    int a = 1;\n    int b = 2;\n    int sum = a + b;\n    focalClassMethod0();\n    focalClassMethod4();\n    assertEquals(sum, 3);}",
+          "invokedMethods": [
+            {
+              "signature": "public void focalClassMethod0()",
+              "javadoc": "/**\n * This is a method for the focal class.\n */",
+              "body": "public void focalClassMethod0() {\n    // Method code here\n    System.out.println(\\\"Method called\\\");\n}"
+            },
+            {
+              "signature": "public void focalClassMethod4()",
+              "javadoc": "",
+              "body": null
+            }
+          ]
+        },
+        "target": "assertEquals(sum, 3);"
+      },
+      {
+          "testPrefix": {
+            "signature": "public void testPrefix1()",
+            "javadoc": "/**\n * This is a test prefix method.\n * \n * This method tests the second functionality.\n */",
+            "body": "public void testPrefix1() {\n    // Test code here\n    String str = \\\"Hello\\\";\n    focalClassMethod1();\n    focalClassMethod2();\n    assertEquals(str, \\\"Hello\\\");}",
+            "invokedMethods": [
+              {
+                "signature": "public void focalClassMethod1()",
+                "javadoc": "/**\n * This is a method for the focal class.\n * \n * This method tests the first functionality.\n */",
+                "body": "public void focalClassMethod1() {\n    // Method code here\n    int a = 1;\n    int b = 2;\n    int sum = a + b;\n    System.out.println(sum);\n}"
+              },
+              {
+                "signature": "public void focalClassMethod2()",
+                "javadoc": "/**\n * This is a method for the focal class.\n * \n * This method tests the second functionality.\n */",
+                "body": "public void focalClassMethod2() {\n    // Method code here\n    String str = \\\"Hello\\\";\n    System.out.println(str);\n}"
+              }
+            ]
+          },
+          "target": "assertEquals(str, \\\"Hello\\\");"
+        },
+        {
+          "testPrefix": {
+            "signature": "public void testPrefix2()",
+            "javadoc": "/**\n * This is a test prefix method.\n * \n * This method tests the third functionality.\n */",
+            "body": "public void testPrefix2() {\n    // Test code here\n    int x = 10;\n    int y = 20;\n    int product = x * y;\n    focalClassMethod3();\n    focalClassMethod5();\n    assertEquals(product, 200);}",
+            "invokedMethods": [
+              {
+                "signature": "public void focalClassMethod3()",
+                "javadoc": "",
+                "body": "public void focalClassMethod3() {\n    // Method code here\n    System.out.println(\\\"Method 3 called\\\");\n}"
+              },
+              {
+                "signature": "public void focalClassMethod5()",
+                "javadoc": "",
+                "body": "public void focalClassMethod5() {\n    // Method code here\n    System.out.println(\\\"Method 5 called\\\");\n}"
+              }
+            ]
+          },
+          "target": "assertEquals(product, 200);"
+        }
+    ]
+  },
+  {
+    "junitVersion": "JUnit 4",
+    "testClass": {
+      "identifier": "test-Class1",
+      "packageIdentifier": "com.example.test.ewash",
+      "fields": [
+        {
+          "fullSignature": "private static final int[] testClassField1"
+        }
+      ],
+      "auxiliaryMethods": [],
+      "setupTeardownMethods": [{
+          "signature": "public static void setupTearDown0() throws Exception",
+          "javadoc": "/**\n * This is a setup method for the test class.\n * \n * <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer nec odio. Praesent libero. Sed cursus ante dapibus diam. Sed nisi. Nulla quis sem at nibh elementum imperdiet. Duis sagittis ipsum. Praesent mauris. Fusce nec tellus sed augue semper porta. Mauris massa. Vestibulum lacinia arcu eget nulla. \n * \n * <p>Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Curabitur sodales ligula in libero. Sed dignissim lacinia nunc. Curabitur tortor. Pellentesque nibh. Aenean quam. In scelerisque sem at dolor. Maecenas mattis. Sed convallis tristique sem. Proin ut ligula vel nunc egestas porttitor. Morbi lectus risus, iaculis vel, suscipit quis, luctus non, massa. Fusce ac turpis quis ligula lacinia aliquet. Mauris ipsum. Nulla metus metus, ullamcorper vel, tincidunt sed, euismod in, nibh. Quisque volutpat condimentum velit. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos.\n */",
+          "body": "public static void setupTearDown0() throws Exception {\n    System.out.println(\\\"creerCompte\\\");\n    String login = \\\"\\\";\n    String mdp = \\\"\\\";\n    ConnexionServeur instance = new ConnexionServeur();\n    Boolean expResult = null;\n    Boolean result = instance.creerCompte(login, mdp);\n    assertEquals(expResult, result);\n}"
+        },
+        {
+          "signature": "public void setupTearDown1()",
+          "javadoc": "/**\n * Setup Teardown 1.\n * \n * This method tests the first functionality.\n */",
+          "body": "public void setupTearDown1() {\n    // Test code here\n    int a = 1;\n    int b = 2;\n    int sum = a + b;\n    System.out.println(sum);\n}"
+        },
+        {
+          "signature": "public void setupTearDown2()",
+          "javadoc": "",
+          "body": "public void setupTearDown2() {\n    // Test code here\n    String str = \\\"Hello\\\";\n    System.out.println(str);\n}"
+        },
+        {
+          "signature": "public void setupTearDown3()",
+          "javadoc": "/**\n * Setup Teardown 3.\n * \n * This method tests the third functionality.\n * \n * It includes multiple steps.\n */",
+          "body": ""
+        },
+        {
+          "signature": "public void setupTearDown4()",
+          "javadoc": "/**\n * Setup Teardown 4.\n */",
+          "body": "public void setupTearDown4() {\n    // Test code here\n    boolean flag = true;\n    if (flag) {\n        System.out.println(\\\"Flag is true\\\");\n    }\n}"
+        },
+        {
+          "signature": "public void setupTearDown5()",
+          "javadoc": "/**\n * Setup Teardown 5.\n * \n * This method tests the fifth functionality.\n */",
+          "body": "public void setupTearDown5() {\n    // Test code here\n    double x = 10.5;\n    double y = 20.5;\n    double result = x * y;\n    System.out.println(result);\n}"
+        },
+        {
+          "signature": "public void setupTearDown6()",
+          "javadoc": "/**\n * Setup Teardown 6.\n */",
+          "body": null
+        },
+        {
+          "signature": "public void setupTearDown7()",
+          "javadoc": "/**\n * Setup Teardown 7.\n * \n * This method tests the seventh functionality.\n */",
+          "body": "public void setupTearDown7() {\n    // Test code here\n    List<String> list = new ArrayList<>();\n    list.add(\\\"item1\\\");\n    list.add(\\\"item2\\\");\n    System.out.println(list);\n}"
+        },
+        {
+          "signature": "public void setupTearDown8()",
+          "javadoc": "/**\n * Setup Teardown 8.\n * \n * This method tests the eighth functionality.\n */",
+          "body": "public void setupTearDown8() {\n    // Test code here\n    Map<String, Integer> map = new HashMap<>();\n    map.put(\\\"key1\\\", 1);\n    map.put(\\\"key2\\\", 2);\n    System.out.println(map);\n}"
+        },
+        {
+          "signature": "public void setupTearDown9()",
+          "javadoc": "/**\n * Setup Teardown 9.\n * \n * This method tests the ninth functionality.\n */",
+          "body": "public void setupTearDown9() {\n    // Test code here\n    String[] array = {\\\"one\\\", \\\"two\\\", \\\"three\\\"};\n    for (String item : array) {\n        System.out.println(item);\n    }\n}"
+        },
+        {
+          "signature": "public void setupTearDown10()",
+          "javadoc": "/**\n * Setup Teardown 10.\n * \n * This method tests the tenth functionality.\n */",
+          "body": "public void setupTearDown10() {\n    // Test code here\n    int[] numbers = {1, 2, 3, 4, 5};\n    int sum = 0;\n    for (int number : numbers) {\n        sum += number;\n    }\n    System.out.println(sum);\n}"
+        }]
+    },
+    "focalClass": {
+      "identifier": "focal-Class1",
+      "packageIdentifier": "com.example.test.ewash",
+      "fields": [
+        {
+          "fullSignature": "private static final int[] focalClassField0;"
+        },
+        {
+          "fullSignature": "public static final int[] focalClassField1;"
+        },
+        {
+          "fullSignature": "private static final int[] focalClassField2;"
+        }
+      ],
+      "constructors": [
+        {
+          "signature": "public FocalClass0()",
+          "javadoc": "/**\n * This is a constructor for the focal class.\n */",
+          "body": "public FocalClass0() {\n    // Constructor code here\n    System.out.println(\\\"Constructor called\\\");\n}"
+        },
+        {
+          "signature": "public FocalClass0(int a)",
+          "javadoc": "/**\n * This is a constructor for the focal class.\n * \n * @param a The value of a.\n */",
+          "body": "public FocalClass0(int a) {\n    // Constructor code here\n    System.out.println(\\\"Constructor called with a = \\\" + a);\n}"
+        },
+        {
+          "signature": "public FocalClass0(int a, int b)",
+          "javadoc": "/**\n * This is a constructor for the focal class.\n * \n * @param a The value of a.\n * @param b The value of b.\n */",
+          "body": "public FocalClass0(int a, int b) {\n    // Constructor code here\n    System.out.println(\\\"Constructor called with a = \\\" + a + \\\" and b = \\\" + b);\n}"
+        }
+      ],
+      "methods" : [
+        {
+          "signature": "public void focalClassMethod0()",
+          "javadoc": "/**\n * This is a method for the focal class.\n */",
+          "body": "public void focalClassMethod0() {\n    // Method code here\n    System.out.println(\\\"Method called\\\");\n}"
+        },
+        {
+          "signature": "public void focalClassMethod1()",
+          "javadoc": "/**\n * This is a method for the focal class.\n * \n * This method tests the first functionality.\n */",
+          "body": "public void focalClassMethod1() {\n    // Method code here\n    int a = 1;\n    int b = 2;\n    int sum = a + b;\n    System.out.println(sum);\n}"
+        },
+        {
+          "signature": "public void focalClassMethod2()",
+          "javadoc": "/**\n * This is a method for the focal class.\n * \n * This method tests the second functionality.\n */",
+          "body": "public void focalClassMethod2() {\n    // Method code here\n    String str = \\\"Hello\\\";\n    System.out.println(str);\n}"
+        },
+        {
+          "signature": "public void focalClassMethod3()",
+          "javadoc": "",
+          "body": "public void focalClassMethod3();"
+        },
+        {
+          "signature": "public void focalClassMethod4()",
+          "javadoc": "",
+          "body": null
+        },
+        {
+          "signature": "public void focalClassMethod5()",
+          "javadoc": "",
+          "body": null
+        }
+      ]
+    },
+    "datapoints": [
+      {
+        "testPrefix": {
+          "signature": "public void testPrefix0()",
+          "javadoc": "/**\n * This is a test prefix method.\n * \n * This method tests the first functionality.\n */",
+          "body": "public void testPrefix0() {\n    // Test code here\n    int a = 1;\n    int b = 2;\n    int sum = a + b;\n    focalClassMethod0();\n    focalClassMethod4();\n    assertEquals(sum, 3);}",
+          "invokedMethods": [
+            {
+              "signature": "public void focalClassMethod0()",
+              "javadoc": "/**\n * This is a method for the focal class.\n */",
+              "body": "public void focalClassMethod0() {\n    // Method code here\n    System.out.println(\\\"Method called\\\");\n}"
+            },
+            {
+              "signature": "public void focalClassMethod4()",
+              "javadoc": "",
+              "body": null
+            }
+          ]
+        },
+        "target": "assertEquals(sum, 3);"
+      },
+      {
+          "testPrefix": {
+            "signature": "public void testPrefix1()",
+            "javadoc": "/**\n * This is a test prefix method.\n * \n * This method tests the second functionality.\n */",
+            "body": "public void testPrefix1() {\n    // Test code here\n    String str = \\\"Hello\\\";\n    focalClassMethod1();\n    focalClassMethod2();\n    assertEquals(str, \\\"Hello\\\");}",
+            "invokedMethods": [
+              {
+                "signature": "public void focalClassMethod1()",
+                "javadoc": "/**\n * This is a method for the focal class.\n * \n * This method tests the first functionality.\n */",
+                "body": "public void focalClassMethod1() {\n    // Method code here\n    int a = 1;\n    int b = 2;\n    int sum = a + b;\n    System.out.println(sum);\n}"
+              },
+              {
+                "signature": "public void focalClassMethod2()",
+                "javadoc": "/**\n * This is a method for the focal class.\n * \n * This method tests the second functionality.\n */",
+                "body": "public void focalClassMethod2() {\n    // Method code here\n    String str = \\\"Hello\\\";\n    System.out.println(str);\n}"
+              }
+            ]
+          },
+          "target": "assertEquals(str, \\\"Hello\\\");"
+        },
+        {
+          "testPrefix": {
+            "signature": "public void testPrefix2()",
+            "javadoc": "/**\n * This is a test prefix method.\n * \n * This method tests the third functionality.\n */",
+            "body": "public void testPrefix2() {\n    // Test code here\n    int x = 10;\n    int y = 20;\n    int product = x * y;\n    focalClassMethod3();\n    focalClassMethod5();\n    assertEquals(product, 200);}",
+            "invokedMethods": [
+              {
+                "signature": "public void focalClassMethod3()",
+                "javadoc": "",
+                "body": "public void focalClassMethod3() {\n    // Method code here\n    System.out.println(\\\"Method 3 called\\\");\n}"
+              },
+              {
+                "signature": "public void focalClassMethod5()",
+                "javadoc": "",
+                "body": "public void focalClassMethod5() {\n    // Method code here\n    System.out.println(\\\"Method 5 called\\\");\n}"
+              }
+            ]
+          },
+          "target": "assertEquals(product, 200);"
+        }
+    ]
+  }
+]

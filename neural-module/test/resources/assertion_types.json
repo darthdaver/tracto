@@ -1,0 +1,18 @@
+[
+    "assertAll",
+    "assertArrayEquals",
+    "assertEquals",
+    "assertFalse",
+    "assertIterableEquals",
+    "assertLinesMatch",
+    "assertNotEquals",
+    "assertNotNull",
+    "assertNotSame",
+    "assertNull",
+    "assertSame",
+    "assertThrows",
+    "assertTimeout",
+    "assertTimeoutPreemptively",
+    "assertTrue",
+    "fail"
+]
