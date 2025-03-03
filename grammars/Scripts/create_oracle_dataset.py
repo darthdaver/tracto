@@ -1,8 +1,8 @@
 """
-This file contains a script to extract oracles from the TrATTo dataset 
+This file contains a script to extract oracles from the Tracto dataset
 and generate non-complete oracles for each entry.
 
-ATTENTION: tratto-oracles-dataset should be already cloned.
+ATTENTION: tracto-oracles-dataset should be already cloned.
 """
 
 import os
@@ -10,7 +10,7 @@ import json
 import re
 
 # Path to the folder containing the JSON files
-dataset_folder_path = '../../tratto-oracles-dataset/oracles-dataset'
+dataset_folder_path = '../../tracto-oracles-dataset/oracles-dataset'
 
 # Path for the output JSON file
 output_file = './grammars/Input/new_oracle_dataset.json'
