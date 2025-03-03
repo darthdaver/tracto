@@ -93,7 +93,7 @@ def retrieve_pom_files(root_directory):
     pom_files = []
     for dirpath, _, filenames in os.walk(root_directory):
         for filename in filenames:
-            if (not "tracto_libs" in dirpath) and (filename.endswith('pom.xml')):
+            if (not "processed_libs" in dirpath) and (filename.endswith('pom.xml')):
                 pom_files.append(os.path.join(dirpath, filename))
     return pom_files
 

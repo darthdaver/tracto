@@ -102,7 +102,7 @@ while IFS=, read -r repo_id repo_url commit_sha; do
     if [ "$project_type" == "maven" ]; then
       echo "Maven project detected"
       echo "${repo_id},${repo_url},${commit_sha}" >> "$maven_projects_file"
-      if [ ! -d "${GITHUB_REPOS_TMP_DIR}/${repo_id}/tracto_libs" ]; then
+      if [ ! -d "${GITHUB_REPOS_TMP_DIR}/${repo_id}/processed_libs" ]; then
         # Setup dependencies
         bash "${BASH_UTILS_DIR}/resolve_dependencies.sh" "${GITHUB_REPOS_TMP_DIR}/${repo_id}"
       fi

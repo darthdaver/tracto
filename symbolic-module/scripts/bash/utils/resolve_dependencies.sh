@@ -49,7 +49,7 @@ if [[ -d "$main_folder" ]]; then
       for pom_path in $pom_paths; do
           echo "Processing: $pom_path"
           pom_dir=$(dirname $pom_path)
-          output_dir="$(realpath "$pom_dir")/tracto_libs"
+          output_dir="$(realpath "$pom_dir")/processed_libs"
           decompiled_dir="$output_dir/decompiled"
           # Convert dependencies to an array
           IFS=$'\n' read -r -d '' -a dependencies <<< $(echo "$project_poms_analysis" | jq -r --arg key "$pom_path" '.[$key][0][]')
