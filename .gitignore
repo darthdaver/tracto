@@ -3,3 +3,6 @@
 .classpath
 .git
 **/target/
+**/__pycache__/
+**/input/
+**/output/
