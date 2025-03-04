@@ -2,7 +2,7 @@
 This repository contains the replication package of **Tracto**, a neuro-symbolic approach to generate
 concrete test oracles from Java projects.
 
-**Tracto** stands for ***Tra**nsformer-based **C**oncrete **T**est **O**racle generation* and is a Latin word that means 
+**Tracto** stands for ***Tra**nsformer-based **C**oncrete **T**est **O**racle generation* and reminds the sound of the italian word *tratto* that means 
 *line* or *way*, which illustrates the way in which **Tracto** generates oracles, as if they were a line that is continuously 
 drawn, little by little (token by token). **Tracto** generates oracles token by token, in a grammar-directed way, but supported 
 by a neural module to guide the search of oracles toward optimal solutions.
