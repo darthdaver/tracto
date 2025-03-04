@@ -19,22 +19,25 @@ any further fine-tuning. The models receive different contextual information to 
   - [ ] Test prefix + i.m. signatures + i.m. bodies
   - [ ] Test prefix + i.m. javadocs + i.m. signatures + i.m. bodies
 - [ ] Evaluate the effectiveness of the models in generating test oracles in terms of correct (equivalent) and incorrect oracles.
+
 \* i.m. stands for invoked methods (within the test prefix)
 
 The following is the list of pre-trained language models to be used in this research question:
 
-| Model                                                                                    | Dimension  | Version |
-|------------------------------------------------------------------------------------------|------------|---------|
-| [Llama-3.1](https://huggingface.co/meta-llama/Llama-3.1-8B)                              | 8B         | base    |
-| [CodeLlama](https://huggingface.co/meta-llama/CodeLlama-7b-hf)                           | 7B         | base    |
-| [Codestral](https://huggingface.co/mistralai/Codestral-22B-v0.1)                         | 22B        | base    |
-| [Starcoder2](https://huggingface.co/bigcode/starcoder2-7b)                               | 7B         | base    |
-| [Mixtral-8x7B](https://huggingface.co/mistralai/Mixtral-8x7B-v0.1)                       | 56B        | base    |
-| [Mistral](https://huggingface.co/mistralai/Mistral-7B-v0.3)                              | 7B         | base    |
-| [DeepSeek-V3](https://huggingface.co/deepseek-ai/DeepSeek-V3)                            | 671B (fp8) | base    |
-| [DeepSeek-Coder-V2-Lite-Base](https://huggingface.co/deepseek-ai/DeepSeek-Coder-V2-Base) | 7B         | base    |
-| [Queen2.5-Coder](https://huggingface.co/Qwen/Qwen2.5-Coder-7B)                           | 7B         | base    |
+| Model                                                                                    | Model Dim   | Context Length | Version  |
+|------------------------------------------------------------------------------------------|-------------|----------------|----------|
+| [Llama-3.1](https://huggingface.co/meta-llama/Llama-3.1-8B)                              | 8B          | 128k           | base     |
+| [CodeLlama](https://huggingface.co/meta-llama/CodeLlama-7b-hf)                           | 7B          | 16k - 100k     | base     |
+| [Codestral](https://huggingface.co/mistralai/Codestral-22B-v0.1)                         | 22B         | 32k            | base     |
+| [Starcoder2](https://huggingface.co/bigcode/starcoder2-7b)                               | 7B          | 16k            | base     |
+| [Mixtral-8x7B](https://huggingface.co/mistralai/Mixtral-8x7B-v0.1)                       | 56B         | 32k - 128k     | base     |
+| [Mistral](https://huggingface.co/mistralai/Mistral-7B-v0.3)                              | 7B          | 8k - 32k       | base     |
+| [DeepSeek-V3](https://huggingface.co/deepseek-ai/DeepSeek-V3)                            | 671B (fp8)  | 128k           | base     |
+| [DeepSeek-Coder-V2-Lite-Base](https://huggingface.co/deepseek-ai/DeepSeek-Coder-V2-Base) | 7B          | 128k           | base     |
+| [Queen2.5-Coder](https://huggingface.co/Qwen/Qwen2.5-Coder-7B)                           | 7B          | 128k           | base     |
 
 
-### Questions
+### Questions & Observations
 * Should we consider to use a GT dataset for this research question?
+* In [[1]]((https://arxiv.org/abs/2405.03786)) and [[2]](https://arxiv.org/abs/2009.05617) the method provided in the input is what they consider as focal method. However, the automaticy retrieval of the focal method from a test prefix is a complex an undeterministic task. We consider in our paper the list of invoked methods as a more relaxed way to provide the context to the model. 
+* We should report in how many cases we overcome the maximum token limit of the models and some statistics about the average/max/min length ot the input generated with our approach.
