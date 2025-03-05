@@ -286,9 +286,9 @@ public class PartialOracleDataset {
                         List<String> currentSnippetTypes = new ArrayList<>();
 
                         for (int i = 0; i < tokens.size(); i++) {
-                            if (i > 0) {
-                                currentSnippet.append(" ");
-                            }
+                            //if (i > 0) {
+                            //    currentSnippet.append(" ");
+                            //}
                             currentSnippet.append(tokens.get(i));
 
                             // Find the signature of the method
