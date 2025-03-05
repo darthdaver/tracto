@@ -146,7 +146,8 @@ public class PartialOracleDataset {
           */
     private static ArrayNode saveNextTokensToJson(String inputJsonPath, String outputJsonPath) {
         ObjectMapper objectMapper_root = new ObjectMapper();
-        ArrayNode outputArray = objectMapper_root.createArrayNode();
+        ObjectMapper objectMapper = new ObjectMapper();
+        ArrayNode outputObjectArray = objectMapper.createArrayNode();
 
         // Define the set of literal tokens to be replaced with "LITERAL"
         Set<String> literalsSet = new HashSet<>(Arrays.asList(
@@ -163,8 +164,7 @@ public class PartialOracleDataset {
 
             // Each file in the dataset is composed as a list of lists (each elements in the list have the same focalClass and the same testClass. This complexity can be relaxed simply considering a flatten list.
 
-            ObjectMapper objectMapper = new ObjectMapper();
-            ArrayNode outputObjectArray = objectMapper.createArrayNode();
+            
 
             ObjectNode outputObject = objectMapper.createObjectNode();
 
@@ -458,7 +458,6 @@ public class PartialOracleDataset {
                 
             }
             outputObjectArray.add(outputObject);
-            outputArray.add(outputObjectArray);
 
 
         } catch (IOException e) {
@@ -466,7 +465,7 @@ public class PartialOracleDataset {
             e.printStackTrace();
         }
 
-        return outputArray;
+        return outputObjectArray;
     }
 
 
