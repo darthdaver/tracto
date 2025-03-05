@@ -161,35 +161,35 @@ public class PartialOracleDataset {
             JsonNode rootNode = objectMapper_root.readTree(inputFile);
             System.out.println("Processing " + rootNode.size() + " items...");
 
+            // Each file in the dataset is composed as a list of lists (each elements in the list have the same focalClass and the same testClass. This complexity can be relaxed simply considering a flatten list.
+
+            ObjectMapper objectMapper = new ObjectMapper();
+            ArrayNode outputObjectArray = objectMapper.createArrayNode();
+
+            ObjectNode outputObject = objectMapper.createObjectNode();
+
+            // Clean and set the focalClass
+            JsonNode focalClassNode = rootNode.get(0).get("focalClass");
+            ObjectNode cleanedNode = focalClassCleaning(focalClassNode);
+            if (cleanedNode != null) {
+                outputObject.set("focalClass", cleanedNode);
+            }
+
+            // Clean and set the testClass
+            JsonNode testClassNode = rootNode.get(0).get("testClass");
+            ObjectNode cleanedTestClassNode = testClassCleaning(testClassNode);
+            if (cleanedTestClassNode != null) {
+                outputObject.set("testClass", cleanedTestClassNode);
+            }
+
+            ArrayNode datapoints = objectMapper.createArrayNode();
+            outputObject.set("datapoints", datapoints);
+
             // Process each item in the input JSON
             for (JsonNode arrayItem_root : rootNode) {
-                ObjectMapper objectMapper = new ObjectMapper();
-                ArrayNode outputObjectArray = objectMapper.createArrayNode();
-
-                
-                
-                
-
-                ObjectNode outputObject = objectMapper.createObjectNode();
-                //ObjectMapper mapper = new ObjectMapper();
-
-                // Clean and set the focalClass
-                JsonNode focalClassNode = arrayItem_root.get("focalClass");
-                ObjectNode cleanedNode = focalClassCleaning(focalClassNode);
-                if (cleanedNode != null) {
-                    outputObject.set("focalClass", cleanedNode);
-                }
-
-                // Clean and set the testClass
-                JsonNode testClassNode = arrayItem_root.get("testClass");
-                ObjectNode cleanedTestClassNode = testClassCleaning(testClassNode);
-                if (cleanedTestClassNode != null) {
-                    outputObject.set("testClass", cleanedTestClassNode);
-                }
 
                 JsonNode DatapointsNode = arrayItem_root.get("datapoints");
-                ArrayNode datapoints = objectMapper.createArrayNode();
-                outputObject.set("datapoints", datapoints);
+                
 
                 for (JsonNode arrayItem : DatapointsNode) {
                     JsonNode targetNode = arrayItem.get("target");
@@ -443,7 +443,7 @@ public class PartialOracleDataset {
                         if (cleanedTestPrefixNode != null) {
                             datapoint.set("testPrefix", cleanedTestPrefixNode);
                         }
-                        
+
                         datapoint.put("target", snippet);
                         datapoint.set("tokenSteps", tokenSteps);
 
@@ -451,12 +451,14 @@ public class PartialOracleDataset {
                         datapoints.add(datapoint);
 
                     }
-                    outputObjectArray.add(outputObject);
+                    
                     
                 }
-                outputArray.add(outputObjectArray);
+                
                 
             }
+            outputObjectArray.add(outputObject);
+            outputArray.add(outputObjectArray);
 
 
         } catch (IOException e) {
