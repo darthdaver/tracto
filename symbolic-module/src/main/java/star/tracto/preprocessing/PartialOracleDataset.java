@@ -437,7 +437,13 @@ public class PartialOracleDataset {
 
                         // Create a datapoint object and move the fields inside it
                         ObjectNode datapoint = objectMapper.createObjectNode();
-                        datapoint.set("testPrefix", testPrefixNode);
+
+                        // Clean and set the testPrefix
+                        ObjectNode cleanedTestPrefixNode = testPrefixCleaning(testPrefixNode);
+                        if (cleanedTestPrefixNode != null) {
+                            datapoint.set("testPrefix", cleanedTestPrefixNode);
+                        }
+                        
                         datapoint.put("target", snippet);
                         datapoint.set("tokenSteps", tokenSteps);
 
@@ -537,6 +543,30 @@ public class PartialOracleDataset {
 
         // Remove specified fields from the testClassNode
         List<String> fieldsToRemove = Arrays.asList("superclasses", "interfaces", "filePath", "testCases");
+        mutableNode.remove(fieldsToRemove);
+
+        return mutableNode;
+    }
+
+    /**
+     * Cleans the testPrefixNode by removing specific fields.
+     */
+    public static ObjectNode testPrefixCleaning(JsonNode testPrefixNode) {
+        if (testPrefixNode == null || !testPrefixNode.isObject()) {
+            return null;
+        }
+
+        ObjectNode mutableNode = (ObjectNode) testPrefixNode;
+
+        // Fields to remove from testPrefixNode
+        List<String> fieldsToRemove = Arrays.asList(
+            "annotations",
+            "modifiers",
+            "thrownExceptions",
+            "parameters",
+            "returnType"
+        );
+
         mutableNode.remove(fieldsToRemove);
 
         return mutableNode;
