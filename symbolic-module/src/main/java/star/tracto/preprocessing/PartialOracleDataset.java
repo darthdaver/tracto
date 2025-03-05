@@ -365,12 +365,12 @@ public class PartialOracleDataset {
                                 .collect(Collectors.toList());
 
                             ObjectNode step = objectMapper.createObjectNode();
-                            step.put("partialSnippet", currentSnippet.toString());
-                            step.put("ExpectedTypes", currentSnippetTypes.toString());
+                            step.put("partialOracle", currentSnippet.toString());
+                            step.put("expectedTypes", currentSnippetTypes.toString());
 
-                            ArrayNode nextConcreteTokensArray = step.putArray("nextPossibleProjectTokens");
-                            ArrayNode nextAbstractTokensArray = step.putArray("nextPossibleJavaTokens");
-                            ArrayNode nextGenericTokensArray = step.putArray("nextPossibleGenericTokens");
+                            ArrayNode nextConcreteTokensArray = step.putArray("projectTokens");
+                            ArrayNode nextAbstractTokensArray = step.putArray("javaTokens");
+                            ArrayNode nextGenericTokensArray = step.putArray("genericTokens");
                             if (adjustedNextConcreteTokens.isEmpty() && adjustedNextAbstractTokens.isEmpty() &&  adjustedNextGenericTokens.isEmpty()) {
                                 step.put("isSyntaxCorrect", "true");
                                 if (i < tokens.size() - 1){ 
