@@ -521,7 +521,7 @@ expressionList
     ;
 
 methodCall
-    : identifier '(' expression (',' expression)* ')'
+    : (ASSERT '.')? identifier '(' expression (',' expression)* ')'
    // | lambdaExpression '(' expressionList ')'
    // | THIS '(' expressionList ')'
    // | THIS DOT IDENTIFIER LPAREN (IDENTIFIER | NULL_LITERAL) RPAREN (NOTEQUAL NULL_LITERAL)

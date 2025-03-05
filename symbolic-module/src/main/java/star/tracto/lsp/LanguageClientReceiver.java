@@ -1,10 +1,14 @@
 package star.tracto.lsp;
 
-import org.eclipse.lsp4j.*;
-import org.eclipse.lsp4j.services.LanguageClient;
-
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+
+import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.MessageActionItem;
+import org.eclipse.lsp4j.MessageParams;
+import org.eclipse.lsp4j.PublishDiagnosticsParams;
+import org.eclipse.lsp4j.ShowMessageRequestParams;
+import org.eclipse.lsp4j.services.LanguageClient;
 
 public class LanguageClientReceiver implements LanguageClient {
 

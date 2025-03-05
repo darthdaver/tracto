@@ -1,15 +1,16 @@
 package star.tracto.lsp.antlr4.antlr4Class;
 
-
-// Generated from ./tracto/src/main/java/star/tracto/lsp/antlr4/grammars/JavaLexer.g4 by ANTLR 4.13.2
-import org.antlr.v4.runtime.Lexer;
+// Generated from ./grammars/JavaLexer.g4 by ANTLR 4.13.2
 import org.antlr.v4.runtime.CharStream;
-import org.antlr.v4.runtime.Token;
-import org.antlr.v4.runtime.TokenStream;
-import org.antlr.v4.runtime.*;
-import org.antlr.v4.runtime.atn.*;
+import org.antlr.v4.runtime.Lexer;
+import org.antlr.v4.runtime.RuntimeMetaData;
+import org.antlr.v4.runtime.Vocabulary;
+import org.antlr.v4.runtime.VocabularyImpl;
+import org.antlr.v4.runtime.atn.ATN;
+import org.antlr.v4.runtime.atn.ATNDeserializer;
+import org.antlr.v4.runtime.atn.LexerATNSimulator;
+import org.antlr.v4.runtime.atn.PredictionContextCache;
 import org.antlr.v4.runtime.dfa.DFA;
-import org.antlr.v4.runtime.misc.*;
 
 @SuppressWarnings({"all", "warnings", "unchecked", "unused", "cast", "CheckReturnValue", "this-escape"})
 public class JavaLexer extends Lexer {
@@ -71,7 +72,7 @@ public class JavaLexer extends Lexer {
 
 	private static String[] makeLiteralNames() {
 		return new String[] {
-			null, "'abstract'", "'assert'", "'boolean'", "'break'", "'byte'", "'case'", 
+			null, "'abstract'", "'Assert'", "'boolean'", "'break'", "'byte'", "'case'", 
 			"'catch'", "'char'", "'class'", "'const'", "'continue'", "'default'", 
 			"'do'", "'double'", "'else'", "'enum'", "'extends'", "'final'", "'finally'", 
 			"'float'", "'for'", "'if'", "'goto'", "'implements'", "'import'", "'instanceof'", 
@@ -426,7 +427,7 @@ public class JavaLexer extends Lexer {
 		"\u0000\u00f8\u00f9\u0005b\u0000\u0000\u00f9\u00fa\u0005s\u0000\u0000\u00fa"+
 		"\u00fb\u0005t\u0000\u0000\u00fb\u00fc\u0005r\u0000\u0000\u00fc\u00fd\u0005"+
 		"a\u0000\u0000\u00fd\u00fe\u0005c\u0000\u0000\u00fe\u00ff\u0005t\u0000"+
-		"\u0000\u00ff\u0002\u0001\u0000\u0000\u0000\u0100\u0101\u0005a\u0000\u0000"+
+		"\u0000\u00ff\u0002\u0001\u0000\u0000\u0000\u0100\u0101\u0005A\u0000\u0000"+
 		"\u0101\u0102\u0005s\u0000\u0000\u0102\u0103\u0005s\u0000\u0000\u0103\u0104"+
 		"\u0005e\u0000\u0000\u0104\u0105\u0005r\u0000\u0000\u0105\u0106\u0005t"+
 		"\u0000\u0000\u0106\u0004\u0001\u0000\u0000\u0000\u0107\u0108\u0005b\u0000"+

@@ -32,7 +32,7 @@ lexer grammar JavaLexer;
 // Keywords
 
 ABSTRACT:           'abstract';
-ASSERT:             'assert';
+ASSERT:             'Assert';
 BOOLEAN:            'boolean';
 BREAK:              'break';
 BYTE:               'byte';
