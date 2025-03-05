@@ -3,17 +3,9 @@ import re
 import logging
 from transformers import AutoTokenizer
 
-logs_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "logs")
-if not os.path.exists(logs_path):
-    os.makedirs(logs_path)
+from src.utils.Logger import Logger
 
-# Setup the logger
-logger = logging.getLogger("E-WASH")
-logging.basicConfig(
-    filename=os.path.join(logs_path, "ewash.log"),
-    level=logging.INFO,
-    format="[%(levelname)s] | %(name)s] | %(message)s"
-)
+logger = Logger("EWash", "ewash")
 
 class EWash:
     """
@@ -213,7 +205,7 @@ class EWash:
             self.update_counter(base_src)
         except ValueError:
             err_msg = "The base input (test prefix + assertion mask [+ tokens]) exceeds the input length limit."
-            logger.error(err_msg)
+            logger.log(err_msg, logging.ERROR)
             raise ValueError(err_msg)
         # Store the base input string in the ewash dictionary
         ewash_dict['base_src'] = base_src
@@ -400,7 +392,7 @@ class EWash:
                     if section['intros'][s_type]['flag']:
                         ewash_str += section['intros'][s_type]['label']
                         ewash_str += self.tuples_info_2_str(section['tuples'][s_type]) + "\n"
-        logger.info(f"E-wash string generated.")
+        logger.log(f"E-wash string generated.", logging.INFO)
         return ewash_str
 
     def remove_section_info(self, section_id):
@@ -449,16 +441,16 @@ class EWash:
             try:
                 self.update_counter(intro_str, action="add")
             except ValueError:
-                logger.info(f"The intro comment for the {section_id} {section_type} exceeds the input length limit.")
+                logger.log(f"The intro comment for the {section_id} {section_type} exceeds the input length limit.", logging.INFO)
                 return True
         # Check if for the current type, the section has elements to add
         if len(section['original']) == 0:
-            logger.info(f"No {section_type}s to add for the {section_id}")
+            logger.log(f"No {section_type}s to add for the {section_id}", logging.INFO)
             return False
         # Iterate over the different part of the information to add (signature, javadoc, body), in the order defined
         # in the configuration file
         for info_type in self.ewash_config[section_id][section_type]:
-            logger.info(f"Adding {section_id} {section_type} {info_type}s to the input")
+            logger.log(f"Adding {section_id} {section_type} {info_type}s to the input", logging.INFO)
             # Update the tuples of the fields or methods with the given information type
             exceeded_limit, element_added = self.update_tupled_elements(
                 info_type,
@@ -507,8 +499,8 @@ class EWash:
                         result = self.collect_section_info(section_id, s_type, section)
                         if result:
                             if update_section:
-                                logger.error(f"Updating section {section_id} {s_type} exceeds the input length limit.")
+                                logger.log(f"Updating section {section_id} {s_type} exceeds the input length limit.", logging.ERROR)
                                 raise ValueError(f"Updating section {section_id} {s_type} exceeds the input length limit.")
                             exceeded_limit = True
-        logger.info(f"E-wash processing completed.")
+        logger.log(f"E-wash processing completed.", logging.INFO)
         return exceeded_limit
