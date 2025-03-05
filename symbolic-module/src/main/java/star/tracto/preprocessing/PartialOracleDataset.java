@@ -375,6 +375,9 @@ public class PartialOracleDataset {
                                 step.put("isSyntaxCorrect", "true");
                                 if (i < tokens.size() - 1){ 
                                     step.put("target", tokens.get(i + 1));
+                                }else{
+                                     // Remove the last datapoint (equivalent to target)
+                                    continue;
                                 }
 
                             } else {
@@ -451,10 +454,8 @@ public class PartialOracleDataset {
                         datapoints.add(datapoint);
 
                     }
-                    
-                    
+                       
                 }
-                
                 
             }
             outputObjectArray.add(outputObject);
