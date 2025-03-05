@@ -119,12 +119,12 @@ public class OraclesDataset {
             logger.info("Processing split test class {} to generate oracles datapoints", splitTestClassPath.toString().replace(repoRootPath.toString(), ""));
             if (sourceFilePath.isPresent()) {
                 // Debugging
-                // if (splitTestClassPath.toString().replace(repoRootPath.toString(), "").contains("SynL1COlciSceneTransformProviderTestTractoSplit")) {
-                //    Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(splitTestClassPath, sourceFilePath.get());
-                //    TestClassOracleDatapoints splitTestClasstestClassesOracleDatapoints = processedSplitTestClassResult.getValue0();
-                //    HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();
-                //    oraclesDatapoints += splitTestClasstestClassesOracleDatapoints.datapoints().size();
-                //    testClassesOracleDatapoints.add(splitTestClasstestClassesOracleDatapoints);
+                // if (splitTestClassPath.toString().replace(repoRootPath.toString(), "").contains("OlciO2aHarmonisationIOTestTractoSplit")) {
+                //     Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(splitTestClassPath, sourceFilePath.get());
+                //     TestClassOracleDatapoints splitTestClasstestClassesOracleDatapoints = processedSplitTestClassResult.getValue0();
+                //     HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();
+                //     oraclesDatapoints += splitTestClasstestClassesOracleDatapoints.datapoints().size();
+                //     testClassesOracleDatapoints.add(splitTestClasstestClassesOracleDatapoints);
                 // }
                 try {
                     Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(splitTestClassPath, sourceFilePath.get());

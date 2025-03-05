@@ -379,43 +379,46 @@ public class TestUtils {
                     // Flag the statement as an assertion
                     isAssertion = true;
                 } else {
-                    if (currentExpr.isMethodCallExpr()) {
-                        // Get the method call expression
-                        MethodCallExpr methodCallExpr = currentExpr.asMethodCallExpr();
-                        // Get the name of the method
-                        String methodName = methodCallExpr.getNameAsString();
-                        // Check if the method is an auxiliary method
-                        if (auxiliaryMethods.containsKey(methodName)) {
-                            if (auxiliaryMethods.get(methodName).getBody().isPresent()) {
-                                // Parse the statements of the do body and split it into multiple test cases
-                                Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
-                                        junitVersion,
-                                        auxiliaryMethods.get(methodName).getBody().get().getStatements(),
-                                        splitTestCase,
-                                        idx,
-                                        auxiliaryMethods,
-                                        blockStatementsType,
-                                        recursionLevel + 1
-                                );
-                                // Update the split test case with the last generated from the expression statement
-                                splitTestCase = result.getValue0();
-                                // Update the split test case body
-                                splitTestCaseBody = splitTestCase.getBody().get();
-                                // Add the split test cases generated from the do statement to the list
-                                splitTestCases.addAll(result.getValue1());
-                                // Update idx of the split tests
-                                idx = splitTestCases.size();
-                            }
-                        } else {
-                            // Add the statement to the current split test case body
-                            addStatement(statement, splitTestCaseBody, blockStatementsType);
-                            continue;
-                        }
-                    } else {
-                        // Add the statement to the current split test case body
-                        addStatement(statement, splitTestCaseBody, blockStatementsType);
-                        continue;
-                    }
+                    // TODO: Implement check into auxiliary methods
+                    // if (currentExpr.isMethodCallExpr()) {
+                    //     // Get the method call expression
+                    //     MethodCallExpr methodCallExpr = currentExpr.asMethodCallExpr();
+                    //     // Get the name of the method
+                    //     String methodName = methodCallExpr.getNameAsString();
+                    //     // Check if the method is an auxiliary method
+                    //     if (auxiliaryMethods.containsKey(methodName)) {
+                    //         if (auxiliaryMethods.get(methodName).getBody().isPresent()) {
+                    //             // Parse the statements of the do body and split it into multiple test cases
+                    //             Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                    //                     junitVersion,
+                    //                     auxiliaryMethods.get(methodName).getBody().get().getStatements(),
+                    //                     splitTestCase,
+                    //                     idx,
+                    //                     auxiliaryMethods,
+                    //                     blockStatementsType,
+                    //                     recursionLevel + 1
+                    //             );
+                    //             // Update the split test case with the last generated from the expression statement
+                    //             splitTestCase = result.getValue0();
+                    //             // Update the split test case body
+                    //             splitTestCaseBody = splitTestCase.getBody().get();
+                    //             // Add the split test cases generated from the do statement to the list
+                    //             splitTestCases.addAll(result.getValue1());
+                    //             // Update idx of the split tests
+                    //             idx = splitTestCases.size();
+                    //         }
+                    //     } else {
+                    //         // Add the statement to the current split test case body
+                    //         addStatement(statement, splitTestCaseBody, blockStatementsType);
+                    //         continue;
+                    //     }
+                    // } else {
+                    //     // Add the statement to the current split test case body
+                    //     addStatement(statement, splitTestCaseBody, blockStatementsType);
+                    //     continue;
+                    // }
+                    addStatement(statement, splitTestCaseBody, blockStatementsType);
+                    continue;
                 }
             } else if (statement.isForEachStmt()) {
                 // Parse the for each statement and split the test case into multiple test cases
@@ -1060,8 +1063,12 @@ public class TestUtils {
             testClassOracleDatapointsBuilder.setFocalClass(focalClassTracto);
             // Process test cases
             for (MethodDeclaration testCase : testCases) {
-                String target = JavaParserUtils.getLastStatementInMethodDeclaration(testCase).toString().replaceAll("Assert.", "");
-                MethodDeclaration testPrefix = JavaParserUtils.removeLastStatementInMethodDeclaration(testCase);
+                Statement assertion = JavaParserUtils.getLastAssertionInMethodDeclaration(testCase)
+                        .orElseThrow(() -> new IllegalStateException(
+                                "No assertion found in test case: " + testCase.getNameAsString()
+                        ));
+                String target = assertion.toString().replaceAll("Assert.", "");
+                MethodDeclaration testPrefix = JavaParserUtils.removeStatementInMethodDeclaration(testCase, assertion);
                 Pair<CallableTracto,List<CallableTracto>> invokedMethodsPair = processInvokedMethods(repoSourcePath, focalClass, testClass, testPrefix, testsProcessingErrors);
                 // TODO: Focal method excluded from the analysis for the moment
                 CallableTracto focalMethodTracto = invokedMethodsPair.getValue0();
@@ -1071,13 +1078,13 @@ public class TestUtils {
                 // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
                 oracleDatapoints.add(new OracleDatapoint(testPrefixTracto, target));
             }
-            // Set the list of oracle datapoints generated from the test cases of the test class
-            testClassOracleDatapointsBuilder.setDatapoints(oracleDatapoints);
         } catch (IOException e) {
             logger.error("Error reading file: " + testFilePath);
         } catch (IllegalStateException e) {
             logger.error(e.getMessage());
         }
+        // Set the list of oracle datapoints generated from the test cases of the test class
+        testClassOracleDatapointsBuilder.setDatapoints(oracleDatapoints);
         return new Pair<>(testClassOracleDatapointsBuilder.build(), testsProcessingErrors);
     }
 

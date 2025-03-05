@@ -12,8 +12,7 @@ import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
-import com.github.javaparser.ast.stmt.BlockStmt;
-import com.github.javaparser.ast.stmt.Statement;
+import com.github.javaparser.ast.stmt.*;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.ReferenceType;
 import com.github.javaparser.ast.type.TypeParameter;
@@ -1408,13 +1407,86 @@ public class JavaParserUtils {
     }
 
     /**
-     * Remove the last statement in a method declaration.
+     * Retrieve the last assertion, assuming it is in the last statement of a method declaration.
      *
      * @param callableDeclaration the method declaration to process
-     * @return the method declaration without the last statement
+     * @return the last assertion in the last statement of the method declaration (if any), otherwise return an empty optional
      */
-    public static MethodDeclaration removeLastStatementInMethodDeclaration(MethodDeclaration callableDeclaration) {
-        callableDeclaration.getBody().get().getStatements().removeLast();
+    public static Optional<Statement> getLastAssertionInMethodDeclaration(MethodDeclaration callableDeclaration) throws IllegalStateException {
+        Statement lastStmt = getLastStatementInMethodDeclaration(callableDeclaration);
+        // Define an iterator limit to avoid infinite loops
+        int safeIterationLimit = 500;
+        while(safeIterationLimit > 0) {
+            // Check if the statement is a potential assertion
+            if (lastStmt.isAssertStmt()) {
+                return Optional.of(lastStmt);
+            } else if (lastStmt.isBlockStmt()) {
+                lastStmt = lastStmt.asBlockStmt().getStatements().getLast().get();
+            } else if (lastStmt.isDoStmt()) {
+                lastStmt = lastStmt.asDoStmt().getBody();
+            } else if (lastStmt.isExpressionStmt()) {
+                // Get the expression from the statement
+                Expression currentExpr = lastStmt.asExpressionStmt().getExpression();
+                // Check if the expression is a variable declaration expression and extract the initializer, if present
+                if (currentExpr.isVariableDeclarationExpr()) {
+                    Optional<Expression> initializer = currentExpr.asVariableDeclarationExpr().getVariable(0).getInitializer();
+                    if (initializer.isPresent()) {
+                        currentExpr = initializer.get();
+                    }
+                }
+                // Check if the expression is an assertion
+                if (currentExpr.isMethodCallExpr() && JUnitAssertionType.isJUnitAssertion(currentExpr.asMethodCallExpr().getNameAsString())) {
+                    return Optional.of(lastStmt);
+                } else {
+                    return Optional.empty();
+                }
+            } else if (lastStmt.isForEachStmt()) {
+                lastStmt = lastStmt.asForEachStmt().getBody();
+            } else if (lastStmt.isForStmt()) {
+                lastStmt = lastStmt.asForStmt().getBody();
+            } else if (lastStmt.isIfStmt()) {
+                IfStmt ifStmt = lastStmt.asIfStmt();
+                // Traverse the if-then-else statement to find the last statement
+                if (ifStmt.getElseStmt().isPresent()) {
+                    Optional<Statement> elseIfStmt = ifStmt.getElseStmt();
+                    while (elseIfStmt.isPresent()) {
+                        lastStmt = elseIfStmt.get();
+                        elseIfStmt = lastStmt.isIfStmt() ? lastStmt.asIfStmt().getElseStmt() : Optional.empty();
+                    }
+                } else {
+                    lastStmt = ifStmt.getThenStmt();
+                }
+            } else if (lastStmt.isSynchronizedStmt()) {
+                lastStmt = lastStmt.asSynchronizedStmt().getBody();
+            } else if (lastStmt.isSwitchStmt()) {
+                Optional<Statement> switchStmt = lastStmt.asSwitchStmt().getEntries().getLast().get().getStatements().getLast();
+                if (switchStmt.isPresent()) {
+                    lastStmt = switchStmt.get();
+                } else {
+                    return Optional.empty();
+                }
+            } else if (lastStmt.isTryStmt()) {
+                throw new IllegalStateException("Try statement should have been transformed into flat block statement in the split test process.");
+            } else if (lastStmt.isWhileStmt()) {
+                lastStmt = lastStmt.asWhileStmt().getBody();
+            } else {
+                return Optional.empty();
+            }
+            // Update iteration limit
+            safeIterationLimit--;
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Remove the statement provided in a method declaration, if present.
+     *
+     * @param callableDeclaration the method declaration to process
+     * @param stmt the statement to remove
+     * @return the method declaration without the statement (if present)
+     */
+    public static MethodDeclaration removeStatementInMethodDeclaration(MethodDeclaration callableDeclaration, Statement stmt) {
+        callableDeclaration.remove(stmt);
         return callableDeclaration;
     }
 
