@@ -171,7 +171,14 @@ public class PartialOracleDataset {
                 JsonNode DatapointsNode = arrayItem_root.get("datapoints");
 
                 ObjectNode outputObject = objectMapper.createObjectNode();
-                outputObject.set("focalClass", focalClassNode);
+                ObjectMapper mapper = new ObjectMapper();
+
+                // Cleaning the focalClassNode
+                ObjectNode cleanedNode = focalClassCleaning(focalClassNode);
+                if (cleanedNode != null) {
+                    outputObject.set("focalClass", cleanedNode);
+                }
+                
                 outputObject.set("testClass", testClassNode);
                 ArrayNode datapoints = objectMapper.createArrayNode();
                 outputObject.set("datapoints", datapoints);
@@ -468,6 +475,45 @@ public class PartialOracleDataset {
                 return "String";
             default:
                 return "Object";
+        }
+    }
+
+    public static ObjectNode focalClassCleaning(JsonNode focalClassNode) {
+        if (focalClassNode == null || !focalClassNode.isObject()) {
+            return null;
+        }
+
+        ObjectNode mutableNode = (ObjectNode) focalClassNode;
+
+        // Remove top-level fields
+        List<String> topLevelFieldsToRemove = Arrays.asList("superclasses", "interfaces", "filePath");
+        mutableNode.remove(topLevelFieldsToRemove);
+
+        // Subfields to remove from "methods" and "constructors"
+        List<String> subfieldsToRemove = Arrays.asList(
+            "annotations", 
+            "modifiers", 
+            "thrownExceptions", 
+            "parameters", 
+            "returnType", 
+            "invokedMethods"
+        );
+
+        // Helper to remove subfields from an array node
+        removeSubfieldsFromArray(mutableNode, "methods", subfieldsToRemove);
+        removeSubfieldsFromArray(mutableNode, "constructors", subfieldsToRemove);
+
+        return mutableNode;
+    }
+
+    private static void removeSubfieldsFromArray(ObjectNode parentNode, String arrayName, List<String> subfieldsToRemove) {
+        JsonNode arrayNode = parentNode.get(arrayName);
+        if (arrayNode != null && arrayNode.isArray()) {
+            for (JsonNode elementNode : arrayNode) {
+                if (elementNode.isObject()) {
+                    ((ObjectNode) elementNode).remove(subfieldsToRemove);
+                }
+            }
         }
     }
 
