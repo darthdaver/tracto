@@ -358,6 +358,9 @@ public class PartialOracleDataset {
                             ArrayNode nextGenericTokensArray = step.putArray("nextPossibleGenericTokens");
                             if (adjustedNextConcreteTokens.isEmpty() && adjustedNextAbstractTokens.isEmpty() &&  adjustedNextGenericTokens.isEmpty()) {
                                 step.put("isSyntaxCorrect", "true");
+                                if (i < tokens.size() - 1){ 
+                                    step.put("target", tokens.get(i + 1));
+                                }
 
                             } else {
                                 step.put("isSyntaxCorrect", "false");
