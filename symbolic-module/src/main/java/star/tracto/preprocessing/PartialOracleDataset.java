@@ -166,20 +166,28 @@ public class PartialOracleDataset {
                 ObjectMapper objectMapper = new ObjectMapper();
                 ArrayNode outputObjectArray = objectMapper.createArrayNode();
 
-                JsonNode focalClassNode = arrayItem_root.get("focalClass");
-                JsonNode testClassNode = arrayItem_root.get("testClass");
-                JsonNode DatapointsNode = arrayItem_root.get("datapoints");
+                
+                
+                
 
                 ObjectNode outputObject = objectMapper.createObjectNode();
-                ObjectMapper mapper = new ObjectMapper();
+                //ObjectMapper mapper = new ObjectMapper();
 
-                // Cleaning the focalClassNode
+                // Clean and set the focalClass
+                JsonNode focalClassNode = arrayItem_root.get("focalClass");
                 ObjectNode cleanedNode = focalClassCleaning(focalClassNode);
                 if (cleanedNode != null) {
                     outputObject.set("focalClass", cleanedNode);
                 }
-                
-                outputObject.set("testClass", testClassNode);
+
+                // Clean and set the testClass
+                JsonNode testClassNode = arrayItem_root.get("testClass");
+                ObjectNode cleanedTestClassNode = testClassCleaning(testClassNode);
+                if (cleanedTestClassNode != null) {
+                    outputObject.set("testClass", cleanedTestClassNode);
+                }
+
+                JsonNode DatapointsNode = arrayItem_root.get("datapoints");
                 ArrayNode datapoints = objectMapper.createArrayNode();
                 outputObject.set("datapoints", datapoints);
 
@@ -515,6 +523,23 @@ public class PartialOracleDataset {
                 }
             }
         }
+    }
+
+    /**
+     * Cleans the testClassNode by removing specific fields.
+     */
+    public static ObjectNode testClassCleaning(JsonNode testClassNode) {
+        if (testClassNode == null || !testClassNode.isObject()) {
+            return null;
+        }
+
+        ObjectNode mutableNode = (ObjectNode) testClassNode;
+
+        // Remove specified fields from the testClassNode
+        List<String> fieldsToRemove = Arrays.asList("superclasses", "interfaces", "filePath", "testCases");
+        mutableNode.remove(fieldsToRemove);
+
+        return mutableNode;
     }
 
 
