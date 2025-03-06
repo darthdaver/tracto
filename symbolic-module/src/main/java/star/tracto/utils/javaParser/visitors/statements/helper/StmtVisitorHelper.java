@@ -105,4 +105,9 @@ public class StmtVisitorHelper {
         }
         return Optional.empty();
     }
+
+    public static List<ExpressionStmt> getAllExpressionStmts(Statement statement) {
+        ExpressionStmtVisitor expressionStmtCollector = new ExpressionStmtVisitor();
+        return expressionStmtCollector.visit(statement);
+    }
 }

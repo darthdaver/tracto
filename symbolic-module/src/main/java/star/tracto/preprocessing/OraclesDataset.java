@@ -3,7 +3,6 @@ package star.tracto.preprocessing;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.javatuples.Pair;
-import org.javatuples.Quartet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import star.tracto.data.TractoNamingConvention;

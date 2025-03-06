@@ -526,7 +526,11 @@ public class TestUtils {
                     // Update idx of the split tests
                     idx = splitTestCases.size();
                     // Update the if statement clone
-                    ifStmtClone = getLastStatementTypeOccurrence(splitTestCaseBody, IfStmt.class).asIfStmt();
+                    ifStmtClone = JavaParserUtils.getLastStatementTypeOccurrence(splitTestCaseBody, IfStmt.class)
+                            .orElseThrow(() -> new IllegalStateException(
+                                    "No statement of type " + IfStmt.class + " found in the block of statements."
+                            ))
+                            .asIfStmt();
                 }
             } else if (statement.isSynchronizedStmt()) {
                 // Parse the synchronized statement and split the test case into multiple test cases
@@ -706,7 +710,11 @@ public class TestUtils {
         if (blockStatementsType == BlockStatementsType.METHOD_BODY) {
             splitTestCaseBody.addStatement(statement);
         } else {
-            Statement lastStatement = getLastStatementTypeOccurrence(splitTestCaseBody, blockStatementsType.getJavaParserStmtClass());
+            Class blockStmtClass = blockStatementsType.getJavaParserStmtClass();
+            Statement lastStatement = JavaParserUtils.getLastStatementTypeOccurrence(splitTestCaseBody, blockStmtClass)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "No statement of type " + blockStmtClass + " found in the block of statements."
+                    ));
             BlockStmt body;
             switch (blockStatementsType) {
                 case DO:
@@ -753,24 +761,6 @@ public class TestUtils {
                     throw new IllegalStateException("Unexpected block statement type");
             }
         }
-    }
-
-    /**
-     * Visit all the statements within a block of statements to find the last occurrence of a given statement type.
-     *
-     * @param blockStmt the block of statements to visit
-     * @param type the type of statement to find
-     * @return the last occurrence of the statement type
-     */
-    private static Statement getLastStatementTypeOccurrence(BlockStmt blockStmt, Class type) {
-        if (blockStmt.getStatements().isEmpty()) {
-            throw new IllegalStateException("Block of statements is empty.");
-        }
-        Optional<Statement> lastOccurrence = StmtVisitorHelper.getLastStatementOccurrence(blockStmt, type);
-        if (lastOccurrence.isPresent()) {
-            return lastOccurrence.get();
-        }
-        throw new IllegalStateException("No statement of type " + type.getName() + " found in the block of statements.");
     }
 
     /**
@@ -1063,20 +1053,23 @@ public class TestUtils {
             testClassOracleDatapointsBuilder.setFocalClass(focalClassTracto);
             // Process test cases
             for (MethodDeclaration testCase : testCases) {
+                // Get the assertion statement in the test case
                 Statement assertion = JavaParserUtils.getLastAssertionInMethodDeclaration(testCase)
                         .orElseThrow(() -> new IllegalStateException(
                                 "No assertion found in test case: " + testCase.getNameAsString()
                         ));
+                // Get target
                 String target = assertion.toString().replaceAll("Assert.", "");
-                MethodDeclaration testPrefix = JavaParserUtils.removeStatementInMethodDeclaration(testCase, assertion);
-                Pair<CallableTracto,List<CallableTracto>> invokedMethodsPair = processInvokedMethods(repoSourcePath, focalClass, testClass, testPrefix, testsProcessingErrors);
+                // Remove assertion from the test prefix
+                assertion.remove();
+                Pair<CallableTracto,List<CallableTracto>> invokedMethodsPair = processInvokedMethods(repoSourcePath, focalClass, testClass, testCase, testsProcessingErrors);
                 // TODO: Focal method excluded from the analysis for the moment
                 CallableTracto focalMethodTracto = invokedMethodsPair.getValue0();
                 List<CallableTracto> invokedMethods = invokedMethodsPair.getValue1();
-                CallableTracto testPrefixTracto = processCallable(testClass, testPrefix, invokedMethods);
+                CallableTracto testPrefix = processCallable(testClass, testCase, invokedMethods);
                 // TODO: Check id the last statement in the test case is an assertion or not
                 // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
-                oracleDatapoints.add(new OracleDatapoint(testPrefixTracto, target));
+                oracleDatapoints.add(new OracleDatapoint(testPrefix, target));
             }
         } catch (IOException e) {
             logger.error("Error reading file: " + testFilePath);
@@ -1644,13 +1637,10 @@ public class TestUtils {
         testsProcessingErrors.get(testClassName).putIfAbsent(testName, new ArrayList<>());
         try {
             // Get the list of all the statements within the test
-            NodeList<Statement> statements = testCase
-                    .getBody()
-                    .orElseThrow(() -> new IllegalStateException(String.format("Cannot retrieve block statements from test %s.", testName)))
-                    .getStatements();
+            List<ExpressionStmt> statements = StmtVisitorHelper.getAllExpressionStmts(testCase.getBody().get());
             // Throw an exception if no statements are found (empty test)
             if (statements.size() <= 0) {
-                throw new IllegalStateException(String.format("No statements found in test %s.", testName));
+                throw new IllegalStateException(String.format("No expression statements found in test %s.", testName));
             }
             // Get statement index
             int stmtIndex = statements.size() - 1;
@@ -1698,15 +1688,11 @@ public class TestUtils {
             // Iterate over the statements of the test from the top to the bottom
             for (int i = 0; i <= stmtIndex; i++) {
                 // Get current statement
-                Statement stmt = statements.get(i);
+                ExpressionStmt exprStmt = statements.get(i);
                 Expression expr = null;
                 CallableExprType exprType = null;
-                // A method call or constructor invocation must be an instance of ExpressionStmt
-                if (!stmt.isExpressionStmt()) {
-                    continue;
-                }
                 // Get the expression from the current statement
-                Expression unparsedExpr = stmt.asExpressionStmt().getExpression();
+                Expression unparsedExpr = exprStmt.getExpression();
                 // Parse the expression to understand if it refers to a method call or construction invocation
                 List<Pair<Expression,CallableExprType>> expressionAnalysisResult = JavaParserUtils.parseExpression(unparsedExpr, true);
                 for (Pair<Expression,CallableExprType> exprPair : expressionAnalysisResult) {
@@ -1834,7 +1820,7 @@ public class TestUtils {
                             CandidateCallableDeclarationNotFoundException | CandidateCallableMethodUsageNotFoundException |
                             MultipleCandidatesException | UnsolvedSymbolException | IllegalStateException e
                     ) {
-                        String errorMsg = "Error processing statement " + stmt.toString() + " of test case " + testName;
+                        String errorMsg = "Error processing statement " + exprStmt + " of test case " + testName;
                         // logger.error(errorMsg);
                         testsProcessingErrors.get(testClassName).get(testName).add(errorMsg + " | " + e.getMessage());
                     }

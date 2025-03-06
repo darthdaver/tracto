@@ -39,9 +39,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import star.tracto.data.*;
 import star.tracto.utils.FilesUtils;
-
+import star.tracto.utils.javaParser.visitors.statements.helper.StmtVisitorHelper;
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
@@ -1407,6 +1406,21 @@ public class JavaParserUtils {
     }
 
     /**
+     * Visit all the statements within a statement (it could be a block of statements or an expression statement, for example)
+     * to find the last occurrence of a given statement type. The method returns the statement itself, if it is the last
+     * occurrence of the given type
+     *
+     * @param stmt the statement to visit
+     * @param type the type of statement to find
+     * @return the last occurrence of the statement type. If the statement is the last occurrence of that type, returns
+     * itself. If the statement is not found, return an empty optional.
+     */
+    public static Optional<Statement> getLastStatementTypeOccurrence(Statement stmt, Class type) {
+        Optional<Statement> lastOccurrence = StmtVisitorHelper.getLastStatementOccurrence(stmt, type);
+        return lastOccurrence;
+    }
+
+    /**
      * Retrieve the last assertion, assuming it is in the last statement of a method declaration.
      *
      * @param callableDeclaration the method declaration to process
@@ -1414,80 +1428,25 @@ public class JavaParserUtils {
      */
     public static Optional<Statement> getLastAssertionInMethodDeclaration(MethodDeclaration callableDeclaration) throws IllegalStateException {
         Statement lastStmt = getLastStatementInMethodDeclaration(callableDeclaration);
-        // Define an iterator limit to avoid infinite loops
-        int safeIterationLimit = 500;
-        while(safeIterationLimit > 0) {
-            // Check if the statement is a potential assertion
-            if (lastStmt.isAssertStmt()) {
-                return Optional.of(lastStmt);
-            } else if (lastStmt.isBlockStmt()) {
-                lastStmt = lastStmt.asBlockStmt().getStatements().getLast().get();
-            } else if (lastStmt.isDoStmt()) {
-                lastStmt = lastStmt.asDoStmt().getBody();
-            } else if (lastStmt.isExpressionStmt()) {
-                // Get the expression from the statement
-                Expression currentExpr = lastStmt.asExpressionStmt().getExpression();
-                // Check if the expression is a variable declaration expression and extract the initializer, if present
-                if (currentExpr.isVariableDeclarationExpr()) {
-                    Optional<Expression> initializer = currentExpr.asVariableDeclarationExpr().getVariable(0).getInitializer();
-                    if (initializer.isPresent()) {
-                        currentExpr = initializer.get();
-                    }
+        Optional<Statement> exprStmt = getLastStatementTypeOccurrence(lastStmt,ExpressionStmt.class);
+        if (exprStmt.isPresent()) {
+            // Get the expression from the statement
+            Expression currentExpr = exprStmt.get().asExpressionStmt().getExpression();
+            // Check if the expression is a variable declaration expression and extract the initializer, if present
+            if (currentExpr.isVariableDeclarationExpr()) {
+                Optional<Expression> initializer = currentExpr.asVariableDeclarationExpr().getVariable(0).getInitializer();
+                if (initializer.isPresent()) {
+                    currentExpr = initializer.get();
                 }
-                // Check if the expression is an assertion
-                if (currentExpr.isMethodCallExpr() && JUnitAssertionType.isJUnitAssertion(currentExpr.asMethodCallExpr().getNameAsString())) {
-                    return Optional.of(lastStmt);
-                } else {
-                    return Optional.empty();
-                }
-            } else if (lastStmt.isForEachStmt()) {
-                lastStmt = lastStmt.asForEachStmt().getBody();
-            } else if (lastStmt.isForStmt()) {
-                lastStmt = lastStmt.asForStmt().getBody();
-            } else if (lastStmt.isIfStmt()) {
-                IfStmt ifStmt = lastStmt.asIfStmt();
-                // Traverse the if-then-else statement to find the last statement
-                if (ifStmt.getElseStmt().isPresent()) {
-                    Optional<Statement> elseIfStmt = ifStmt.getElseStmt();
-                    while (elseIfStmt.isPresent()) {
-                        lastStmt = elseIfStmt.get();
-                        elseIfStmt = lastStmt.isIfStmt() ? lastStmt.asIfStmt().getElseStmt() : Optional.empty();
-                    }
-                } else {
-                    lastStmt = ifStmt.getThenStmt();
-                }
-            } else if (lastStmt.isSynchronizedStmt()) {
-                lastStmt = lastStmt.asSynchronizedStmt().getBody();
-            } else if (lastStmt.isSwitchStmt()) {
-                Optional<Statement> switchStmt = lastStmt.asSwitchStmt().getEntries().getLast().get().getStatements().getLast();
-                if (switchStmt.isPresent()) {
-                    lastStmt = switchStmt.get();
-                } else {
-                    return Optional.empty();
-                }
-            } else if (lastStmt.isTryStmt()) {
-                throw new IllegalStateException("Try statement should have been transformed into flat block statement in the split test process.");
-            } else if (lastStmt.isWhileStmt()) {
-                lastStmt = lastStmt.asWhileStmt().getBody();
+            }
+            // Check if the expression is an assertion
+            if (currentExpr.isMethodCallExpr() && JUnitAssertionType.isJUnitAssertion(currentExpr.asMethodCallExpr().getNameAsString())) {
+                return exprStmt;
             } else {
                 return Optional.empty();
             }
-            // Update iteration limit
-            safeIterationLimit--;
         }
         return Optional.empty();
-    }
-
-    /**
-     * Remove the statement provided in a method declaration, if present.
-     *
-     * @param callableDeclaration the method declaration to process
-     * @param stmt the statement to remove
-     * @return the method declaration without the statement (if present)
-     */
-    public static MethodDeclaration removeStatementInMethodDeclaration(MethodDeclaration callableDeclaration, Statement stmt) {
-        callableDeclaration.remove(stmt);
-        return callableDeclaration;
     }
 
     /**
