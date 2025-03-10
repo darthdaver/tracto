@@ -45,8 +45,13 @@ if [[ -d "$main_folder" ]]; then
     fi
     if check_maven; then
       project_poms_analysis=$(python3 "${BASH_UTILS_DIR}/python/resolve_dependency.py" "$main_folder" 2>/dev/null)
-      pom_paths=$(echo "$project_poms_analysis" | jq -r 'keys[]')
-      for pom_path in $pom_paths; do
+      # Initialize an empty array to store the pom paths
+      pom_paths=()
+      # Read keys into the array
+      while IFS= read -r key; do
+          pom_paths+=("$key")
+      done < <(echo "$project_poms_analysis" | jq -r 'keys[]')
+      for pom_path in "${pom_paths[@]}"; do
           echo "Processing: $pom_path"
           pom_dir=$(dirname $pom_path)
           output_dir="$(realpath "$pom_dir")/processed_libs"
@@ -54,6 +59,12 @@ if [[ -d "$main_folder" ]]; then
           # Convert dependencies to an array
           IFS=$'\n' read -r -d '' -a dependencies <<< $(echo "$project_poms_analysis" | jq -r --arg key "$pom_path" '.[$key][0][]')
           IFS=$'\n' read -r -d '' -a repositories <<< $(echo "$project_poms_analysis" | jq -r --arg key "$pom_path" '.[$key][1][]')
+          # Debug: Print parsed arrays
+          echo "Dependencies:"
+          echo "${dependencies[@]}"
+          echo "Repositories:"
+          echo "${repositories[@]}"
+
           repositories=("$maven_default_repo" "${repositories[@]}")
           local_failed_file="${pom_dir}/local_failed_downloads.txt"
           local_success_file="${pom_dir}/local_successful_downloads.txt"
@@ -70,7 +81,8 @@ if [[ -d "$main_folder" ]]; then
           fi
           mkdir -p "$decompiled_dir"
           if [ ${#dependencies[@]} -gt 0 ]; then
-            echo "$dependencies" | while read -r dep; do
+            for dep in "${dependencies[@]}"; do
+                echo "Processing dependency: $dep"
                 IFS=':' read -r group_id artifact_id version <<< "$dep"
                 for repo in "${repositories[@]}"; do
                   echo "Trying to download source JAR of '$group_id:$artifact_id:$version' from '$repo'"
@@ -89,6 +101,7 @@ if [[ -d "$main_folder" ]]; then
                     mvn dependency:copy -Dartifact="$group_id:$artifact_id:$version:jar:sources" -DoutputDirectory="$output_dir/sources" -Dclassifier=sources -Doverwrite=true
                     echo "$group_id:$artifact_id:$version,sources" >> "$local_success_file"
                     echo "$pom_dir,$group_id:$artifact_id:$version,sources" >> "$global_success_file"
+                    break
                   else
                       echo "Trying to download classes JAR of '$group_id:$artifact_id:$version' from '$repo'"
                       if mvn dependency:get \
@@ -105,6 +118,7 @@ if [[ -d "$main_folder" ]]; then
                         mvn dependency:copy -Dartifact="$group_id:$artifact_id:$version" -DoutputDirectory="$output_dir/classes" -Doverwrite=true
                         echo "$group_id:$artifact_id:$version,classes" >> "$local_success_file"
                         echo "$pom_dir,$group_id:$artifact_id:$version,classes" >> "$global_success_file"
+                        break
                       else
                           echo "$group_id:$artifact_id:$version,download-failed" >> "$local_failed_file"
                           echo "$pom_dir,$group_id:$artifact_id:$version,download-failed" >> "$global_failed_file"
