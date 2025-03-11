@@ -5,7 +5,7 @@ import com.github.javaparser.ast.stmt.*;
 
 public enum BlockStatementsType {
     DO(DoStmt.class),
-    CATCH(IfStmt.class),
+    CATCH(TryStmt.class),
     IF_ELSE(IfStmt.class),
     ELSE(IfStmt.class),
     FINALLY(TryStmt.class),
@@ -25,5 +25,22 @@ public enum BlockStatementsType {
 
     public Class<?> getJavaParserStmtClass() {
         return stmtClass;
+    }
+
+    public static boolean isBlockStatement(Statement statement) {
+        if (
+                statement.isBlockStmt() ||
+                statement.isDoStmt() ||
+                statement.isForEachStmt() ||
+                statement.isForStmt() ||
+                statement.isIfStmt() ||
+                statement.isSwitchStmt() ||
+                statement.isTryStmt() ||
+                statement.isWhileStmt()
+        ) {
+            return true;
+        } else {
+            return false;
+        }
     }
 }

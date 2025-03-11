@@ -1402,7 +1402,8 @@ public class JavaParserUtils {
      * @return the last statement in the method declaration
      */
     public static Statement getLastStatementInMethodDeclaration(MethodDeclaration callableDeclaration) {
-        return callableDeclaration.getBody().get().getStatements().getLast().get();
+        List<Statement> statements = callableDeclaration.getBody().get().findAll(Statement.class);
+        return statements.get(statements.size() - 1);
     }
 
     /**

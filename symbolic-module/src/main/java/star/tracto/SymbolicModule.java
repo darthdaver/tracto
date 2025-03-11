@@ -17,10 +17,11 @@ public class SymbolicModule {
             Path repoRootPath = Path.of(args[1]);
             Path outputPath = Path.of(args[2]);
             String classpath = initializeJavaClassPath(Path.of(args[3]));
+            Path configPath = Path.of(args[4]);
             // Project identifier
             String projectIdentifier = args[1].substring(args[1].lastIndexOf("/") + 1);
             try {
-                OraclesDataset.generate(repoRootPath, outputPath, projectIdentifier, classpath);
+                OraclesDataset.generate(repoRootPath, configPath, outputPath, projectIdentifier, classpath);
             } catch (IOException e) {
                 e.printStackTrace();
             }
