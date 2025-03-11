@@ -64,7 +64,14 @@ project-identifier,project-url,commit-sha
 (No header is required)
 
 ### Tokens dataset
-[TODO]
+To generate the token dataset, it is necessary to follow the following steps:
+
+- Copy at least one datapoint of the Oracle Dataset in json format in: 
+    ```symbolic-module/src/main/resources/dataset/partial-oracles/input```
+- Run the file: 
+    ```symbolic-module/src/main/java/star/tracto/preprocessing/PartialOracleDataset.java```
+- You will find the generated token dataset in the folder: 
+    ```symbolic-module/src/main/resources/dataset/partial-oracles/output/```
 
 
 ## Conventions
