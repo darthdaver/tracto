@@ -15,7 +15,7 @@
 # Get current directory
 current_dir=$(realpath "$(dirname "${BASH_SOURCE[@]}")")
 # Setup global variables
-source "${current_dir}/../../utils/global_variables.sh"
+source "${current_dir}/../utils/global_variables.sh"
 source "${BASH_UTILS_DIR}/init_sdkman.sh"
 
 # Add Maven bin directory to PATH temporarily

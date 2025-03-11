@@ -44,7 +44,7 @@ if [[ -d "$main_folder" ]]; then
         rm "$global_success_file"
     fi
     if check_maven; then
-      project_poms_analysis=$(python3 "${BASH_UTILS_DIR}/python/resolve_dependency.py" "$main_folder" 2>/dev/null)
+      project_poms_analysis=$(python3 "${PY_UTILS_DIR}/resolve_dependency.py" "$main_folder" 2>/dev/null)
       # Initialize an empty array to store the pom paths
       pom_paths=()
       # Read keys into the array
@@ -57,8 +57,8 @@ if [[ -d "$main_folder" ]]; then
           output_dir="$(realpath "$pom_dir")/processed_libs"
           decompiled_dir="$output_dir/decompiled"
           # Convert dependencies to an array
-          IFS=$'\n' read -r -d '' -a dependencies <<< $(echo "$project_poms_analysis" | jq -r --arg key "$pom_path" '.[$key][0][]')
-          IFS=$'\n' read -r -d '' -a repositories <<< $(echo "$project_poms_analysis" | jq -r --arg key "$pom_path" '.[$key][1][]')
+          mapfile -t dependencies < <(echo "$project_poms_analysis" | jq -r --arg key "${pom_paths[0]}" '.[$key][0][]')
+          mapfile -t repositories < <(echo "$project_poms_analysis" | jq -r --arg key "${pom_paths[0]}" '.[$key][1][]')
           # Debug: Print parsed arrays
           echo "Dependencies:"
           echo "${dependencies[@]}"
