@@ -62,6 +62,14 @@ if [ -f "$unprocessed_projects_file" ]; then
   touch "$unprocessed_projects_file"
   chmod 666 "$unprocessed_projects_file"
 fi
+bash
+
+Copy
+if [ ! -d "java8" ] && [ ! -d "java11" ] && [ ! -d "java17" ] && [ ! -d "java21" ]; then
+    # Download JDKs
+    curl -o "${LIB_DIR}/jdks.zip" "${LIB_JDKS_LINK}"
+    unzip "${LIB_DIR}/jdks.zip" -d "${LIB_DIR}"
+fi
 
 check_maven() {
     [[ -f "pom.xml" ]] && return 0 || return 1

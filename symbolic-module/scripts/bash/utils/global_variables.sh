@@ -38,3 +38,6 @@ ANT_BIN="${SDKMAN_DIR}/candidates/ant/${ANT_VERSION}/bin"
 # Jar
 TRACTO_JAR="${ROOT_DIR}/target/tracto-jar-with-dependencies.jar"
 FERNFLOWER_JAR="${BASH_RESOURCES_DIR}/fernflower.jar"
+
+# Links
+LIB_JDKS_LINK="https://drive.switch.ch/index.php/s/Mbzk6MHbx6iNZRP/download"
