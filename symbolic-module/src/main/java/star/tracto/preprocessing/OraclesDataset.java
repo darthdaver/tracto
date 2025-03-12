@@ -128,24 +128,24 @@ public class OraclesDataset {
             logger.info("Processing split test class {} to generate oracles datapoints", splitTestClassPath.toString().replace(repoRootPath.toString(), ""));
             if (sourceFilePath.isPresent()) {
                 // Debugging
-                 if (splitTestClassPath.toString().replace(repoRootPath.toString(), "").contains("SentinelTimeCodingTestTractoSplit")) {
-                     Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(oraclesDatasetConfig, splitTestClassPath, sourceFilePath.get());
-                     TestClassOracleDatapoints splitTestClasstestClassesOracleDatapoints = processedSplitTestClassResult.getValue0();
-                     HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();
-                     oraclesDatapoints += splitTestClasstestClassesOracleDatapoints.datapoints().size();
-                     testClassesOracleDatapoints.add(splitTestClasstestClassesOracleDatapoints);
-                 }
-//                try {
-//                    Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(oraclesDatasetConfig, splitTestClassPath, sourceFilePath.get());
-//                    TestClassOracleDatapoints splitTestClasstestClassesOracleDatapoints = processedSplitTestClassResult.getValue0();
-//                    HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();
-//                    testClassesOracleDatapoints.add(splitTestClasstestClassesOracleDatapoints);
-//                    oraclesDatapoints += splitTestClasstestClassesOracleDatapoints.datapoints().size();
-//                    errorsStatistics.put(splitTestClassPath.toString().replace(repoRootPath.toString(), ""), splitTestClassErrorsStatistics);
-//                } catch (Exception e) {
-//                    logger.error("Error while processing split test class: {}", splitTestClassPath.toString().replace(repoRootPath.toString(), ""));
-//                    logger.error("Error message: {}", e.getMessage());
-//                }
+                // if (splitTestClassPath.toString().replace(repoRootPath.toString(), "").contains("SentinelTimeCodingTestTractoSplit")) {
+                //     Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(oraclesDatasetConfig, splitTestClassPath, sourceFilePath.get());
+                //     TestClassOracleDatapoints splitTestClasstestClassesOracleDatapoints = processedSplitTestClassResult.getValue0();
+                //     HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();
+                //     oraclesDatapoints += splitTestClasstestClassesOracleDatapoints.datapoints().size();
+                //     testClassesOracleDatapoints.add(splitTestClasstestClassesOracleDatapoints);
+                // }
+                try {
+                    Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(oraclesDatasetConfig, splitTestClassPath, sourceFilePath.get());
+                    TestClassOracleDatapoints splitTestClasstestClassesOracleDatapoints = processedSplitTestClassResult.getValue0();
+                    HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();
+                    testClassesOracleDatapoints.add(splitTestClasstestClassesOracleDatapoints);
+                    oraclesDatapoints += splitTestClasstestClassesOracleDatapoints.datapoints().size();
+                    errorsStatistics.put(splitTestClassPath.toString().replace(repoRootPath.toString(), ""), splitTestClassErrorsStatistics);
+                } catch (Exception e) {
+                    logger.error("Error while processing split test class: {}", splitTestClassPath.toString().replace(repoRootPath.toString(), ""));
+                    logger.error("Error message: {}", e.getMessage());
+                }
             }
         }
         // TODO: Log statistics
