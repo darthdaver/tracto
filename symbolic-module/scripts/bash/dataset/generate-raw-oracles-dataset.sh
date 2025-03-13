@@ -65,7 +65,9 @@ fi
 
 if [ ! -d "${LIB_DIR}/java8" ] || [ ! -d "${LIB_DIR}/java11" ] || [ ! -d "${LIB_DIR}/java17" ] || [ ! -d "${LIB_DIR}/java21" ]; then
     if [ -d "${LIB_DIR}" ]; then
+        mv "${LIB_DIR}/java_classpaths.json" "${LIB_DIR}/../java_classpaths.json"
         rm -rf "${LIB_DIR}/"*
+        mv "${LIB_DIR}/../java_classpaths.json" "${LIB_DIR}/java_classpaths.json"
     fi
     curl -o "${LIB_DIR}/jdks.zip" "${LIB_JDKS_LINK}"
     unzip "${LIB_DIR}/jdks.zip" -d "${LIB_DIR}"
