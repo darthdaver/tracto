@@ -62,11 +62,11 @@ if [ -f "$unprocessed_projects_file" ]; then
   touch "$unprocessed_projects_file"
   chmod 666 "$unprocessed_projects_file"
 fi
-bash
 
-Copy
-if [ ! -d "java8" ] && [ ! -d "java11" ] && [ ! -d "java17" ] && [ ! -d "java21" ]; then
-    # Download JDKs
+if [ ! -d "${LIB_DIR}/java8" ] || [ ! -d "${LIB_DIR}/java11" ] || [ ! -d "${LIB_DIR}/java17" ] || [ ! -d "${LIB_DIR}/java21" ]; then
+    if [ -d "${LIB_DIR}" ]; then
+        rm -rf "${LIB_DIR}/"*
+    fi
     curl -o "${LIB_DIR}/jdks.zip" "${LIB_JDKS_LINK}"
     unzip "${LIB_DIR}/jdks.zip" -d "${LIB_DIR}"
 fi
