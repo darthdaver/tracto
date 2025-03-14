@@ -31,7 +31,7 @@ unprocessed_projects_file="${ROOT_DIR}/unprocessed_projects.csv"
 
 if [ ! -e "${TRACTO_JAR}" ]; then
   cd "${ROOT_DIR}"
-  sdk use java $JAVA21
+  sdk use java "$JAVA21"
   mvn clean package -DskipTests
 fi
 if [ -f "$maven_projects_file" ]; then
@@ -130,6 +130,6 @@ while IFS=, read -r repo_id repo_url commit_sha; do
     # Setup java libraries paths
     classpath="${LIB_DIR}/java8:${LIB_DIR}/java11:${LIB_DIR}/java17"
     # Generate Oracle dataset
-    sdk use java $JAVA21
+    sdk use java "$JAVA21"
     java -jar "${TRACTO_JAR}" "oracles-dataset" "${GITHUB_REPOS_TMP_DIR}/${repo_id}" "${OUTPUT_DIR}/raw-oracles-dataset" "${ROOT_DIR}" "${SRC_RESOURCES_DIR}/dataset/oraclesdataset_config.json"
 done < "$M2T_REPO_LIST"

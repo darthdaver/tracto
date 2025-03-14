@@ -147,6 +147,7 @@ if [[ -d "$main_folder" ]]; then
                   # Create a destination folder for the extracted files
                   destination_folder="$decompiled_dir/$base_name"
                   mkdir -p "$destination_folder"
+                  sdk use java "$JAVA21"
                   java -jar $FERNFLOWER_JAR $jar_file $destination_folder
                   # Unzip the file into the destination folder
                   unzip -oq "$destination_folder/$base_name.jar" -d "$destination_folder"
