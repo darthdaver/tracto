@@ -29,7 +29,7 @@ class Logger:
         console_handler.setLevel(logging.INFO)
         logging.basicConfig(
             level=level,
-            format="[%(levelname)s] | %(name)s] | %(message)s",
+            format="[%(levelname)s] | [%(name)s] | %(message)s",
             handlers=[file_handler, console_handler]
         )
 
