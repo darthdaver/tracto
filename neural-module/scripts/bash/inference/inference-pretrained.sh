@@ -23,7 +23,7 @@ for i in {1..4}; do
         --tokenizer_name "${hf_model}" \
         --query_path "${SCRIPTS_RESOURCES_DIR}/rq1/queries/pretrained/${i}/query-template.txt" \
         --dataset_path "${RQ1_DATASET_DIR}/${i}/*.csv" \
-        --output_path "${ROOT_DIR}/output/rq1" \
+        --output_path "${ROOT_DIR}/output/rq1/${hf_model}-${i}" \
         --split "test" \
         --src_col "src" \
         --tgt_col "tgt" \
