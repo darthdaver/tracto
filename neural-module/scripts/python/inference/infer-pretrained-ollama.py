@@ -75,7 +75,6 @@ if __name__ == "__main__":
                     llm_dataset_files.append(os.path.join(root, file))
     else:
         llm_dataset_files = [data_args.dataset_path]
-    print(f"Files to process: {llm_dataset_files}")
     # Process each file in the dataset
     for filename in llm_dataset_files:
         logger.log(f'Processing file {filename}')
@@ -94,7 +93,7 @@ if __name__ == "__main__":
                 # Predict the output with ollama
                 try:
                     response = ollama.chat(
-                        model='llama3.1',
+                        model=model_args.model_name_or_path,
                         messages=[{"role": "user", "content": query}]
                     )
                     out = response['message']['content'].strip()
