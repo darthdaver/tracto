@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 from tqdm import tqdm
 import pandas as pd
 from typing import Dict
@@ -45,12 +46,12 @@ def preprocess_dp(query_text, dp: Dict[str, str], src_col, max_len: int, tokeniz
         "attention_mask": attention_mask,
     }
 
-def save_prediction_stats(filepath: str, inputs: list, targets: list, predictions: list):
+def save_prediction_stats(output_path: str, inputs: list, targets: list, predictions: list):
     """
-    Save the prediction stats to a CSV file.
+    Save the prediction stats to a CSV and JSON files.
     Args:
         filepath (`str`):
-            The path to the output CSV file.
+            The path to the output directory.
         inputs (`list`):
             The list of input sequences.
         targets (`list`):
@@ -62,7 +63,8 @@ def save_prediction_stats(filepath: str, inputs: list, targets: list, prediction
                        'target': targets, \
                        'prediction': predictions, \
                        'match': [True if p == t else False for p, t in zip(predictions, targets)]})
-    df.to_csv(filepath, index=False)
+    df.to_csv(os.path.join(output_path, "inference.csv"), index=False)
+    df.to_json(os.path.join(output_path, "inference.json"), orient='records')
 
 def check_model_accuracy(targets, predictions):
     """
@@ -161,15 +163,12 @@ if __name__ == "__main__":
             predictions.extend(decoded_out)
     # Save the predictions
     logger.log(f"Saving predictions to {output_path}")
-    with open(os.path.join(output_path), 'w', encoding='utf-8', errors='replace') as f:
-        for pred in predictions:
-            f.write(f"{pred}\n")
     assert len(predictions) == len(p_dataset)
     # Export prediction stats
     df = dataset[data_args.split].to_pandas()
     inputs = df[data_args.src_col].tolist()
     targets = df[data_args.tgt_col].tolist()
-    save_prediction_stats(output_path.replace('.txt', '.csv'), inputs, targets, predictions)
+    save_prediction_stats(output_path, inputs, targets, predictions)
     # Print accuracy
     accuracy = check_model_accuracy(targets, predictions)
     print(f'Model accuracy: {str(accuracy)}')

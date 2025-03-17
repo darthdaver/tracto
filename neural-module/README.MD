@@ -2,7 +2,7 @@
 This module is responsible for training and testing the machine learning models representing the neural module
 of the tracto program.
 
-# Setup
+## Setup
 
 To set up and run the model, the following requirements must be satisfied:
 
@@ -13,7 +13,7 @@ The model has been trained on a GPU `Nvidia A-100` with `80GB` of memory (vRAM) 
 
 At inference time, the model requires a GPU with at least `24GB` of vRAM.
 
-## 1. Environment
+### 1. Environment
 
 In order to set up the environment is not strictly necessary, but recommended to create a [_venv_](https://docs.python.org/3/library/venv.html)
 or [_conda_](https://docs.conda.io/en/latest/) environment.
@@ -26,20 +26,23 @@ Follow the instructions to properly create and activate the environment
 1. Open a terminal and move to the `neural-module` directory.
 2. Create the _venv_ environment with `Python 3.9`:
    ```shell
-   python3.9 -m venv .venv
+   python3 -m venv .venv
    ```
    The command will generate a _venv_ environment within `neural-module/.venv`.
 3. Activate the _venv_ environment:
    ```shell
    source .venv/bin/activate
    ```
-
+4. Upgrade _pip_ and _setuptools_ to the latest version:
+   ```shell
+   pip install --upgrade pip setuptools
+   ```
 ### 1.A.2 Install the requirements
 
 Install the dependencies within the active _venv_ environment, using the following command:
 
    ```shell
-  python3.9 -m pip install --upgrade -r requirements.txt --target=[path_to_tracto]/neural-module/.venv/lib/python3.9/site-packages
+  python3 -m pip install --upgrade -r requirements.txt --target=[path_to_tracto]/neural-module/.venv/lib/python3.9/site-packages
    ```
 
 where:
@@ -96,12 +99,12 @@ macOS and Windows systems.
     pip install -r requirements.txt
     ```
 
-# E-Wash
+## E-Wash
 The E-wash script parses the oracles and tokens datasets to generate the input for the neural module.
 To run the script, move to the `neural-module` folder and execute the following command:
 
 ```shell
-python3.9 ./scripts/preprocessing/ewash.py [path_to_dataset_file] [path_to_output_dir] {[path_to_configuration_file]}
+python3 ./scripts/preprocessing/ewash.py [path_to_dataset_file] [path_to_output_dir] {[path_to_configuration_file]}
 ```
 
 where:
@@ -112,3 +115,13 @@ where:
 
 The script will process the default E-Wash configuration file (in `./src/resources/ewash_config.json`), if not specified 
 otherwise.
+
+# RQ1
+
+To replicate the results of RQ1, set up the parameters and hyperparameters in the file `scripts/bash/inference/infer-pretrained.sh`
+(specifiying the model type, the batch size, the maximum length of the input, etc.) and run the following command from the
+`neural-module` directory:
+
+```shell
+bash ./scripts/bash/inference/infer-pretrained.sh
+```

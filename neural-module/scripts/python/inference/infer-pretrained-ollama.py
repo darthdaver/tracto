@@ -1,0 +1,113 @@
+import os
+import sys
+import csv
+import ollama
+import pandas as pd
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+from src.parsers.ModelArgs import ModelArgs
+from src.parsers.OllamaInferenceArgs import OllamaInferenceArgs
+from src.utils.Logger import Logger
+from transformers import HfArgumentParser
+
+# Setup the logger
+logger = Logger("main", "infer")
+
+
+def preprocess_dp(query_text, src_col):
+    """
+    Preprocess a single datapoint from the dataset.
+    Args:
+        query_text (`str`):
+            The query text to prepend to the source text.
+        src_col (`str`):
+            The name of the source column in the dataset.
+    """
+    query = query_text.replace("<QUERY_INPUT>", src_col)
+    return query
+
+
+def save_prediction_stats(output_path: str, inputs: list, targets: list, predictions: list):
+    """
+    Save the prediction stats to a CSV file.
+    Args:
+        output_path (`str`):
+            The path to the output directory.
+        inputs (`list`):
+            The list of input sequences.
+        targets (`list`):
+            The list of target sequences.
+        predictions (`list`):
+            The list of predicted sequences.
+    """
+    df = pd.DataFrame({
+        'input': inputs,
+        'target': targets,
+        'prediction': predictions
+    })
+    df.to_csv(os.path.join(output_path, "inference.csv"), index=False)
+    df.to_json(os.path.join(output_path, "inference.json"), orient='records')
+
+
+if __name__ == "__main__":
+    # Read the args passed to the script
+    parser = HfArgumentParser((ModelArgs, OllamaInferenceArgs))
+    model_args, data_args = parser.parse_args_into_dataclasses()
+    # Get query text
+    with open(data_args.query_path, 'r') as query_file:
+        query_text = query_file.read()
+    # Set output path
+    output_path = data_args.output_path
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+    # Log the arguments
+    logger.log("=" * 50)
+    logger.log(f"Dataset path: {data_args.dataset_path}")
+    logger.log(f"Checkpoints path: {model_args.model_name_or_path}")
+    logger.log(f"Predictions path: {output_path}")
+    logger.log("=" * 50)
+    # Collect files to process
+    if os.path.isdir(data_args.dataset_path):
+        llm_dataset_files = []
+        for root, dirs, files in os.walk(data_args.dataset_path):
+            for file in files:
+                if file.endswith('.csv'):
+                    llm_dataset_files.append(os.path.join(root, file))
+    else:
+        llm_dataset_files = [data_args.dataset_path]
+    print(f"Files to process: {llm_dataset_files}")
+    # Process each file in the dataset
+    for filename in llm_dataset_files:
+        logger.log(f'Processing file {filename}')
+        file_path = os.path.join(data_args.dataset_path, filename)
+        # Read the csv file and load the data
+        with open(file_path, mode='r', newline='') as file:
+            reader = csv.DictReader(file)
+            inputs = []
+            targets = []
+            predictions = []
+            # Read each row as a dictionary
+            for row in reader:
+                src = row[data_args.src_col]
+                tgt = row[data_args.tgt_col]
+                query = preprocess_dp(query_text, src)
+                # Predict the output with ollama
+                try:
+                    response = ollama.chat(
+                        model='llama3.1',
+                        messages=[{"role": "user", "content": query}]
+                    )
+                    out = response['message']['content'].strip()
+                    inputs.append(src)
+                    targets.append(tgt)
+                    predictions.append(out)
+                except Exception as e:
+                    logger.log(f"Error while processing the input:\n{query}")
+                    logger.log(f"Error: {e}")
+                    inputs.append(src)
+                    targets.append(tgt)
+                    predictions.append("Error")
+    # Save stats of predictions
+    logger.log(f"Saving predictions to {output_path}")
+    save_prediction_stats(output_path, inputs, targets, predictions)
+

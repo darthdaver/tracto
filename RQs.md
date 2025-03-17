@@ -48,17 +48,17 @@ where:
 
 The following is the list of pre-trained language models to be used in this research question:
 
-| Model                              | Model Dim     | Context Length   | Version  |
-|------------------------------------|---------------|------------------|----------|
-| [Llama-3.1](https://huggingface.co/meta-llama/Llama-3.1-8B)                   | 8B            | 128k             | base     |
-| [CodeLlama](https://huggingface.co/meta-llama/CodeLlama-7b-hf)                   | 7B            | 16k - 100k       | base     |
-| [Codestral](https://huggingface.co/mistralai/Codestral-22B-v0.1)                   | 22B           | 32k              | base     |
-| [Starcoder2](https://huggingface.co/bigcode/starcoder2-7b)                  | 7B            | 16k              | base     |
-| [Mixtral-8x7B](https://huggingface.co/mistralai/Mixtral-8x7B-v0.1)                | 56B           | 32k - 128k       | base     |
-| [Mistral](https://huggingface.co/mistralai/Mistral-7B-v0.3)                     | 7B            | 8k - 32k         | base     |
-| [DeepSeek-V3](https://huggingface.co/deepseek-ai/DeepSeek-V3)                 | 671B (fp8)    | 128k             | base     |
-| [DeepSeek-Coder-V2-Lite-Base](https://huggingface.co/deepseek-ai/DeepSeek-Coder-V2-Base) | 7B            | 128k             | base     |
-| [Queen2.5-Coder](https://huggingface.co/Qwen/Qwen2.5-Coder-7B)              | 7B            | 128k             | base     |
+| Model                                                                              | Model Dim | Context Length   | Version  |
+|------------------------------------------------------------------------------------|-----------|------------------|----------|
+| [Llama-3.1](https://huggingface.co/meta-llama/Llama-3.1-8B)                        | 8B        | 128k             | base     |
+| [CodeLlama](https://huggingface.co/meta-llama/CodeLlama-7b-hf)                     | 7B        | 16k - 100k       | base     |
+| [Codestral](https://huggingface.co/mistralai/Codestral-22B-v0.1)                   | 22B       | 32k              | base     |
+| [Starcoder2](https://huggingface.co/bigcode/starcoder2-7b)                         | 7B        | 16k              | base     |
+| [Mixtral-8x7B](https://huggingface.co/mistralai/Mixtral-8x7B-v0.1)                 | 56B       | 32k - 128k       | base     |
+| [Mistral](https://huggingface.co/mistralai/Mistral-7B-v0.3)                        | 7B        | 8k - 32k         | base     |
+| [DeepSeek-R1](https://huggingface.co/deepseek-ai/DeepSeek-V3)                      | 7B        | 128k             | base     |
+| [DeepSeek-Coder-V2-Lite-Base](https://huggingface.co/deepseek-ai/DeepSeek-R1)      | 7B        | 128k             | base     |
+| [Qwen2.5-Coder](https://huggingface.co/Qwen/Qwen2.5-Coder-7B)                      | 7B        | 128k             | base     |
 
 
 ### Questions & Observations
