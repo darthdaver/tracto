@@ -22,19 +22,43 @@ any further fine-tuning. The models receive different contextual information to 
 
 \* i.m. stands for invoked methods (within the test prefix)
 
+The following is the list of inputs generated to evaluate the effectiveness of the models (the test prefix is always included):
+
+| ID   | Attr       | Javadoc   | Signature  | Body      |
+|------|------------|-----------|------------|-----------|
+| `1`  |            |           |            |           |
+| `2`  |            | `im`      | `im`       |           |
+| `3`  |            |           | `im`       | `im`      |
+| `4`  |            | `im`      | `im`       | `im`      |
+| `5`  |            | `fc`      | `fc`       |           |
+| `6`  |            |           | `fc`       | `fc`      |
+| `7`  |            | `fc`      | `fc`       | `fc`      |
+| `8`  | `fc`       | `fc`      | `fc`       | `fc`      |
+| `9`  |            | `fc` `tc` | `fc` `tc`  |           |
+| `10` |            |           | `fc` `tc`  | `fc` `tc` |
+| `11` |            | `fc` `tc` | `fc` `tc`  | `fc` `tc` |
+| `12` | `fc` `tc`  | `fc` `tc` | `fc` `tc`  | `fc` `tc` |
+
+
+
+where:
+- `fc` stands for focal class
+- `tc` stands for test class
+- `im` stands for invoked methods in test prefix
+
 The following is the list of pre-trained language models to be used in this research question:
 
-| Model                                                                                    | Model Dim   | Context Length | Version  |
-|------------------------------------------------------------------------------------------|-------------|----------------|----------|
-| [Llama-3.1](https://huggingface.co/meta-llama/Llama-3.1-8B)                              | 8B          | 128k           | base     |
-| [CodeLlama](https://huggingface.co/meta-llama/CodeLlama-7b-hf)                           | 7B          | 16k - 100k     | base     |
-| [Codestral](https://huggingface.co/mistralai/Codestral-22B-v0.1)                         | 22B         | 32k            | base     |
-| [Starcoder2](https://huggingface.co/bigcode/starcoder2-7b)                               | 7B          | 16k            | base     |
-| [Mixtral-8x7B](https://huggingface.co/mistralai/Mixtral-8x7B-v0.1)                       | 56B         | 32k - 128k     | base     |
-| [Mistral](https://huggingface.co/mistralai/Mistral-7B-v0.3)                              | 7B          | 8k - 32k       | base     |
-| [DeepSeek-V3](https://huggingface.co/deepseek-ai/DeepSeek-V3)                            | 671B (fp8)  | 128k           | base     |
-| [DeepSeek-Coder-V2-Lite-Base](https://huggingface.co/deepseek-ai/DeepSeek-Coder-V2-Base) | 7B          | 128k           | base     |
-| [Queen2.5-Coder](https://huggingface.co/Qwen/Qwen2.5-Coder-7B)                           | 7B          | 128k           | base     |
+| Model                              | Model Dim     | Context Length   | Version  |
+|------------------------------------|---------------|------------------|----------|
+| [Llama-3.1](https://huggingface.co/meta-llama/Llama-3.1-8B)                   | 8B            | 128k             | base     |
+| [CodeLlama](https://huggingface.co/meta-llama/CodeLlama-7b-hf)                   | 7B            | 16k - 100k       | base     |
+| [Codestral](https://huggingface.co/mistralai/Codestral-22B-v0.1)                   | 22B           | 32k              | base     |
+| [Starcoder2](https://huggingface.co/bigcode/starcoder2-7b)                  | 7B            | 16k              | base     |
+| [Mixtral-8x7B](https://huggingface.co/mistralai/Mixtral-8x7B-v0.1)                | 56B           | 32k - 128k       | base     |
+| [Mistral](https://huggingface.co/mistralai/Mistral-7B-v0.3)                     | 7B            | 8k - 32k         | base     |
+| [DeepSeek-V3](https://huggingface.co/deepseek-ai/DeepSeek-V3)                 | 671B (fp8)    | 128k             | base     |
+| [DeepSeek-Coder-V2-Lite-Base](https://huggingface.co/deepseek-ai/DeepSeek-Coder-V2-Base) | 7B            | 128k             | base     |
+| [Queen2.5-Coder](https://huggingface.co/Qwen/Qwen2.5-Coder-7B)              | 7B            | 128k             | base     |
 
 
 ### Questions & Observations

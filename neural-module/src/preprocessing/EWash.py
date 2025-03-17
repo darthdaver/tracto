@@ -161,8 +161,16 @@ class EWash:
                         m['body'] = m['body'] if not m['body'] == ";" else ""
                         normalized_section['methods'].append(m)
             elif s_type in ['identifier', 'package', 'packageIdentifier', 'signature', 'javadoc', 'body']:
-                # Return the body of the section
-                normalized_section[s_type] = section[s_type]
+                if s_type in ['identifier', 'signature']:
+                    # Remove split pattern from the signature of test prefix to avoid the model to learn patterns from the split number
+                    split_pattern = r'_split_\d+'
+                    normalized_section[s_type] = re.sub(split_pattern, '', section[s_type])
+                elif s_type == 'body':
+                    section[s_type] = section[s_type].replace(section['signature'], "").strip()
+                    normalized_section[s_type] = section[s_type] if not section[s_type] == ";" else ""
+                else:
+                    # Return the body of the section
+                    normalized_section[s_type] = section[s_type]
             elif s_type in ['nextPossibleProjectTokens', 'nextPossibleJavaTokens', 'nextPossibleGenericTokens']:
                 # Remove redundant information from the section label
                 ns_type = s_type.replace("nextPossible", "")
@@ -236,10 +244,11 @@ class EWash:
         """
         # Add the test prefix to the input (src) (removing the target oracle to produce from the body)
         base_src = "// Test prefix\n"
+        base_src += f"{tp['signature']} "
         if self.ewash_config['type'] == "oracles":
-            base_src += f"{tp['body'].replace('/*<MASK_PLACEHOLDER>*', self.ewash_config['mask_token'])}\n\n"
+            base_src += f"{tp['body'].replace('/*<MASK_PLACEHOLDER>*/', self.ewash_config['mask_token'])}\n\n"
         else:
-            base_src += f"{tp['body'].replace('/*<MASK_PLACEHOLDER>*', partial_oracle + self.ewash_config['mask_token'])}\n\n"
+            base_src += f"{tp['body'].replace('/*<MASK_PLACEHOLDER>*/', partial_oracle + self.ewash_config['mask_token'])}\n\n"
         # Add Junit Version
         base_src += "// Junit Version\n"
         base_src += f"{ju_v}\n\n"
