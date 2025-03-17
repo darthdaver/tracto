@@ -447,6 +447,11 @@ public class PartialOracleDataset {
                             datapoint.set("testPrefix", cleanedTestPrefixNode);
                         }
 
+                        if (targetNode.toString() == "<NO_ASSERTION>") {
+                            datapoint.put("target", "<NO_ASSERTION>");
+                            break;
+                        }
+
                         datapoint.put("target", snippet);
                         datapoint.set("tokenSteps", tokenSteps);
 
