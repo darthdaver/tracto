@@ -23,12 +23,12 @@ In the following section we will provide the general information to configure th
 
 Follow the instructions to properly create and activate the environment
 
-1. Open a terminal and move to the `ml-model` directory.
+1. Open a terminal and move to the `neural-module` directory.
 2. Create the _venv_ environment with `Python 3.9`:
    ```shell
    python3.9 -m venv .venv
    ```
-   The command will generate a _venv_ environment within `ml-model/.venv`.
+   The command will generate a _venv_ environment within `neural-module/.venv`.
 3. Activate the _venv_ environment:
    ```shell
    source .venv/bin/activate
@@ -39,7 +39,7 @@ Follow the instructions to properly create and activate the environment
 Install the dependencies within the active _venv_ environment, using the following command:
 
    ```shell
-  python3.9 -m pip install --upgrade -r requirements.txt --target=[path_to_tracto]/ml-model/.venv/lib/python3.9/site-packages
+  python3.9 -m pip install --upgrade -r requirements.txt --target=[path_to_tracto]/neural-module/.venv/lib/python3.9/site-packages
    ```
 
 where:
@@ -86,9 +86,9 @@ macOS and Windows systems.
 
 ### 1.B.3 Install the requirements
 
-6. Move to the `ml-model` folder of the `tracto` project
+6. Move to the `neural-module` folder of the `tracto` project
     ```bash
-    cd [path_to_the_tracto_folder]/ml-model
+    cd [path_to_the_tracto_folder]/neural-module
     ```
 
 7. Install all the required dependencies
@@ -98,7 +98,7 @@ macOS and Windows systems.
 
 # E-Wash
 The E-wash script parses the oracles and tokens datasets to generate the input for the neural module.
-To run the script, move to the `ml-model` folder and execute the following command:
+To run the script, move to the `neural-module` folder and execute the following command:
 
 ```shell
 python3.9 ./scripts/preprocessing/ewash.py [path_to_dataset_file] [path_to_output_dir] {[path_to_configuration_file]}

@@ -1,6 +1,6 @@
 import os
 import sys
-import tqdm
+from tqdm import tqdm
 import pandas as pd
 from typing import Dict
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -154,12 +154,11 @@ if __name__ == "__main__":
     logger.log("Generating predictions...")
     predictions = []
     for i, batch in enumerate(tqdm(dataloader)):
-        batch.to(model.device)
-        batch = {k: v for k, v in batch.items()}
+        batch = {k: v.to(model.device) for k, v in batch.items()}
         with torch.no_grad():
             out = model.generate(**batch, **gen_kwargs)
             decoded_out = tokenizer.batch_decode(out[:, batch['input_ids'].shape[1]:], skip_special_tokens=True)
-            predictions.extend(out)
+            predictions.extend(decoded_out)
     # Save the predictions
     logger.log(f"Saving predictions to {output_path}")
     with open(os.path.join(output_path), 'w', encoding='utf-8', errors='replace') as f:
