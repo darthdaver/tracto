@@ -21,6 +21,6 @@ for i in {1..4}; do
         --dataset_path "${RQ1_DATASET_DIR}/${i}" \
         --output_path "${ROOT_DIR}/output/rq1/${ol_model}-${i}" \
         --src_col "src" \
-        --tgt_col "tgt" \
+        --tgt_col "tgt"
   done < "$RQ1_MODELS_LIST"
 done
