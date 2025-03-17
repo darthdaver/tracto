@@ -1,4 +1,4 @@
-Given a Java test prefix, provide a JSON object containing an attribute called "oracle" where the value is a string containing the test oracle (in the given JUnit version) to add to the current test prefix substituting the mask placeholder (<MASK_PLACEHOLDER>) or "<NO_ASSERTION>" if no assertion is needed after the last statement in the test prefix.
+Given a Java test prefix, provide a JSON object containing an attribute called "oracle" where the value is a string containing the test oracle (in the given JUnit version) to add to the current test prefix substituting the mask placeholder (<MASK_PLACEHOLDER>) or "<NO_ASSERTION>" if no assertion is needed after the last statement in the test prefix. Please, provide only the json of the target request.
 
 Q:
 
