@@ -13,9 +13,10 @@ fi
 
 for i in {1..4}; do
   while IFS=, read -r ol_model hf_tokenizer; do
+    echo "Running inference with ${hf_model} on query template ${i}"
     python3 "${PY_INFERENCE_DIR}/infer-pretrained-ollama.py" \
-        --model_name_or_path "ol_model" \
-        --tokenizer_name "hf_tokenizer" \
+        --model_name_or_path "${ol_model}" \
+        --tokenizer_name "${hf_tokenizer}" \
         --query_path "${ROOT_DIR}/scripts/resources/rq1/queries/pretrained/${i}/query-template.txt" \
         --dataset_path "${RQ1_DATASET_DIR}/${i}" \
         --output_path "${ROOT_DIR}/output/rq1"
