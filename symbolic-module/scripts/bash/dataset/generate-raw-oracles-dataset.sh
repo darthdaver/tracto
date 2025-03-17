@@ -71,6 +71,7 @@ if [ ! -d "${LIB_DIR}/java8" ] || [ ! -d "${LIB_DIR}/java11" ] || [ ! -d "${LIB_
     fi
     curl -o "${LIB_DIR}/jdks.zip" "${LIB_JDKS_LINK}"
     unzip "${LIB_DIR}/jdks.zip" -d "${LIB_DIR}"
+    rm "${LIB_DIR}/jdks.zip"
 fi
 
 check_maven() {
