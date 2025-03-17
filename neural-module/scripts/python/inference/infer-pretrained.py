@@ -112,13 +112,12 @@ if __name__ == "__main__":
     # Get BOS token to manually add it to the input, when needed
     bos_token = [tokenizer.bos_token_id]
     # Load the model and resize the token embeddings
-    # model = AutoModelForCausalLM.from_pretrained(
-    #     model_args.model_name_or_path,
-    #     torch_dtype=torch.float16,
-    #     device_map="auto"
-    # )
-    # model.resize_token_embeddings(len(tokenizer))
-    model = None
+    model = AutoModelForCausalLM.from_pretrained(
+        model_args.model_name_or_path,
+        torch_dtype=torch.float16,
+        device_map="auto"
+    )
+    model.resize_token_embeddings(len(tokenizer))
     # Load the dataset
     logger.log(f"Loading dataset {data_args.dataset_path}")
     dataset = load_dataset('csv', data_files={data_args.split: data_args.dataset_path}, keep_default_na=False)
@@ -140,11 +139,11 @@ if __name__ == "__main__":
     dataloader = torch.utils.data.DataLoader(
         p_dataset,
         batch_size=data_args.batch_size,
-        collate_fn=DataCollatorForLanguageModeling(tokenizer, pad_to_multiple_of=8, mlm=False, padding=True)
+        collate_fn=DataCollatorForLanguageModeling(tokenizer, pad_to_multiple_of=8, mlm=False)
     )
     # Define the generation kwargs
     gen_kwargs = {
-        "max_new_tokens": data_args.max_target_length,
+        "max_new_tokens": data_args.max_tgt_len,
         "num_beams": data_args.num_beams,
         "do_sample": False,
         "pad_token_id": tokenizer.eos_token_id
