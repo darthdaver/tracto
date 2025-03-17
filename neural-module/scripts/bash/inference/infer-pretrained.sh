@@ -6,14 +6,15 @@ current_dir=$(realpath "$(dirname "${BASH_SOURCE[@]}")")
 source "${current_dir}/../utils/global_variables.sh"
 
 python3 "${PY_INFERENCE_DIR}/infer-pretrained.py" \
-    --model_name_or_path "Salesforce/codet5-small" \
-    --tokenizer_name "Salesforce/codet5-small" \
-    --path "/Users/davidemolinelli/Documents/phd/repositories/tracto/neural-module/llm-oracles-dataset/oracles-datapoints-22256861-0.csv" \
+    --model_name_or_path "codellama/CodeLlama-7b-hf" \
+    --tokenizer_name "codellama/CodeLlama-7b-hf" \
+    --query_path "${ROOT_DIR}/scripts/resources/rq1/queries/pretrained/1/query-template.txt" \
+    --dataset_path "${ROOT_DIR}/llm-oracles-dataset/1/*.csv" \
+    --output_path "${ROOT_DIR}/output/inference/inference.txt" \
     --split "test" \
     --src_col "src" \
     --tgt_col "tgt" \
-    --max_src_len 512 \
-    --max_tgt_len 512 \
+    --max_src_len 32000 \
+    --max_tgt_len 32000 \
     --batch_size 2 \
-    --output_path "${ROOT_DIR}/output/inference/inference.txt" \
     --num_beams 1

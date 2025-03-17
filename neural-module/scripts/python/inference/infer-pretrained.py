@@ -89,8 +89,7 @@ if __name__ == "__main__":
     parser = HfArgumentParser((ModelArgs, DatasetInferenceArgs))
     model_args, data_args = parser.parse_args_into_dataclasses()
     # Get query text
-    query_text_file_path = os.path.join(os.path.join(os.path.dirname(__file__), "..", ".."), 'resources', 'query-pretrained.txt')
-    with open(query_text_file_path, 'r') as query_file:
+    with open(data_args.query_path, 'r') as query_file:
         query_text = query_file.read()
     # Set output path
     output_path = data_args.output_path
@@ -98,7 +97,7 @@ if __name__ == "__main__":
         os.makedirs(os.path.dirname(output_path))
     # Log the arguments
     logger.log("=" * 50)
-    logger.log(f"Dataset path: {data_args.path}")
+    logger.log(f"Dataset path: {data_args.dataset_path}")
     logger.log(f"Checkpoints path: {model_args.model_name_or_path}")
     logger.log(f"Predictions path: {output_path}")
     logger.log("=" * 50)
@@ -113,15 +112,16 @@ if __name__ == "__main__":
     # Get BOS token to manually add it to the input, when needed
     bos_token = [tokenizer.bos_token_id]
     # Load the model and resize the token embeddings
-    model = AutoModelForCausalLM.from_pretrained(
-        model_args.model_name_or_path,
-        torch_dtype=torch.float16,
-        device_map="auto"
-    )
-    model.resize_token_embeddings(len(tokenizer))
+    # model = AutoModelForCausalLM.from_pretrained(
+    #     model_args.model_name_or_path,
+    #     torch_dtype=torch.float16,
+    #     device_map="auto"
+    # )
+    # model.resize_token_embeddings(len(tokenizer))
+    model = None
     # Load the dataset
-    logger.log(f"Loading dataset {data_args.path}")
-    dataset = load_dataset('csv', data_files={data_args.split: data_args.path}, keep_default_na=False)
+    logger.log(f"Loading dataset {data_args.dataset_path}")
+    dataset = load_dataset('csv', data_files={data_args.split: data_args.dataset_path}, keep_default_na=False)
     # Get the column names from the dataset
     col_names = dataset[data_args.split].column_names
     src_col = data_args.src_col

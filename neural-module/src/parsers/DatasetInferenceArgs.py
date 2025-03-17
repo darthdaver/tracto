@@ -4,7 +4,7 @@ from typing import Optional
 
 @dataclass
 class DatasetInferenceArgs:
-    path: str = field(
+    dataset_path: str = field(
         metadata={"help": "Path to the dataset file or folder (if the dataset is split in multiple files."}
     )
     split: str = field(
@@ -31,4 +31,8 @@ class DatasetInferenceArgs:
     num_beams: Optional[int] = field(
         default=1,
         metadata={"help": "Number of beams to use for evaluation."}
+    )
+    query_path: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path to the query request template file."}
     )
