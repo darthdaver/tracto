@@ -19,6 +19,8 @@ for i in {1..4}; do
         --tokenizer_name "${hf_tokenizer}" \
         --query_path "${ROOT_DIR}/scripts/resources/rq1/queries/pretrained/${i}/query-template.txt" \
         --dataset_path "${RQ1_DATASET_DIR}/${i}" \
-        --output_path "${ROOT_DIR}/output/rq1/${ol_model}-${i}"
+        --output_path "${ROOT_DIR}/output/rq1/${ol_model}-${i}" \
+        --src_col "src" \
+        --tgt_col "tgt" \
   done < "$RQ1_MODELS_LIST"
 done
