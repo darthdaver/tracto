@@ -1,4 +1,4 @@
-# The script run the inference of the selected pretrained model on a given dataset.
+# The script run the inference on the models required to replicate RQ1
 
 # Get current directory
 current_dir=$(realpath "$(dirname "${BASH_SOURCE[@]}")")

@@ -116,9 +116,38 @@ where:
 The script will process the default E-Wash configuration file (in `./src/resources/ewash_config.json`), if not specified 
 otherwise.
 
-# RQ1
+## RQ1
 
-To replicate the results of RQ1, set up the parameters and hyperparameters in the file `scripts/bash/inference/infer-pretrained.sh`
+### Ollama
+
+Install Ollama by following the instructions in the [Ollama](https://ollama.com/download/linux) official website.
+
+Start the Ollama server in background by running the following command:
+
+```shell
+  nohup ollama serve > log-ollama-serve.out 2>&1 & echo $! >> pid-ollama-serve.txt
+```
+
+(The script will start the Ollama server in the background and save the logs in `log-ollama-serve.out` and the process id in `pid-ollama-serve.txt`. If you want to run the process in the current terminal without saving the log, run `ollama serve &` instead).
+
+
+Pull the models used to replicate RQ1:
+
+```shell
+  bash ./scripts/bash/utils/ollama_pull_models.sh
+```
+
+Replicate the results of RQ1 by running the following command from the `neural-module` directory:
+
+```shell
+  bash ./scripts/bash/inference/inference-pretrained-ollama.sh > log-ollama-client.out 2>&1 & echo $! >> pid-ollama-client.txt
+```
+
+(The script will start the inference process in the background and save the logs in `log-ollama-client.out` and the process id in `pid-ollama-client.txt`. If you want to run the process in the current terminal without saving the log, run `bash ./scripts/bash/inference/inference-pretrained-ollama.sh` instead).
+
+### HuggingFace
+
+To replicate the results of RQ1 using huggingface, set up the parameters and hyperparameters in the file `scripts/bash/inference/infer-pretrained.sh`
 (specifiying the model type, the batch size, the maximum length of the input, etc.) and run the following command from the
 `neural-module` directory:
 
