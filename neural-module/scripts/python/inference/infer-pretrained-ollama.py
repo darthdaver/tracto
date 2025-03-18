@@ -92,9 +92,14 @@ if __name__ == "__main__":
                 query = preprocess_dp(query_text, src)
                 # Predict the output with ollama
                 try:
-                    response = ollama.chat(
+                    response = ollama.generate(
                         model=model_args.model_name_or_path,
-                        messages=[{"role": "user", "content": query}]
+                        messages=[{"role": "user", "content": query}],
+                        options={
+                            "num_ctx": int(data_args.num_ctx),
+                            "seed": 42,
+                            "num_predict": 100
+                        }
                     )
                     out = response['message']['content'].strip()
                     inputs.append(src)

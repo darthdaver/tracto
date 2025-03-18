@@ -12,7 +12,7 @@ if [ ! -d "${RQ1_DATASET_DIR}" ]; then
 fi
 
 for i in {1..4}; do
-  while IFS=, read -r ol_model hf_tokenizer; do
+  while IFS=, read -r ol_model hf_tokenizer num_ctx; do
     echo "Running inference with ${ol_model} on query template ${i}"
     python3 "${PY_INFERENCE_DIR}/infer-pretrained-ollama.py" \
         --model_name_or_path "${ol_model}" \
@@ -21,6 +21,7 @@ for i in {1..4}; do
         --dataset_path "${RQ1_DATASET_DIR}/${i}" \
         --output_path "${ROOT_DIR}/output/rq1/${ol_model}-${i}" \
         --src_col "src" \
-        --tgt_col "tgt"
+        --tgt_col "tgt" \
+        --num_ctx "${num_ctx}"
   done < "$RQ1_MODELS_LIST"
 done

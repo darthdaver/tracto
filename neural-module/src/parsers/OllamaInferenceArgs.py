@@ -16,6 +16,9 @@ class OllamaInferenceArgs:
     tgt_col: str = field(
         metadata={"help": "The name of the column in the datasets containing the target."}
     )
+    num_ctx: int = field(
+        metadata={"help": "The context length. Sequences exceeding the length will be truncated, otherwise they will be padded."}
+    )
     query_path: Optional[str] = field(
         default=None,
         metadata={"help": "Path to the query request template file."}

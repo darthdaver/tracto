@@ -124,7 +124,7 @@ if __name__ == "__main__":
         raise ValueError(f"--target_column' value '{data_args.tgt_col}' needs to be one of: {', '.join(col_names)}")
     # Preprocess the dataset
     logger.log("Preprocessing the dataset...")
-    p_dataset = dataset[data_args.split].map(lambda dp: preprocess_dp(dp, src_col, data_args.max_src_len, tokenizer, bos_token))
+    p_dataset = dataset[data_args.split].map(lambda dp: preprocess_dp(dp, src_col, int(data_args.max_src_len), tokenizer, bos_token))
     logger.log(f"Loaded {len(p_dataset)} samples for prediction")
     logger.log(f"Example:\n\nInput:\n{p_dataset[0][src_col]}\n\nTarget:\n{p_dataset[0][tgt_col]}")
     # Set the format of the dataset (torch tensors for input_ids and attention_mask)
@@ -136,7 +136,7 @@ if __name__ == "__main__":
     )
     # Define the generation kwargs
     gen_kwargs = {
-        "max_new_tokens": data_args.max_target_length,
+        "max_new_tokens": int(data_args.max_target_length),
         "num_beams": data_args.num_beams,
         "do_sample": False,
         "pad_token_id": tokenizer.eos_token_id
