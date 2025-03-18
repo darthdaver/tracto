@@ -101,7 +101,7 @@ if __name__ == "__main__":
                             "num_predict": 100
                         }
                     )
-                    out = response['message']['content'].strip()
+                    out = response.text.strip()
                     inputs.append(src)
                     targets.append(tgt)
                     predictions.append(out)
