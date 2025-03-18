@@ -94,7 +94,7 @@ if __name__ == "__main__":
                 try:
                     response = ollama.generate(
                         model=model_args.model_name_or_path,
-                        messages=[{"role": "user", "content": query}],
+                        prompt=query,
                         options={
                             "num_ctx": int(data_args.num_ctx),
                             "seed": 42,
