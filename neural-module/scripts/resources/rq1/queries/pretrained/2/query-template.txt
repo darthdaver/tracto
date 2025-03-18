@@ -1,4 +1,4 @@
-Given a Java test prefix and contextual information such as the javadoc and the signature of the methods invoked within the test prefix, provide a JSON object containing an attribute called "oracle" where the value is a string containing the test oracle (in the given JUnit version) to add to the current test prefix substituting the mask placeholder (<MASK_PLACEHOLDER>) or "<NO_ASSERTION>" if no assertion is needed after the last statement in the test prefix. Please, provide only the json of the target request.
+Given a Java test prefix and contextual information such as the javadoc and the signature of the methods invoked within the test prefix, provide a JSON object containing an attribute called "oracle" where the value is a string containing the test oracle (in the given JUnit version) to add to the current test prefix substituting the mask placeholder (<mask_id>) or "<NO_ASSERTION>" if no assertion is needed after the last statement in the test prefix. Please, provide only the json of the target request.
 
 Q:
 
@@ -8,7 +8,7 @@ public void testTiePointAccess() {
     assertEquals(0, prod.getTiePointNames().length);
     String[] tp = new String[] { ""tie_point_1"", ""tie_point_2"", ""tie_point_3"" };
     String[] sc = new String[] { ""scale_1"", ""scale_2"", ""scale_3"" };
-    <extra_id_0>
+    <mask_id>
 }
 
 // Junit Version
@@ -45,7 +45,7 @@ public void testTiePointAccess() {
     assertNotNull(tpNames);
     assertEquals(3, tpNames.length);
     for (int n = 0; n < 3; n++) {
-        <extra_id_0>
+        <mask_id>
     }
 }
 
