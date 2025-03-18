@@ -1,6 +1,8 @@
 import os
 import sys
 import csv
+from fileinput import filename
+
 import ollama
 import pandas as pd
 
@@ -27,12 +29,12 @@ def preprocess_dp(query_text, src_col):
     return query
 
 
-def save_prediction_stats(output_path: str, inputs: list, targets: list, predictions: list):
+def save_prediction_stats(out_file_path: str, inputs: list, targets: list, predictions: list):
     """
     Save the prediction stats to a CSV file.
     Args:
-        output_path (`str`):
-            The path to the output directory.
+        out_file_path (`str`):
+            The path to the output file.
         inputs (`list`):
             The list of input sequences.
         targets (`list`):
@@ -45,8 +47,7 @@ def save_prediction_stats(output_path: str, inputs: list, targets: list, predict
         'target': targets,
         'prediction': predictions
     })
-    df.to_csv(os.path.join(output_path, "inference.csv"), index=False)
-    df.to_json(os.path.join(output_path, "inference.json"), orient='records')
+    df.to_csv(out_file_path, index=False)
 
 
 if __name__ == "__main__":
@@ -76,9 +77,9 @@ if __name__ == "__main__":
     else:
         llm_dataset_files = [data_args.dataset_path]
     # Process each file in the dataset
-    for filename in llm_dataset_files:
-        logger.log(f'Processing file {filename}')
-        file_path = os.path.join(data_args.dataset_path, filename)
+    for file_path in llm_dataset_files:
+        logger.log(f'Processing file {file_path}')
+        filename = os.path.basename(file_path)
         # Read the csv file and load the data
         with open(file_path, mode='r', newline='') as file:
             reader = csv.DictReader(file)
@@ -111,7 +112,7 @@ if __name__ == "__main__":
                     inputs.append(src)
                     targets.append(tgt)
                     predictions.append("Error")
-    # Save stats of predictions
-    logger.log(f"Saving predictions to {output_path}")
-    save_prediction_stats(output_path, inputs, targets, predictions)
+        # Save stats of predictions
+        logger.log(f"Saving predictions to {output_path}")
+        save_prediction_stats(os.path.join(output_path, filename), inputs, targets, predictions)
 
