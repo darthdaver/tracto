@@ -4,7 +4,7 @@
 # Get current directory
 current_dir=$(realpath "$(dirname "${BASH_SOURCE[@]}")")
 # Setup global variables
-source "${current_dir}/global_variables.sh"
+source "${current_dir}/../utils/global_variables.sh"
 
 if [ ! -d "${TOGLL_DIR}" ]; then
   # Download TOGGL
