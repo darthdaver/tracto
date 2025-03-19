@@ -21,7 +21,7 @@ fi
 
 # Extract motivational example
 echo "Extracting motivational example from TOGLL dataset (codeparrot - mut | training - datapoint num. 112478)"
-"${PY_BIN}" "${PY_UTILS_DIR}/extract_togll_motivational_example.py" \
+"${PY_BIN}" "${PY_SOTA_DIR}/extract_togll_motivational_example.py" \
   "codeparrot/codeparrot-small-multi" \
   "${TOGLL_DIR}/togll-artifacts/RQ1/fine-tuning/dataset/dataset_codeparrot.pickle" \
   "${ROOT_DIR}/togll_motivational_example.txt" \

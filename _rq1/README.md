@@ -9,6 +9,12 @@ The scripts will exploit `Python 3.9` and the dependencies installed in the `tra
 Before to continue, please, follow the instructions in the section `Setup` of the corresponding [README.md](../neural-module/README.md) file
 in the `tracto/neural-module` folder.
 
+If you are in a new terminal session, remember to activate the venv or conda environment. Move to the `tracto/_rq1` folder and run the following command:
+
+```shell
+source ../neural-module/.venv/bin/activate
+```
+
 ## Extract SOTA motivational example
 
 To extract the SOTA motivational example, run the following command:
