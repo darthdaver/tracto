@@ -189,10 +189,13 @@ public class PartialOracleDataset {
             for (JsonNode arrayItem_root : rootNode) {
 
                 JsonNode DatapointsNode = arrayItem_root.get("datapoints");
-                
+
+                Boolean isNoAssertion = false;
 
                 for (JsonNode arrayItem : DatapointsNode) {
                     JsonNode targetNode = arrayItem.get("target");
+
+                    
                     
 
                     JsonNode testPrefixNode = arrayItem.get("testPrefix");
@@ -440,6 +443,9 @@ public class PartialOracleDataset {
 
                         // Create a datapoint object and move the fields inside it
                         ObjectNode datapoint = objectMapper.createObjectNode();
+                        System.out.println("Target: " + targetNode.asText().replace("\"", ""));
+
+                        
 
                         // Clean and set the testPrefix
                         ObjectNode cleanedTestPrefixNode = testPrefixCleaning(testPrefixNode);
@@ -447,8 +453,20 @@ public class PartialOracleDataset {
                             datapoint.set("testPrefix", cleanedTestPrefixNode);
                         }
 
-                        if (targetNode.toString() == "<NO_ASSERTION>") {
+                        // Check if the target is "<NO_ASSERTION>"
+                        if ("<NO_ASSERTION>".equals(snippet)) {
                             datapoint.put("target", "<NO_ASSERTION>");
+                            ObjectNode step = objectMapper.createObjectNode();
+                            step.put("partialOracle", "");
+                            step.put("expectedTypes", "");
+
+                            step.putArray("projectTokens");
+                            step.putArray("javaTokens");
+                            step.putArray("genericTokens");
+                            step.put("isSyntaxCorrect", "true");
+
+                            datapoint.set("tokenSteps", step);
+                            datapoints.add(datapoint);
                             break;
                         }
 
@@ -463,6 +481,8 @@ public class PartialOracleDataset {
                 }
                 
             }
+
+            
             outputObjectArray.add(outputObject);
 
 
