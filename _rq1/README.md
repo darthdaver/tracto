@@ -14,7 +14,7 @@ in the `tracto/neural-module` folder.
 To extract the SOTA motivational example, run the following command:
 
 ```bash
-bash ./scripts/bash/inference/extract_sota_motivational_example.sh
+bash ./scripts/bash/sota/extract_togll_motivational_example.sh
 ```
 
 The script will download the SOTA approach `TOGLL` replication package, will decode the training dataset used to train their
