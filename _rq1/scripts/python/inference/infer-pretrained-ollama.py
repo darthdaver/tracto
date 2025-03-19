@@ -1,7 +1,6 @@
 import os
 import sys
 import csv
-from fileinput import filename
 
 import ollama
 import pandas as pd

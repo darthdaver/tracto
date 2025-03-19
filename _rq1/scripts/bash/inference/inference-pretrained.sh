@@ -18,7 +18,7 @@ for i in {1..4}; do
       continue
     fi
     echo "Running inference with ${hf_model} on query template ${i}"
-    python3 "${PY_INFERENCE_DIR}/infer-pretrained.py" \
+    "${PY_BIN}" "${PY_INFERENCE_DIR}/infer-pretrained.py" \
         --model_name_or_path "${hf_model}" \
         --tokenizer_name "${hf_model}" \
         --query_path "${SCRIPTS_RESOURCES_DIR}/queries/pretrained/${i}/query-template.txt" \
