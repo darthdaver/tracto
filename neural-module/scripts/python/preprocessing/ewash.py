@@ -4,7 +4,6 @@ import json
 import csv
 import logging
 import copy
-import argparse
 from transformers import HfArgumentParser
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 from src.parsers.EwashArgsParser import EwashArgsParser

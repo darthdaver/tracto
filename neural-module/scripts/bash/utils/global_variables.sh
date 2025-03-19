@@ -14,16 +14,3 @@ RAW_ORACLES_DATASET_DIR="${ROOT_DIR}/../symbolic-module/output/raw-oracles-datas
 RAW_TOKENS_DATASET_DIR="${ROOT_DIR}/../symbolic-module/output/raw-tokens-dataset"
 LLM_ORACLES_DATASET_DIR="${ROOT_DIR}/llm-oracles-dataset"
 LLM_TOKENS_DATASET_DIR="${ROOT_DIR}/llm-tokens-dataset"
-SDKMAN_DIR="${BASH_RESOURCES_DIR}/sdkman"
-RQ1_DATASET_DIR="${ROOT_DIR}/rq1-dataset"
-
-# Bin
-MAVEN_BIN="${SDKMAN_DIR}/candidates/maven/${MAVEN_VERSION}/bin"
-GRADLE_BIN="${SDKMAN_DIR}/candidates/gradle/${GRADLE_VERSION}/bin"
-ANT_BIN="${SDKMAN_DIR}/candidates/ant/${ANT_VERSION}/bin"
-
-# Files
-RQ1_MODELS_LIST="${SCRIPTS_RESOURCES_DIR}/rq1/models-list.csv"
-
-# Links
-RQ1_MOTIVATIONAL_PROJECT_EXAMPLE_LINK="https://drive.switch.ch/index.php/s/zRkRD5kWLL92zVR/download"

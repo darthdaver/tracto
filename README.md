@@ -9,5 +9,6 @@ by a neural module to guide the search of oracles toward optimal solutions.
 
 ## Directory structure
 1. `./grammar` collects the ANTLR grammar files with the rules to retrieve the list of valid tokens at each stage of the oracle generation process.
-2. `./ml-model` contains the code related to the neural module.
+2. `./neural-module` contains the code related to the neural module.
 3. `./symbolic-module` contains the code of the symbolic module.
+4. `_rq1` contains the code and the data to replicate the ablation study and extract the motivational examples reported in RQ1 of the paper.

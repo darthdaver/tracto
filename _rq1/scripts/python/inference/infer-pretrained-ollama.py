@@ -6,7 +6,7 @@ from fileinput import filename
 import ollama
 import pandas as pd
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "neural-module"))
 from src.parsers.ModelArgs import ModelArgs
 from src.parsers.OllamaInferenceArgs import OllamaInferenceArgs
 from src.utils.Logger import Logger

@@ -3,7 +3,7 @@ import sys
 from tqdm import tqdm
 import pandas as pd
 from typing import Dict
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "neural-module"))
 from src.parsers.DatasetInferenceArgs import DatasetInferenceArgs
 from src.parsers.ModelArgs import ModelArgs
 from src.utils.Logger import Logger

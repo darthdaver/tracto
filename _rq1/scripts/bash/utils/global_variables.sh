@@ -9,18 +9,8 @@ BASH_RESOURCES_DIR="${ROOT_DIR}/scripts/bash/resources"
 BASH_INFERENCE_DIR="${BASH_DIR}/inference"
 PY_INFERENCE_DIR="${PY_DIR}/inference"
 SCRIPTS_RESOURCES_DIR="${ROOT_DIR}/scripts/resources"
-RAW_ORACLES_DATASET_DIR="${ROOT_DIR}/../symbolic-module/output/raw-oracles-dataset"
-RAW_TOKENS_DATASET_DIR="${ROOT_DIR}/../symbolic-module/output/raw-tokens-dataset"
-LLM_ORACLES_DATASET_DIR="${ROOT_DIR}/llm-oracles-dataset"
-LLM_TOKENS_DATASET_DIR="${ROOT_DIR}/llm-tokens-dataset"
-SDKMAN_DIR="${BASH_RESOURCES_DIR}/sdkman"
 RQ1_DATASET_DIR="${ROOT_DIR}/rq1-dataset"
 TOGLL_DIR="${ROOT_DIR}/togll"
-
-# Bin
-MAVEN_BIN="${SDKMAN_DIR}/candidates/maven/${MAVEN_VERSION}/bin"
-GRADLE_BIN="${SDKMAN_DIR}/candidates/gradle/${GRADLE_VERSION}/bin"
-ANT_BIN="${SDKMAN_DIR}/candidates/ant/${ANT_VERSION}/bin"
 
 # Files
 RQ1_MODELS_LIST="${SCRIPTS_RESOURCES_DIR}/models-list.csv"

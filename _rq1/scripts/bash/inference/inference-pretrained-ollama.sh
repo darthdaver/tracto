@@ -17,9 +17,9 @@ for i in {1..4}; do
     python3 "${PY_INFERENCE_DIR}/infer-pretrained-ollama.py" \
         --model_name_or_path "${ol_model}" \
         --tokenizer_name "${hf_tokenizer}" \
-        --query_path "${ROOT_DIR}/scripts/resources/rq1/queries/pretrained/${i}/query-template.txt" \
+        --query_path "${ROOT_DIR}/scripts/resources/queries/pretrained/${i}/query-template.txt" \
         --dataset_path "${RQ1_DATASET_DIR}/${i}" \
-        --output_path "${ROOT_DIR}/output/rq1/${ol_model}-${i}" \
+        --output_path "${ROOT_DIR}/output/${ol_model}-${i}" \
         --src_col "src" \
         --tgt_col "tgt" \
         --num_ctx "${num_ctx}"
