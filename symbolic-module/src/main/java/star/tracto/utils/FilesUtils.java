@@ -1,5 +1,6 @@
 package star.tracto.utils;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.javaparser.ast.CompilationUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -87,6 +88,23 @@ public class FilesUtils {
     }
 
     /**
+     * Reads a JSON file and maps it to a Java record.
+     *
+     * @param path the path to the file
+     * @param clazz the class of the objects to read
+     * @return the Java record representing the JSON file
+     * @throws Error if an error occurs while reading the file
+     */
+    public static <T> T readJSON(Path path, Class<T> clazz) {
+        try {
+            ObjectMapper objectMapper = new ObjectMapper();
+            return objectMapper.readValue(path.toFile(), clazz);
+        } catch (IOException e) {
+            throw new Error("Error when reading file " + path, e);
+        }
+    }
+
+    /**
      * Writes an object representing a compilation unit to a Java file.
      *
      * @param path the path to the file
@@ -101,6 +119,13 @@ public class FilesUtils {
         }
     }
 
+    /**
+     * Writes a JSON string to a file.
+     *
+     * @param path the path to the file
+     * @param json the JSON string to write
+     * @throws Error if an error occurs while writing the file
+     */
     public static void writeJSONFile(Path path, String json) {
         createFile(path);
         try {

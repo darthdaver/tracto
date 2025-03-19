@@ -15,7 +15,7 @@
 # Get current directory
 current_dir=$(realpath "$(dirname "${BASH_SOURCE[@]}")")
 # Setup global variables
-source "${current_dir}/../../utils/global_variables.sh"
+source "${current_dir}/../utils/global_variables.sh"
 source "${BASH_UTILS_DIR}/init_sdkman.sh"
 
 # Add Maven bin directory to PATH temporarily
@@ -31,7 +31,7 @@ unprocessed_projects_file="${ROOT_DIR}/unprocessed_projects.csv"
 
 if [ ! -e "${TRACTO_JAR}" ]; then
   cd "${ROOT_DIR}"
-  sdk use java $JAVA21
+  sdk use java "$JAVA21"
   mvn clean package -DskipTests
 fi
 if [ -f "$maven_projects_file" ]; then
@@ -61,6 +61,17 @@ if [ -f "$unprocessed_projects_file" ]; then
   rm "$unprocessed_projects_file"
   touch "$unprocessed_projects_file"
   chmod 666 "$unprocessed_projects_file"
+fi
+
+if [ ! -d "${LIB_DIR}/java8" ] || [ ! -d "${LIB_DIR}/java11" ] || [ ! -d "${LIB_DIR}/java17" ] || [ ! -d "${LIB_DIR}/java21" ]; then
+    if [ -d "${LIB_DIR}" ]; then
+        mv "${LIB_DIR}/java_classpaths.json" "${LIB_DIR}/../java_classpaths.json"
+        rm -rf "${LIB_DIR}/"*
+        mv "${LIB_DIR}/../java_classpaths.json" "${LIB_DIR}/java_classpaths.json"
+    fi
+    curl -o "${LIB_DIR}/jdks.zip" "${LIB_JDKS_LINK}"
+    unzip "${LIB_DIR}/jdks.zip" -d "${LIB_DIR}"
+    rm "${LIB_DIR}/jdks.zip"
 fi
 
 check_maven() {
@@ -120,6 +131,6 @@ while IFS=, read -r repo_id repo_url commit_sha; do
     # Setup java libraries paths
     classpath="${LIB_DIR}/java8:${LIB_DIR}/java11:${LIB_DIR}/java17"
     # Generate Oracle dataset
-    sdk use java $JAVA21
-    java -jar "${TRACTO_JAR}" "oracles-dataset" "${GITHUB_REPOS_TMP_DIR}/${repo_id}" "${OUTPUT_DIR}/raw-oracles-dataset" "${ROOT_DIR}"
+    sdk use java "$JAVA21"
+    java -jar "${TRACTO_JAR}" "oracles-dataset" "${GITHUB_REPOS_TMP_DIR}/${repo_id}" "${OUTPUT_DIR}/raw-oracles-dataset" "${ROOT_DIR}" "${SRC_RESOURCES_DIR}/dataset/oraclesdataset_config.json"
 done < "$M2T_REPO_LIST"

@@ -3,10 +3,12 @@ package star.tracto.preprocessing;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.javatuples.Pair;
-import org.javatuples.Quartet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import star.tracto.data.OraclesDatasetConfig;
+import star.tracto.data.SplitStrategyType;
 import star.tracto.data.TractoNamingConvention;
+import star.tracto.data.TryCatchFinallyStrategyType;
 import star.tracto.preprocessing.components.TestClassOracleDatapoints;
 import star.tracto.preprocessing.utils.JavaFileCollector;
 import star.tracto.preprocessing.utils.TestUtils;
@@ -31,12 +33,14 @@ public class OraclesDataset {
 
     private static final Logger logger = LoggerFactory.getLogger(OraclesDataset.class);
 
-    public static void generate(Path repoRootPath, Path outputPath, String projectIdentifier, String classpath) throws IOException {
+    public static void generate(Path repoRootPath, Path configPath, Path outputPath, String projectIdentifier, String classpath) throws IOException {
         // Update classpath with the libraries paths
         List<Path> librariesPaths = findLibrariesPaths(repoRootPath);
         for (Path libraryPath : librariesPaths) {
             classpath += ":" + libraryPath.toString();
         }
+        // Load configuration file
+        OraclesDatasetConfig oraclesDatasetConfig = FilesUtils.readJSON(configPath, OraclesDatasetConfig.class);
         // Define test mapping hash map
         HashMap<Path, Path> mappedTests = new HashMap<>();
         // Define statistics hash map
@@ -44,7 +48,7 @@ public class OraclesDataset {
         // Define list of oracles datapoints
         List<TestClassOracleDatapoints> testClassesOracleDatapoints = new ArrayList<>();
         // Generate directories to output path if they do not exist
-        Path outputDatasetPath = outputPath.resolve("dataset");
+        Path outputDatasetPath = outputPath.resolve("raw-oracles-dataset");
         Path outputStatisticsPath = outputPath.resolve("statistics");
         FilesUtils.createDirectories(outputDatasetPath);
         FilesUtils.createDirectories(outputStatisticsPath);
@@ -100,10 +104,15 @@ public class OraclesDataset {
         for (Path testClassPath : testFilePaths) {
             logger.info("Splitting test class: {}", testClassPath.toString().replace(repoRootPath.toString(), ""));
             try {
-                Path splitTestClassPath = TestUtils.splitTest(repoRootPath, testClassPath, Paths.get(outputPath.toString(), "test-split", projectIdentifier));
+                Path splitTestClassPath = TestUtils.splitTest(
+                        oraclesDatasetConfig,
+                        repoRootPath,
+                        testClassPath,
+                        Paths.get(outputPath.toString(), "test-split", projectIdentifier)
+                );
                 splittedTestFilePaths.add(new Pair<>(splitTestClassPath, Optional.ofNullable(mappedTests.get(testClassPath))));
-            } catch (IllegalStateException e) {
-                logger.error("No JUnit version is found in the imports and the test class cannot include assertions.");
+            } catch (Exception e) {
+                logger.error(e.getMessage());
             }
         }
         // Update java parser considering the new split files generated within the repository
@@ -119,15 +128,15 @@ public class OraclesDataset {
             logger.info("Processing split test class {} to generate oracles datapoints", splitTestClassPath.toString().replace(repoRootPath.toString(), ""));
             if (sourceFilePath.isPresent()) {
                 // Debugging
-                // if (splitTestClassPath.toString().replace(repoRootPath.toString(), "").contains("SynL1COlciSceneTransformProviderTestTractoSplit")) {
-                //    Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(splitTestClassPath, sourceFilePath.get());
-                //    TestClassOracleDatapoints splitTestClasstestClassesOracleDatapoints = processedSplitTestClassResult.getValue0();
-                //    HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();
-                //    oraclesDatapoints += splitTestClasstestClassesOracleDatapoints.datapoints().size();
-                //    testClassesOracleDatapoints.add(splitTestClasstestClassesOracleDatapoints);
+                // if (splitTestClassPath.toString().replace(repoRootPath.toString(), "").contains("SentinelTimeCodingTestTractoSplit")) {
+                //     Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(oraclesDatasetConfig, splitTestClassPath, sourceFilePath.get());
+                //     TestClassOracleDatapoints splitTestClasstestClassesOracleDatapoints = processedSplitTestClassResult.getValue0();
+                //     HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();
+                //     oraclesDatapoints += splitTestClasstestClassesOracleDatapoints.datapoints().size();
+                //     testClassesOracleDatapoints.add(splitTestClasstestClassesOracleDatapoints);
                 // }
                 try {
-                    Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(splitTestClassPath, sourceFilePath.get());
+                    Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(oraclesDatasetConfig, splitTestClassPath, sourceFilePath.get());
                     TestClassOracleDatapoints splitTestClasstestClassesOracleDatapoints = processedSplitTestClassResult.getValue0();
                     HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();
                     testClassesOracleDatapoints.add(splitTestClasstestClassesOracleDatapoints);

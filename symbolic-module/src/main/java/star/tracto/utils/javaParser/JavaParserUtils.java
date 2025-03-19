@@ -12,8 +12,7 @@ import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
-import com.github.javaparser.ast.stmt.BlockStmt;
-import com.github.javaparser.ast.stmt.Statement;
+import com.github.javaparser.ast.stmt.*;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.ReferenceType;
 import com.github.javaparser.ast.type.TypeParameter;
@@ -40,9 +39,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import star.tracto.data.*;
 import star.tracto.utils.FilesUtils;
-
+import star.tracto.utils.javaParser.visitors.statements.helper.StmtVisitorHelper;
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
@@ -1404,18 +1402,52 @@ public class JavaParserUtils {
      * @return the last statement in the method declaration
      */
     public static Statement getLastStatementInMethodDeclaration(MethodDeclaration callableDeclaration) {
-        return callableDeclaration.getBody().get().getStatements().getLast().get();
+        List<Statement> statements = callableDeclaration.getBody().get().findAll(Statement.class);
+        return statements.get(statements.size() - 1);
     }
 
     /**
-     * Remove the last statement in a method declaration.
+     * Visit all the statements within a statement (it could be a block of statements or an expression statement, for example)
+     * to find the last occurrence of a given statement type. The method returns the statement itself, if it is the last
+     * occurrence of the given type
+     *
+     * @param stmt the statement to visit
+     * @param type the type of statement to find
+     * @return the last occurrence of the statement type. If the statement is the last occurrence of that type, returns
+     * itself. If the statement is not found, return an empty optional.
+     */
+    public static Optional<Statement> getLastStatementTypeOccurrence(Statement stmt, Class type) {
+        Optional<Statement> lastOccurrence = StmtVisitorHelper.getLastStatementOccurrence(stmt, type);
+        return lastOccurrence;
+    }
+
+    /**
+     * Retrieve the last assertion, assuming it is in the last statement of a method declaration.
      *
      * @param callableDeclaration the method declaration to process
-     * @return the method declaration without the last statement
+     * @return the last assertion in the last statement of the method declaration (if any), otherwise return an empty optional
      */
-    public static MethodDeclaration removeLastStatementInMethodDeclaration(MethodDeclaration callableDeclaration) {
-        callableDeclaration.getBody().get().getStatements().removeLast();
-        return callableDeclaration;
+    public static Optional<Statement> getLastAssertionInMethodDeclaration(MethodDeclaration callableDeclaration) throws IllegalStateException {
+        Statement lastStmt = getLastStatementInMethodDeclaration(callableDeclaration);
+        Optional<Statement> exprStmt = getLastStatementTypeOccurrence(lastStmt,ExpressionStmt.class);
+        if (exprStmt.isPresent()) {
+            // Get the expression from the statement
+            Expression currentExpr = exprStmt.get().asExpressionStmt().getExpression();
+            // Check if the expression is a variable declaration expression and extract the initializer, if present
+            if (currentExpr.isVariableDeclarationExpr()) {
+                Optional<Expression> initializer = currentExpr.asVariableDeclarationExpr().getVariable(0).getInitializer();
+                if (initializer.isPresent()) {
+                    currentExpr = initializer.get();
+                }
+            }
+            // Check if the expression is an assertion
+            if (currentExpr.isMethodCallExpr() && JUnitAssertionType.isJUnitAssertion(currentExpr.asMethodCallExpr().getNameAsString())) {
+                return exprStmt;
+            } else {
+                return Optional.empty();
+            }
+        }
+        return Optional.empty();
     }
 
     /**

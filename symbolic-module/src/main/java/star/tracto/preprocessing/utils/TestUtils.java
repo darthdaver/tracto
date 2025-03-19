@@ -2,6 +2,8 @@ package star.tracto.preprocessing.utils;
 
 import com.github.javaparser.ast.*;
 import com.github.javaparser.ast.body.*;
+import com.github.javaparser.ast.comments.BlockComment;
+import com.github.javaparser.ast.comments.Comment;
 import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.stmt.*;
 import com.github.javaparser.ast.type.*;
@@ -25,7 +27,9 @@ import star.tracto.utils.javaParser.visitors.statements.AssertStmtVisitor;
 import star.tracto.utils.javaParser.visitors.expressions.MethodCallExprVisitor;
 import star.tracto.utils.javaParser.visitors.statements.helper.StmtVisitorHelper;
 
+import javax.swing.text.html.Option;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -45,6 +49,8 @@ public class TestUtils {
 
     /** The logger for the class. */
     private static final Logger logger = LoggerFactory.getLogger(TestUtils.class);
+    /** helper labels to identify fake elements added to avoid JavaParser parsing problems */
+    private static final String FAKE_ELEMENT_LABEL = "<FAKE_ELEMENT>";
 
     /** Do not instantiate this class. */
     private TestUtils() {
@@ -117,7 +123,11 @@ public class TestUtils {
     }
 
     /**
-     * Split the test cases in the test class, at any occurrence of an assertion.
+     * Split the test cases in the test class, according to the strategy.
+     *
+     * If strategy is set to `assertion`, the test is split at any occurrence of an assertion.
+     * If strategy is set to `statement`, the test is split at any statement.
+     *
      * For example, given the following pseudo test class:
      *
      * <pre>
@@ -137,7 +147,35 @@ public class TestUtils {
      *     }
      * </pre>
      *
-     * The method will return the following list of methods (in the form of {@link com.github.javaparser.ast.body.MethodDeclaration}):
+     * The STATEMENT strategy will return the following list of methods (in the form of
+     * {@link com.github.javaparser.ast.body.MethodDeclaration}):
+     *
+     * <pre>
+     *     [
+     *          public void testMethod1_split_0() {
+     *              var result1 = method1();
+     *          },
+     *          public void testMethod1_split_1() {
+     *              var result1 = method1();
+     *              var result2 = method2();
+     *          },
+     *          public void testMethod1_split_2() {
+     *              var result1 = method1();
+     *              var result2 = method2();
+     *              assert1();
+     *          },
+     *          public void testMethod1_split_3() {
+     *              var result1 = method1();
+     *              var result2 = method2();
+     *              assert1();
+     *              var result3 = method3();
+     *          }
+     *          ...
+     *     ]
+     * </pre>
+     *
+     * The ASSERTION stretegy will return the following list of methods (in the form of
+     * {@link com.github.javaparser.ast.body.MethodDeclaration}):
      *
      * <pre>
      *     [
@@ -164,6 +202,7 @@ public class TestUtils {
      *    ]
      * </pre>
      *
+     * @param config the configuration options for the dataset to generate
      * @param repoRootPath the path to the root of the repository
      * @param testFilePath the path to the test class file
      * @param outputPath the path to the split test class file
@@ -171,7 +210,12 @@ public class TestUtils {
      * assertions
      * @return the path to the split test class file
      */
-    public static Path splitTest(Path repoRootPath, Path testFilePath, Path outputPath) throws IllegalStateException {
+    public static Path splitTest(
+            OraclesDatasetConfig config,
+            Path repoRootPath,
+            Path testFilePath,
+            Path outputPath
+    ) throws IllegalStateException, UnsupportedOperationException {
         String testFileRelativePath = testFilePath.toString().replace(repoRootPath.getParent().toString(), "");
         // Regular output path for report analysis
         Path regularOutputPath = Paths.get(outputPath.toString(), "regular", testFileRelativePath.replace(".java", TractoNamingConvention.TEST_SPLIT_FILE.getConventionName()));
@@ -208,6 +252,7 @@ public class TestUtils {
                     testCaseMold.setBody(new BlockStmt());
                     // Parse the statements of the original test case and split it into multiple test cases
                     Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                            config,
                             junitVersion,
                             originalTestCaseStatements,
                             testCaseMold,
@@ -276,6 +321,7 @@ public class TestUtils {
      * The method returns the last test prefix generated, and the list of the intermediary test prefixes, split at any
      * occurrence of an assertion.
      *
+     * @param config the configuration options for the dataset to generate
      * @param junitVersion the version of JUnit used in the test class
      * @param statements the list of statements to parse
      * @param testCaseMold the mold of the test case
@@ -287,6 +333,7 @@ public class TestUtils {
      * @throws IllegalStateException if an error occurs while parsing the statements of the block
      */
     private static Pair<MethodDeclaration, List<MethodDeclaration>> parseStatementsBlock(
+            OraclesDatasetConfig config,
             JUnitVersion junitVersion,
             List<Statement> statements,
             MethodDeclaration testCaseMold,
@@ -318,8 +365,18 @@ public class TestUtils {
                 // Flag the statement as an assertion
                 isAssertion = true;
             } else if (statement.isBlockStmt()) {
+                // Add a test case with the empty body
+                //if (!(blockStatementsType == BlockStatementsType.TRY)) {
+                //    // Initialize a new split test case, starting from the body of the previous one
+                //    MethodDeclaration newSplitTestCase = initializeSplitTestCase(splitTestCase, testCasePrefixName, ++idx);
+                //    // Add the split test case to the list
+                //    splitTestCases.add(splitTestCase);
+                //    // Update the split test case with the new one
+                //    splitTestCase = newSplitTestCase;
+                //}
                 // Parse the statements of the do body and split it into multiple test cases
                 Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                        config,
                         junitVersion,
                         statement.asBlockStmt().getStatements(),
                         splitTestCase,
@@ -335,7 +392,7 @@ public class TestUtils {
                 // Add the split test cases generated from the do statement to the list
                 splitTestCases.addAll(result.getValue1());
                 // Update idx of the split tests
-                idx = splitTestCases.size();
+                idx += result.getValue1().size();
             } else if (statement.isDoStmt()) {
                 // Parse the do statement and split the test case into multiple test cases
                 Statement doStmtBody = statement.asDoStmt().getBody();
@@ -346,6 +403,7 @@ public class TestUtils {
                 addStatement(doStmtClone, splitTestCaseBody, blockStatementsType);
                 // Parse the statements of the do body and split it into multiple test cases
                 Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                        config,
                         junitVersion,
                         new ArrayList<>(Arrays.asList(doStmtBody)),
                         splitTestCase,
@@ -361,7 +419,7 @@ public class TestUtils {
                 // Add the split test cases generated from the do statement to the list
                 splitTestCases.addAll(result.getValue1());
                 // Update idx of the split tests
-                idx = splitTestCases.size();
+                idx += result.getValue1().size();
             } else if (statement.isExpressionStmt()) {
                 // Get the expression from the statement
                 Expression currentExpr = statement.asExpressionStmt().getExpression();
@@ -379,43 +437,48 @@ public class TestUtils {
                     // Flag the statement as an assertion
                     isAssertion = true;
                 } else {
-                    if (currentExpr.isMethodCallExpr()) {
-                        // Get the method call expression
-                        MethodCallExpr methodCallExpr = currentExpr.asMethodCallExpr();
-                        // Get the name of the method
-                        String methodName = methodCallExpr.getNameAsString();
-                        // Check if the method is an auxiliary method
-                        if (auxiliaryMethods.containsKey(methodName)) {
-                            if (auxiliaryMethods.get(methodName).getBody().isPresent()) {
-                                // Parse the statements of the do body and split it into multiple test cases
-                                Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
-                                        junitVersion,
-                                        auxiliaryMethods.get(methodName).getBody().get().getStatements(),
-                                        splitTestCase,
-                                        idx,
-                                        auxiliaryMethods,
-                                        blockStatementsType,
-                                        recursionLevel + 1
-                                );
-                                // Update the split test case with the last generated from the expression statement
-                                splitTestCase = result.getValue0();
-                                // Update the split test case body
-                                splitTestCaseBody = splitTestCase.getBody().get();
-                                // Add the split test cases generated from the do statement to the list
-                                splitTestCases.addAll(result.getValue1());
-                                // Update idx of the split tests
-                                idx = splitTestCases.size();
-                            }
-                        } else {
-                            // Add the statement to the current split test case body
-                            addStatement(statement, splitTestCaseBody, blockStatementsType);
-                            continue;
-                        }
-                    } else {
-                        // Add the statement to the current split test case body
-                        addStatement(statement, splitTestCaseBody, blockStatementsType);
-                        continue;
-                    }
+                    // TODO: Implement check into auxiliary methods
+                    // if (currentExpr.isMethodCallExpr()) {
+                    //     // Get the method call expression
+                    //     MethodCallExpr methodCallExpr = currentExpr.asMethodCallExpr();
+                    //     // Get the name of the method
+                    //     String methodName = methodCallExpr.getNameAsString();
+                    //     // Check if the method is an auxiliary method
+                    //     if (auxiliaryMethods.containsKey(methodName)) {
+                    //         if (auxiliaryMethods.get(methodName).getBody().isPresent()) {
+                    //             // Parse the statements of the do body and split it into multiple test cases
+                    //             Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                    //                     splitStrategy,
+                    //                     tryCatchFinallyStrategy,
+                    //                     junitVersion,
+                    //                     auxiliaryMethods.get(methodName).getBody().get().getStatements(),
+                    //                     splitTestCase,
+                    //                     idx,
+                    //                     auxiliaryMethods,
+                    //                     blockStatementsType,
+                    //                     recursionLevel + 1
+                    //             );
+                    //             // Update the split test case with the last generated from the expression statement
+                    //             splitTestCase = result.getValue0();
+                    //             // Update the split test case body
+                    //             splitTestCaseBody = splitTestCase.getBody().get();
+                    //             // Add the split test cases generated from the do statement to the list
+                    //             splitTestCases.addAll(result.getValue1());
+                    //             // Update idx of the split tests
+                    //             idx += result.getValue1().size();
+                    //         }
+                    //     } else {
+                    //         // Add the statement to the current split test case body
+                    //         addStatement(statement, splitTestCaseBody, blockStatementsType);
+                    //         continue;
+                    //     }
+                    // } else {
+                    //     // Add the statement to the current split test case body
+                    //     addStatement(statement, splitTestCaseBody, blockStatementsType);
+                    //     continue;
+                    // }
+                    addStatement(statement, splitTestCaseBody, blockStatementsType);
+                    // continue;
                 }
             } else if (statement.isForEachStmt()) {
                 // Parse the for each statement and split the test case into multiple test cases
@@ -427,6 +490,7 @@ public class TestUtils {
                 addStatement(forEachStmtClone, splitTestCaseBody, blockStatementsType);
                 // Parse the statements of the for each body and split it into multiple test cases
                 Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                        config,
                         junitVersion,
                         new ArrayList<>(Arrays.asList(forEachStmtBody)),
                         splitTestCase,
@@ -442,7 +506,7 @@ public class TestUtils {
                 // Add the split test cases generated from the for each statement to the list
                 splitTestCases.addAll(result.getValue1());
                 // Update idx of the split tests
-                idx = splitTestCases.size();
+                idx += result.getValue1().size();
             } else if (statement.isForStmt()) {
                 // Parse the for statement and split the test case into multiple test cases
                 Statement forStmtBody = statement.asForStmt().getBody();
@@ -453,6 +517,7 @@ public class TestUtils {
                 addStatement(forStmtClone, splitTestCaseBody, blockStatementsType);
                 // Parse the statements of the for body and split it into multiple test cases
                 Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                        config,
                         junitVersion,
                         new ArrayList<>(Arrays.asList(forStmtBody)),
                         splitTestCase,
@@ -468,7 +533,7 @@ public class TestUtils {
                 // Add the split test cases generated from the for statement to the list
                 splitTestCases.addAll(result.getValue1());
                 // Update idx of the split tests
-                idx = splitTestCases.size();
+                idx += result.getValue1().size();
             } else if (statement.isIfStmt()) {
                 IfStmt ifStmt = statement.asIfStmt();
                 List<Pair<Optional<Expression>,Statement>> ifStmts = new ArrayList<>();
@@ -506,6 +571,7 @@ public class TestUtils {
                     }
                     // Parse the statements of the if body and split it into multiple test cases
                     Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                            config,
                             junitVersion,
                             new ArrayList<>(Arrays.asList(ifStmtBody)),
                             splitTestCase,
@@ -521,9 +587,13 @@ public class TestUtils {
                     // Add the split test cases generated from the if statement to the list
                     splitTestCases.addAll(result.getValue1());
                     // Update idx of the split tests
-                    idx = splitTestCases.size();
+                    idx += result.getValue1().size();
                     // Update the if statement clone
-                    ifStmtClone = getLastStatementTypeOccurrence(splitTestCaseBody, IfStmt.class).asIfStmt();
+                    ifStmtClone = JavaParserUtils.getLastStatementTypeOccurrence(splitTestCaseBody, IfStmt.class)
+                            .orElseThrow(() -> new IllegalStateException(
+                                    "No statement of type " + IfStmt.class + " found in the block of statements."
+                            ))
+                            .asIfStmt();
                 }
             } else if (statement.isSynchronizedStmt()) {
                 // Parse the synchronized statement and split the test case into multiple test cases
@@ -535,6 +605,7 @@ public class TestUtils {
                 addStatement(synchronizedStmtClone, splitTestCaseBody, blockStatementsType);
                 // Parse the statements of the synchronized body and split it into multiple test cases
                 Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                        config,
                         junitVersion,
                         new ArrayList<>(Arrays.asList(synchronizedStmtBody)),
                         splitTestCase,
@@ -550,75 +621,170 @@ public class TestUtils {
                 // Add the split test cases generated from the synchronized statement to the list
                 splitTestCases.addAll(result.getValue1());
                 // Update idx of the split tests
-                idx = splitTestCases.size();
+                idx += result.getValue1().size();
             } else if (statement.isSwitchStmt()) {
+                throw new UnsupportedOperationException("Switch statement not supported yet.");
+                // TODO: Implement switch statement
                 // Parse the switch statement and split the test case into multiple test cases
-                SwitchStmt switchStmt = statement.asSwitchStmt();
-                for (SwitchEntry switchEntry : switchStmt.getEntries()) {
-                    // Clone the switch statement and set the body to an empty block
-                    SwitchStmt switchStmtClone = statement.asSwitchStmt().clone();
-                    switchStmtClone.setEntries(new NodeList<>());
-                    // Clone the current switch entry and set the statements to an empty block
-                    SwitchEntry switchEntryClone = switchEntry.clone();
-                    switchEntryClone.setStatements(new NodeList<>());
-                    // Add the cloned switch entry to the cloned switch statement
-                    switchStmtClone.getEntries().add(switchEntryClone);
-                    // Add the cloned switch statement to the current split test case body
-                    addStatement(switchStmtClone, splitTestCaseBody, blockStatementsType);
-                    // Parse the statements of the switch entry and split it into multiple test cases
-                    Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
-                            junitVersion,
-                            switchEntry.getStatements(),
-                            splitTestCase,
-                            idx,
-                            auxiliaryMethods,
-                            BlockStatementsType.SWITCH,
-                            recursionLevel + 1
-                    );
-                    // Update the split test case with the last generated from the switch entry
-                    splitTestCase = result.getValue0();
-                    // Update the split test case body
-                    splitTestCaseBody = splitTestCase.getBody().get();
-                    // Add the split test cases generated from the switch entry to the list
-                    splitTestCases.addAll(result.getValue1());
-                    // Update idx of the split tests
-                    idx = splitTestCases.size();
-                }
+                // SwitchStmt switchStmt = statement.asSwitchStmt();
+                // for (SwitchEntry switchEntry : switchStmt.getEntries()) {
+                //     // Clone the switch statement and set the body to an empty block
+                //     SwitchStmt switchStmtClone = statement.asSwitchStmt().clone();
+                //     switchStmtClone.setEntries(new NodeList<>());
+                //     // Clone the current switch entry and set the statements to an empty block
+                //     SwitchEntry switchEntryClone = switchEntry.clone();
+                //     switchEntryClone.setStatements(new NodeList<>());
+                //     // Add the cloned switch entry to the cloned switch statement
+                //     switchStmtClone.getEntries().add(switchEntryClone);
+                //     // Add the cloned switch statement to the current split test case body
+                //     addStatement(switchStmtClone, splitTestCaseBody, blockStatementsType);
+                //     // Parse the statements of the switch entry and split it into multiple test cases
+                //     Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                //             config,
+                //             junitVersion,
+                //             switchEntry.getStatements(),
+                //             splitTestCase,
+                //             idx,
+                //             auxiliaryMethods,
+                //             BlockStatementsType.SWITCH,
+                //             recursionLevel + 1
+                //     );
+                //     // Update the split test case with the last generated from the switch entry
+                //     splitTestCase = result.getValue0();
+                //     // Update the split test case body
+                //     splitTestCaseBody = splitTestCase.getBody().get();
+                //     // Add the split test cases generated from the switch entry to the list
+                //     splitTestCases.addAll(result.getValue1());
+                //     // Update idx of the split tests
+                //     idx += result.getValue1().size();
+                // }
             } else if (statement.isTryStmt()) {
                 // Convert the try/catch statement into a plain assertion (assertThrows)
                 // Get the try statement
                 TryStmt tryStmt = statement.asTryStmt();
-                // Check the try statement
-                checkTryStmt(testCasePrefixName, tryStmt);
-                // Check if the try statement contains a fail method call and, in that case, update
-                // the number of assertions (a fail() assertion in the catch block does not split the test,
-                // because it is removed in the current approach)
-                if (tryStmt.getCatchClauses().size() > 0) {
-                    Optional<BlockStatementsType> failAssertionPosition = findFailMethodCall(tryStmt);
-                    if (failAssertionPosition.isPresent() && failAssertionPosition.get() == BlockStatementsType.CATCH) {
-                        numberOfAssertions--;
+
+                if (config.tryCatchFinallyStrategy() == TryCatchFinallyStrategyType.FLAT) {
+                    // Check the try statement
+                    checkTryStmt(testCasePrefixName, tryStmt);
+                    // Check if the try statement contains a fail method call and, in that case, update
+                    // the number of assertions (a fail() assertion in the catch block does not split the test,
+                    // because it is removed in the current approach)
+                    if (tryStmt.getCatchClauses().size() > 0) {
+                        Optional<BlockStatementsType> failAssertionPosition = findFailMethodCall(tryStmt);
+                        if (failAssertionPosition.isPresent() && failAssertionPosition.get() == BlockStatementsType.CATCH) {
+                            numberOfAssertions--;
+                        }
+                    }
+                    // Flatten the try statement into a block statement
+                    BlockStmt flatTryStmt = flatTryStmt(junitVersion, tryStmt);
+                    // Parse the statements of the synchronized body and split it into multiple test cases
+                    Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                            config,
+                            junitVersion,
+                            new ArrayList<>(flatTryStmt.getStatements()),
+                            splitTestCase,
+                            idx,
+                            auxiliaryMethods,
+                            blockStatementsType,
+                            recursionLevel + 1
+                    );
+                    // Update the split test case with the last generated from the synchronized statement
+                    splitTestCase = result.getValue0();
+                    // Update the split test case body
+                    splitTestCaseBody = splitTestCase.getBody().get();
+                    // Add the split test cases generated from the synchronized statement to the list
+                    splitTestCases.addAll(result.getValue1());
+                    // Update idx of the split tests
+                    idx += result.getValue1().size();
+                } else {
+                    // Parse the while statement and split the test case into multiple test cases
+                    Statement tryStmtBody = tryStmt.getTryBlock();
+                    // Clone the while statement and set the body to an empty block
+                    TryStmt tryStmtClone = new TryStmt();
+                    // Add temporary catch clause to the cloned try statement to avoid parsing problems
+                    // The fake catch close contains a block comment with a specific label, to easily remove it later
+                    Type type = new ClassOrInterfaceType(null, "Exception");
+                    Parameter param = new Parameter(type, "e");
+                    CatchClause fakeCatchClause = new CatchClause(param, new BlockStmt());
+                    fakeCatchClause.setComment(new BlockComment(TestUtils.FAKE_ELEMENT_LABEL));
+                    // Replace the catch clauses from the cloned try statement with the temporary fake catch clause
+                    tryStmtClone.setCatchClauses(new NodeList<>(fakeCatchClause));
+                    // Add the cloned while statement to the current split test case body
+                    addStatement(tryStmtClone, splitTestCaseBody, blockStatementsType);
+                    // Parse the statements of the try block and split it into multiple test cases
+                    Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                            config,
+                            junitVersion,
+                            new ArrayList<>(Arrays.asList(tryStmtBody)),
+                            splitTestCase,
+                            idx,
+                            auxiliaryMethods,
+                            BlockStatementsType.TRY,
+                            recursionLevel + 1
+                    );
+                    // Update the split test case with the last generated from the while statement
+                    splitTestCase = result.getValue0();
+                    // Update the split test case body
+                    splitTestCaseBody = splitTestCase.getBody().get();
+                    // Add the split test cases generated from the while statement to the list
+                    splitTestCases.addAll(result.getValue1());
+                    // Update idx of the split tests
+                    idx += result.getValue1().size();
+                    // Remove the fake catch clause from the cloned try statement
+                    TryStmt lastsplitTestTry = JavaParserUtils.getLastStatementTypeOccurrence(splitTestCaseBody, TryStmt.class).get().asTryStmt();
+                    lastsplitTestTry.setCatchClauses(new NodeList<>());
+                    for (CatchClause catchClause : tryStmt.getCatchClauses()) {
+                        // Parse the statements of the catch block and split it into multiple test cases
+                        Statement catchStmtBody = catchClause.getBody();
+                        // Clone the catch statement and set the body to an empty block
+                        CatchClause catchClauseClone = catchClause.clone();
+                        catchClauseClone.setBody(new BlockStmt());
+                        addCatchClause(catchClauseClone, splitTestCaseBody);
+                        // Parse the statements of the catch body and split it into multiple test cases
+                        Pair<MethodDeclaration, List<MethodDeclaration>> resultCatch = parseStatementsBlock(
+                                config,
+                                junitVersion,
+                                new ArrayList<>(Arrays.asList(catchStmtBody)),
+                                splitTestCase,
+                                idx,
+                                auxiliaryMethods,
+                                BlockStatementsType.CATCH,
+                                recursionLevel + 1
+                        );
+                        // Update the split test case with the last generated from the catch statement
+                        splitTestCase = resultCatch.getValue0();
+                        // Update the split test case body
+                        splitTestCaseBody = splitTestCase.getBody().get();
+                        // Add the split test cases generated from the catch statement to the list
+                        splitTestCases.addAll(resultCatch.getValue1());
+                        // Update idx of the split tests
+                        idx += result.getValue1().size();
                     }
                 }
-                // Flatten the try statement into a block statement
-                BlockStmt flatTryStmt = flatTryStmt(junitVersion, tryStmt);
-                // Parse the statements of the synchronized body and split it into multiple test cases
-                Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
-                        junitVersion,
-                        new ArrayList<>(flatTryStmt.getStatements()),
-                        splitTestCase,
-                        idx,
-                        auxiliaryMethods,
-                        blockStatementsType,
-                        recursionLevel + 1
-                );
-                // Update the split test case with the last generated from the synchronized statement
-                splitTestCase = result.getValue0();
-                // Update the split test case body
-                splitTestCaseBody = splitTestCase.getBody().get();
-                // Add the split test cases generated from the synchronized statement to the list
-                splitTestCases.addAll(result.getValue1());
-                // Update idx of the split tests
-                idx = splitTestCases.size();
+
+                if (tryStmt.getFinallyBlock().isPresent()) {
+                    // Add the cloned while statement to the current split test case body
+                    addStatement(new BlockStmt(), splitTestCaseBody, BlockStatementsType.FINALLY);
+                    // Parse the statements of the try block and split it into multiple test cases
+                    Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                            config,
+                            junitVersion,
+                            new ArrayList<>(Arrays.asList(tryStmt.getFinallyBlock().get())),
+                            splitTestCase,
+                            idx,
+                            auxiliaryMethods,
+                            BlockStatementsType.FINALLY,
+                            recursionLevel + 1
+                    );
+                    // Update the split test case with the last generated from the while statement
+                    splitTestCase = result.getValue0();
+                    // Update the split test case body
+                    splitTestCaseBody = splitTestCase.getBody().get();
+                    // Add the split test cases generated from the while statement to the list
+                    splitTestCases.addAll(result.getValue1());
+                    // Update idx of the split tests
+                    idx += result.getValue1().size();
+                }
             } else if (statement.isWhileStmt()) {
                 // Parse the while statement and split the test case into multiple test cases
                 Statement whileStmtBody = statement.asWhileStmt().getBody();
@@ -629,6 +795,7 @@ public class TestUtils {
                 addStatement(whileStmtClone, splitTestCaseBody, blockStatementsType);
                 // Parse the statements of the while body and split it into multiple test cases
                 Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                        config,
                         junitVersion,
                         new ArrayList<>(Arrays.asList(whileStmtBody)),
                         splitTestCase,
@@ -644,29 +811,37 @@ public class TestUtils {
                 // Add the split test cases generated from the while statement to the list
                 splitTestCases.addAll(result.getValue1());
                 // Update idx of the split tests
-                idx = splitTestCases.size();
+                idx += result.getValue1().size();
             } else {
                 // Add the statement to the current split test case body
                 addStatement(statement, splitTestCaseBody, blockStatementsType);
-                continue;
+                // continue;
             }
-            if (isAssertion) {
+            if ((isAssertion && config.splitStrategy() == SplitStrategyType.ASSERTION) || config.splitStrategy() == SplitStrategyType.STATEMENT) {
+                if (config.splitStrategy() == SplitStrategyType.STATEMENT && splitTestCases.size() > 0) {
+                    MethodDeclaration lastAddedSplitTestCase = splitTestCases.get(splitTestCases.size() - 1);
+                    if(lastAddedSplitTestCase.getBody().get().equals(splitTestCaseBody)) {
+                        continue;
+                    }
+                }
+                // Initialize a new split test case, starting from the body of the previous one
+                MethodDeclaration newSplitTestCase = initializeSplitTestCase(splitTestCase, testCasePrefixName, ++idx);
                 // Add the split test case to the list
                 splitTestCases.add(splitTestCase);
-                // Initialize a new split test case, starting from the body of the previous one
-                splitTestCase = initializeSplitTestCase(splitTestCase, testCasePrefixName, ++idx);
+                // Update the split test case with the new one
+                splitTestCase = newSplitTestCase;
                 // Get the body of the new split test case
                 splitTestCaseBody = splitTestCase.getBody().orElseThrow();
             }
         }
         // Check if the number of split test cases generated is equal to the number of assertions in the original test case
-        if (numberOfAssertions != splitTestCases.size()) {
+        if ((numberOfAssertions != splitTestCases.size() && config.splitStrategy() == SplitStrategyType.ASSERTION)) {
             throw new IllegalStateException("Unexpected number of split test cases generated from test case " + testCasePrefixName + ". Expected: " + getNumberOfAssertions(statements) + ", Found: " + splitTestCases.size());
         }
         // Check if the current split test case has more statements than the last split test case added to the list
         if (splitTestCases.size() > 0 && recursionLevel == 0) {
             MethodDeclaration lastAddedSplitTestCase = splitTestCases.get(splitTestCases.size() - 1);
-            if(lastAddedSplitTestCase.getBody().get().getStatements().size() != splitTestCaseBody.getStatements().size()) {
+            if(!lastAddedSplitTestCase.getBody().get().equals(splitTestCaseBody)) {
                 // Add the last split test case to the list
                 splitTestCases.add(splitTestCase);
             }
@@ -690,6 +865,24 @@ public class TestUtils {
     }
 
     /**
+     * Add the catch clause to the try statement in the given splitTestCaseBody.
+     *
+     * @param catchClause the catch clause to add
+     * @param splitTestCaseBody the split test case body where is present the try statement
+     */
+    private static void addCatchClause(
+            CatchClause catchClause,
+            BlockStmt splitTestCaseBody
+    ) {
+        Class blockStmtClass = BlockStatementsType.TRY.getJavaParserStmtClass();
+        Statement lastStatement = JavaParserUtils.getLastStatementTypeOccurrence(splitTestCaseBody, blockStmtClass)
+                .orElseThrow(() -> new IllegalStateException(
+                        "No statement of type " + blockStmtClass + " found in the block of statements."
+                ));
+        lastStatement.asTryStmt().getCatchClauses().add(catchClause);
+    }
+
+    /**
      * Add the statement to the split test case body, according to the type of block statement under analysis.
      * If the block statement is a method body, it refers to the main block of code and the statement is added
      * to the split test case body. Otherwise, the statement is added to the last block statement of the split
@@ -699,11 +892,20 @@ public class TestUtils {
      * @param splitTestCaseBody
      * @param blockStatementsType
      */
-    private static void addStatement(Statement statement, BlockStmt splitTestCaseBody, BlockStatementsType blockStatementsType) {
+    private static void addStatement(
+            Statement statement,
+            BlockStmt splitTestCaseBody,
+            BlockStatementsType blockStatementsType
+    ) {
+        // statement.addOrphanComment(TestUtils.MASK_COMMENT);
         if (blockStatementsType == BlockStatementsType.METHOD_BODY) {
             splitTestCaseBody.addStatement(statement);
         } else {
-            Statement lastStatement = getLastStatementTypeOccurrence(splitTestCaseBody, blockStatementsType.getJavaParserStmtClass());
+            Class blockStmtClass = blockStatementsType.getJavaParserStmtClass();
+            Statement lastStatement = JavaParserUtils.getLastStatementTypeOccurrence(splitTestCaseBody, blockStmtClass)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "No statement of type " + blockStmtClass + " found in the block of statements."
+                    ));
             BlockStmt body;
             switch (blockStatementsType) {
                 case DO:
@@ -737,6 +939,25 @@ public class TestUtils {
                     body = ifStmt.getThenStmt().asBlockStmt();
                     body.addStatement(statement);
                     return;
+                case TRY:
+                    body = lastStatement.asTryStmt().getTryBlock();
+                    body.addStatement(statement);
+                    return;
+                case CATCH:
+                    body = lastStatement.asTryStmt().getCatchClauses().getLast().get().getBody();
+                    body.addStatement(statement);
+                    return;
+                case FINALLY:
+                    if (!lastStatement.asTryStmt().getFinallyBlock().isPresent()) {
+                        if (statement.isBlockStmt()) {
+                            lastStatement.asTryStmt().setFinallyBlock(statement.asBlockStmt());
+                            return;
+                        }
+                        throw new IllegalStateException("Unexpected finally block statement");
+                    }
+                    body = lastStatement.asTryStmt().getFinallyBlock().get();
+                    body.addStatement(statement);
+                    return;
                 case SWITCH:
                     SwitchStmt switchStmt = lastStatement.asSwitchStmt();
                     SwitchEntry lastSwitchEntry = switchStmt.getEntry(switchStmt.getEntries().size() - 1);
@@ -750,24 +971,6 @@ public class TestUtils {
                     throw new IllegalStateException("Unexpected block statement type");
             }
         }
-    }
-
-    /**
-     * Visit all the statements within a block of statements to find the last occurrence of a given statement type.
-     *
-     * @param blockStmt the block of statements to visit
-     * @param type the type of statement to find
-     * @return the last occurrence of the statement type
-     */
-    private static Statement getLastStatementTypeOccurrence(BlockStmt blockStmt, Class type) {
-        if (blockStmt.getStatements().isEmpty()) {
-            throw new IllegalStateException("Block of statements is empty.");
-        }
-        Optional<Statement> lastOccurrence = StmtVisitorHelper.getLastStatementOccurrence(blockStmt, type);
-        if (lastOccurrence.isPresent()) {
-            return lastOccurrence.get();
-        }
-        throw new IllegalStateException("No statement of type " + type.getName() + " found in the block of statements.");
     }
 
     /**
@@ -1017,13 +1220,18 @@ public class TestUtils {
      * Process the test class of a given repository to generate all the oracles datapoints {@link TestClassOracleDatapoints}
      * from its test cases.
      *
+     * @param config the configuration of the oracles dataset
      * @param testFilePath the path to the test class to process
      * @param sourceFilePath the path to the corresponding source file, if available
      * @return the list of oracle datapoints generated from the test cases of the test class and a hashmap containing
      * the logs of the errors encountered when processing each test cases (which invoked methods cannot be processed
      * in each test case of the test class)
      */
-    public static Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processSplitTestClass(Path testFilePath, Path sourceFilePath) {
+    public static Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processSplitTestClass(
+            OraclesDatasetConfig config,
+            Path testFilePath,
+            Path sourceFilePath
+    ) {
         // Create a list to store the oracle datapoints
         List<OracleDatapoint> oracleDatapoints = new ArrayList<>();
         // Create a map to store the processing errors of the test cases (which invoked methods cannot be processed in
@@ -1060,24 +1268,109 @@ public class TestUtils {
             testClassOracleDatapointsBuilder.setFocalClass(focalClassTracto);
             // Process test cases
             for (MethodDeclaration testCase : testCases) {
-                String target = JavaParserUtils.getLastStatementInMethodDeclaration(testCase).toString().replaceAll("Assert.", "");
-                MethodDeclaration testPrefix = JavaParserUtils.removeLastStatementInMethodDeclaration(testCase);
-                Pair<CallableTracto,List<CallableTracto>> invokedMethodsPair = processInvokedMethods(repoSourcePath, focalClass, testClass, testPrefix, testsProcessingErrors);
+                Statement tgtStatement;
+
+                List<Comment> comments = testCase.getAllContainedComments();
+
+                for (Comment comment : comments) {
+                    if (comment.isBlockComment()) {
+                        String commentContent = comment.getContent();
+                        if (commentContent.equals(TestUtils.FAKE_ELEMENT_LABEL)) {
+                            comment.getCommentedNode().get().remove();
+                        }
+                    }
+                }
+
+                if (config.splitStrategy() == SplitStrategyType.ASSERTION) {
+                    // Get the assertion statement in the test case
+                    tgtStatement = JavaParserUtils.getLastAssertionInMethodDeclaration(testCase)
+                            .orElseThrow(() -> new IllegalStateException(
+                                    "No assertion found in test case: " + testCase.getNameAsString()
+                            ));
+                } else {
+                    List<Statement> statements = testCase.findAll(Statement.class);
+                    tgtStatement = statements.get(statements.size() - 1);
+                }
+
+                String target = config.noAssertionTarget();
+
+                if (config.targetStrategy() == TargetStrategyType.ASSERTION) {
+                    if (config.splitStrategy() == SplitStrategyType.ASSERTION) {
+                        target = tgtStatement.toString().replaceAll("Assert.", "");
+                    } else if (config.splitStrategy() == SplitStrategyType.STATEMENT) {
+                        Optional<Statement> lastAssertion = JavaParserUtils.getLastAssertionInMethodDeclaration(testCase);
+                        if (lastAssertion.isPresent()) {
+                            if (lastAssertion.get().equals(tgtStatement)) {
+                                target = tgtStatement.toString().replaceAll("Assert.", "");
+                            }
+                        }
+                    }
+                } else if (config.targetStrategy() == TargetStrategyType.STATEMENT) {
+                    target = tgtStatement.toString();
+                }
+                // Get the parent block statement of the target statement
+                Node parentNode = tgtStatement.getParentNode().orElseThrow(() -> new IllegalStateException("Parent statement not found"));
+                if (config.splitStrategy() == SplitStrategyType.ASSERTION && config.targetStrategy() == TargetStrategyType.ASSERTION) {
+                    if (!(config.assertionStrategy() == AssertionStrategyType.KEEP)) {
+                        // Remove target statement from the test case
+                        tgtStatement.remove();
+                    }
+                } else if (config.splitStrategy() == SplitStrategyType.STATEMENT && config.targetStrategy() == TargetStrategyType.STATEMENT) {
+                    if (!(config.statementStrategy() == StatementStrategyType.KEEP)) {
+                        // Remove target statement from the test case
+                        tgtStatement.remove();
+                    }
+                    // TODO: MANAGE CONDITIONS
+                } else if (config.splitStrategy() == SplitStrategyType.STATEMENT && config.targetStrategy() == TargetStrategyType.ASSERTION) {
+                    if (!(config.assertionStrategy() == AssertionStrategyType.KEEP)) {
+                        // Remove target statement from the test case
+                        tgtStatement.remove();
+                    }
+                }
+                Pair<CallableTracto,List<CallableTracto>> invokedMethodsPair = processInvokedMethods(repoSourcePath, focalClass, testClass, testCase, testsProcessingErrors);
+                if (config.splitStrategy() == SplitStrategyType.ASSERTION && config.assertionStrategy() == AssertionStrategyType.MASK) {
+                    // Mask the target statement
+                    if (parentNode instanceof BlockStmt) {
+                        parentNode.addOrphanComment(new BlockComment(config.mask()));
+                    } else {
+                        if (tgtStatement instanceof BlockStmt) {
+                            tgtStatement.addOrphanComment(new BlockComment(config.mask()));
+                        }
+                    }
+                }
+                if (config.splitStrategy() == SplitStrategyType.STATEMENT && config.targetStrategy() == TargetStrategyType.STATEMENT && config.statementStrategy() == StatementStrategyType.MASK) {
+                    // Mask the target statement
+                    if (parentNode instanceof BlockStmt) {
+                        parentNode.addOrphanComment(new BlockComment(config.mask()));
+                    } else {
+                        if (tgtStatement instanceof BlockStmt) {
+                            tgtStatement.addOrphanComment(new BlockComment(config.mask()));
+                        }
+                    }
+                } else if (config.splitStrategy() == SplitStrategyType.STATEMENT && config.targetStrategy() == TargetStrategyType.ASSERTION && config.assertionStrategy() == AssertionStrategyType.MASK) {
+                    if (parentNode instanceof BlockStmt) {
+                        parentNode.addOrphanComment(new BlockComment(config.mask()));
+                    } else {
+                        if (tgtStatement instanceof BlockStmt) {
+                            tgtStatement.addOrphanComment(new BlockComment(config.mask()));
+                        }
+                    }
+                }
                 // TODO: Focal method excluded from the analysis for the moment
                 CallableTracto focalMethodTracto = invokedMethodsPair.getValue0();
                 List<CallableTracto> invokedMethods = invokedMethodsPair.getValue1();
-                CallableTracto testPrefixTracto = processCallable(testClass, testPrefix, invokedMethods);
+                CallableTracto testPrefix = processCallable(testClass, testCase, invokedMethods);
                 // TODO: Check id the last statement in the test case is an assertion or not
                 // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
-                oracleDatapoints.add(new OracleDatapoint(testPrefixTracto, target));
+                oracleDatapoints.add(new OracleDatapoint(testPrefix, target));
             }
-            // Set the list of oracle datapoints generated from the test cases of the test class
-            testClassOracleDatapointsBuilder.setDatapoints(oracleDatapoints);
         } catch (IOException e) {
             logger.error("Error reading file: " + testFilePath);
         } catch (IllegalStateException e) {
             logger.error(e.getMessage());
         }
+        // Set the list of oracle datapoints generated from the test cases of the test class
+        testClassOracleDatapointsBuilder.setDatapoints(oracleDatapoints);
         return new Pair<>(testClassOracleDatapointsBuilder.build(), testsProcessingErrors);
     }
 
@@ -1637,13 +1930,10 @@ public class TestUtils {
         testsProcessingErrors.get(testClassName).putIfAbsent(testName, new ArrayList<>());
         try {
             // Get the list of all the statements within the test
-            NodeList<Statement> statements = testCase
-                    .getBody()
-                    .orElseThrow(() -> new IllegalStateException(String.format("Cannot retrieve block statements from test %s.", testName)))
-                    .getStatements();
+            List<ExpressionStmt> statements = StmtVisitorHelper.getAllExpressionStmts(testCase.getBody().get());
             // Throw an exception if no statements are found (empty test)
             if (statements.size() <= 0) {
-                throw new IllegalStateException(String.format("No statements found in test %s.", testName));
+                throw new IllegalStateException(String.format("No expression statements found in test %s.", testName));
             }
             // Get statement index
             int stmtIndex = statements.size() - 1;
@@ -1691,15 +1981,11 @@ public class TestUtils {
             // Iterate over the statements of the test from the top to the bottom
             for (int i = 0; i <= stmtIndex; i++) {
                 // Get current statement
-                Statement stmt = statements.get(i);
+                ExpressionStmt exprStmt = statements.get(i);
                 Expression expr = null;
                 CallableExprType exprType = null;
-                // A method call or constructor invocation must be an instance of ExpressionStmt
-                if (!stmt.isExpressionStmt()) {
-                    continue;
-                }
                 // Get the expression from the current statement
-                Expression unparsedExpr = stmt.asExpressionStmt().getExpression();
+                Expression unparsedExpr = exprStmt.getExpression();
                 // Parse the expression to understand if it refers to a method call or construction invocation
                 List<Pair<Expression,CallableExprType>> expressionAnalysisResult = JavaParserUtils.parseExpression(unparsedExpr, true);
                 for (Pair<Expression,CallableExprType> exprPair : expressionAnalysisResult) {
@@ -1827,7 +2113,7 @@ public class TestUtils {
                             CandidateCallableDeclarationNotFoundException | CandidateCallableMethodUsageNotFoundException |
                             MultipleCandidatesException | UnsolvedSymbolException | IllegalStateException e
                     ) {
-                        String errorMsg = "Error processing statement " + stmt.toString() + " of test case " + testName;
+                        String errorMsg = "Error processing statement " + exprStmt + " of test case " + testName;
                         // logger.error(errorMsg);
                         testsProcessingErrors.get(testClassName).get(testName).add(errorMsg + " | " + e.getMessage());
                     }
@@ -1840,32 +2126,38 @@ public class TestUtils {
                             varType = varType.asArrayType().getComponentType();
                         }
                         // TODO: Handle the case when the variable type is an array
-                        if (varType.isReferenceType() && !varType.resolve().isTypeVariable()) {
-                            ResolvedReferenceTypeDeclaration resolvedReferenceTypeDeclaration = varType.resolve().asReferenceType().getTypeDeclaration().orElse(null);
+                        try {
+                            if (varType.isReferenceType() && !varType.resolve().isTypeVariable()) {
+                                ResolvedReferenceTypeDeclaration resolvedReferenceTypeDeclaration = varType.resolve().asReferenceType().getTypeDeclaration().orElse(null);
 
-                            if (resolvedReferenceTypeDeclaration != null) {
-                                if (resolvedReferenceTypeDeclaration instanceof JavaParserClassDeclaration) {
-                                    projectVariables.put(var.getNameAsString(), ((JavaParserClassDeclaration) resolvedReferenceTypeDeclaration).getWrappedNode());
-                                    continue;
-                                } else if (resolvedReferenceTypeDeclaration instanceof JavaParserInterfaceDeclaration) {
-                                    projectVariables.put(var.getNameAsString(), ((JavaParserInterfaceDeclaration) resolvedReferenceTypeDeclaration).getWrappedNode());
-                                    continue;
+                                if (resolvedReferenceTypeDeclaration != null) {
+                                    if (resolvedReferenceTypeDeclaration instanceof JavaParserClassDeclaration) {
+                                        projectVariables.put(var.getNameAsString(), ((JavaParserClassDeclaration) resolvedReferenceTypeDeclaration).getWrappedNode());
+                                        continue;
+                                    } else if (resolvedReferenceTypeDeclaration instanceof JavaParserInterfaceDeclaration) {
+                                        projectVariables.put(var.getNameAsString(), ((JavaParserInterfaceDeclaration) resolvedReferenceTypeDeclaration).getWrappedNode());
+                                        continue;
+                                    }
+                                }
+
+                                try {
+                                    String fqnReturnType = varType.resolve().asReferenceType().getQualifiedName();
+                                    Optional<TypeDeclaration> resolvedTypeDeclaration = JavaParserUtils.retrieveTypeDeclarationFromFullyQualifiedName(fqnReturnType, repoSourcePath);
+                                    if (resolvedTypeDeclaration.isPresent()) {
+                                        projectVariables.put(var.getNameAsString(), resolvedTypeDeclaration.get());
+                                    } else {
+                                        librariesVariables.put(var.getNameAsString(), varType.resolve().asReferenceType());
+                                    }
+                                } catch (Exception e) {
+                                    String errorMsg = "Unable to resolve variable type " + varType.toString() + " in test class " + testClass.getNameAsString();
+                                    // logger.error(errorMsg);
+                                    testsProcessingErrors.get(testClassName).get(testName).add(errorMsg + " | " + e.getMessage());
                                 }
                             }
-
-                            try {
-                                String fqnReturnType = varType.resolve().asReferenceType().getQualifiedName();
-                                Optional<TypeDeclaration> resolvedTypeDeclaration = JavaParserUtils.retrieveTypeDeclarationFromFullyQualifiedName(fqnReturnType, repoSourcePath);
-                                if (resolvedTypeDeclaration.isPresent()) {
-                                    projectVariables.put(var.getNameAsString(), resolvedTypeDeclaration.get());
-                                } else {
-                                    librariesVariables.put(var.getNameAsString(), varType.resolve().asReferenceType());
-                                }
-                            } catch (Exception e) {
-                                String errorMsg = "Unable to resolve variable type " + varType.toString() + " in test class " + testClass.getNameAsString();
-                                // logger.error(errorMsg);
-                                testsProcessingErrors.get(testClassName).get(testName).add(errorMsg + " | " + e.getMessage());
-                            }
+                        } catch (Exception e) {
+                            String errorMsg = "Unable to resolve variable type " + varType.toString() + " in test class " + testClass.getNameAsString();
+                            // logger.error(errorMsg);
+                            testsProcessingErrors.get(testClassName).get(testName).add(errorMsg + " | " + e.getMessage());
                         }
                     }
                 }
@@ -2048,13 +2340,15 @@ public class TestUtils {
                     if (method.getBody().isPresent()) {
                         // TODO: Check if the method contains method calls to auxiliary methods with assertions
                         //      instead of discard the test method
-                        if (getNumberOfAssertions(method.getBody().get().getStatements()) > 0) {
-                            testCases.add(method);
-                        }
+                        //if (getNumberOfAssertions(method.getBody().get().getStatements()) > 0) {
+                        //    testCases.add(method);
+                        //}
+                        testCases.add(method);
                     }
                 } else if (methodAnnotations.stream().anyMatch(a -> a.getNameAsString().equals("Override"))) {
                     if (method.getBody().isPresent()) {
-                        if (getNumberOfAssertions(method.getBody().get().getStatements()) > 0) {
+                        //if (getNumberOfAssertions(method.getBody().get().getStatements()) > 0) {
+                        if (method.getNameAsString().contains("test")) {
                             testCases.add(method);
                         } else {
                             auxiliaryMethods.put(method.getSignature().asString(), method);
