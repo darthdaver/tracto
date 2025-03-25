@@ -102,6 +102,7 @@ public class OraclesDataset {
         List<Pair<Path,Path>> normalizedTestFilePaths = new ArrayList<>();
         // Iterate over the original test class files and normalize them
         for (Path testClassPath : testFilePaths) {
+            // if (testClassPath.toString().contains("KujakuMapViewTest")) {
             try {
                 logger.info("Normalizing test class: {}", testClassPath.toString().replace(repoRootPath.toString(), ""));
                 Path normalizedTestClassPath = TestUtils.normalizeTest(
@@ -114,6 +115,7 @@ public class OraclesDataset {
             } catch (Exception e) {
                 logger.error(e.getMessage());
             }
+            //}
         }
         // Update java parser considering the new split files generated within the repository
         JavaParserUtils.setRepoJavaParser(repoRootPath, classpath);
@@ -124,6 +126,7 @@ public class OraclesDataset {
         for (Pair<Path,Path> normalizedTestClassPair : normalizedTestFilePaths) {
             Path normalizedTestClassPath = normalizedTestClassPair.getValue0();
             Path originalTestClassPath = normalizedTestClassPair.getValue1();
+            // if (normalizedTestClassPath.toString().contains("KujakuMapViewTest")) {
             try {
                 logger.info("Splitting test class: {}", normalizedTestClassPath.toString().replace(repoRootPath.toString(), ""));
                 Path splitTestClassPath = TestUtils.splitTest(
@@ -136,6 +139,7 @@ public class OraclesDataset {
             } catch (Exception e) {
                 logger.error(e.getMessage());
             }
+            //}
         }
         // Update java parser considering the new split files generated within the repository
         JavaParserUtils.setRepoJavaParser(repoRootPath, classpath);
@@ -150,7 +154,7 @@ public class OraclesDataset {
             logger.info("Processing split test class {} to generate oracles datapoints", splitTestClassPath.toString().replace(repoRootPath.toString(), ""));
             if (sourceFilePath.isPresent()) {
                 // Debugging
-                // if (splitTestClassPath.toString().replace(repoRootPath.toString(), "").contains("AbstractProductFactoryTest")) {
+                // if (splitTestClassPath.toString().replace(repoRootPath.toString(), "").contains("KujakuMapViewTestTractoNormalized")) {
                 //     Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(oraclesDatasetConfig, splitTestClassPath, sourceFilePath.get());
                 //     TestClassOracleDatapoints splitTestClasstestClassesOracleDatapoints = processedSplitTestClassResult.getValue0();
                 //     HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();

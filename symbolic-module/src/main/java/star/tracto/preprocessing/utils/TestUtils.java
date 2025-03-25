@@ -143,7 +143,7 @@ public class TestUtils {
         // Regular output path for report analysis
         Path regularOutputPath = Paths.get(outputPath.toString(), "normalized", testFileRelativePath.replace(".java", TractoNamingConvention.NORMALIZED_TEST_FILE.getConventionName()));
         // Error output path for error analysis
-        Path errorOutputPath = Paths.get(outputPath.toString(), "error", "normalized", testFileRelativePath);
+        Path errorOutputPath = Paths.get(outputPath.toString(), "error", "normalized", testFileRelativePath.replace(".java", TractoNamingConvention.NORMALIZED_TEST_FILE.getConventionName()));
         // Test repository output path for further processing
         Path testRepoOutputPath = Paths.get(testFilePath.toString().replace(".java", TractoNamingConvention.NORMALIZED_TEST_FILE.getConventionName()));
         // Create a list to store the normalized test cases generated from the original test cases of the given test class
@@ -340,7 +340,7 @@ public class TestUtils {
         // Regular output path for report analysis
         Path regularOutputPath = Paths.get(outputPath.toString(), "regular", testFileRelativePath.replace(TractoNamingConvention.NORMALIZED_TEST_FILE.getConventionName(), TractoNamingConvention.TEST_SPLIT_FILE.getConventionName()));
         // Error output path for error analysis
-        Path errorOutputPath = Paths.get(outputPath.toString(), "error", "split", testFileRelativePath);
+        Path errorOutputPath = Paths.get(outputPath.toString(), "error", "split", testFileRelativePath.replace(TractoNamingConvention.NORMALIZED_TEST_FILE.getConventionName(), TractoNamingConvention.TEST_SPLIT_FILE.getConventionName()));
         // Test repository output path for further processing
         Path testRepoOutputPath = Paths.get(testFilePath.toString().replace(TractoNamingConvention.NORMALIZED_TEST_FILE.getConventionName(), TractoNamingConvention.TEST_SPLIT_FILE.getConventionName()));
         // Create a list to store the split test cases generated from the original test cases of the given test class
