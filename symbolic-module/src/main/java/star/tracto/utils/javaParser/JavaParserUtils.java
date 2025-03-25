@@ -749,7 +749,7 @@ public class JavaParserUtils {
      * @throws CandidateCallableDeclarationNotFoundException if the method or constructor corresponding to the callable
      *                                                       expression cannot be found and no candidates are available
      */
-    private static CallableDeclaration searchCandidateCallableDeclaration(TypeDeclaration typeDeclaration, Expression lastCallExpr, CallableExprType exprType) throws MultipleCandidatesException, CandidateCallableDeclarationNotFoundException {
+    public static CallableDeclaration searchCandidateCallableDeclaration(TypeDeclaration typeDeclaration, Expression lastCallExpr, CallableExprType exprType) throws MultipleCandidatesException, CandidateCallableDeclarationNotFoundException {
         // Define the list of all the callable methods/constructors in the class file. Initially empty.
         List<? extends CallableDeclaration<?>> classCallableList = new ArrayList<>();
         // Define the name of the focal method. Initially null.
@@ -1444,6 +1444,22 @@ public class JavaParserUtils {
             if (currentExpr.isMethodCallExpr() && JUnitAssertionType.isJUnitAssertion(currentExpr.asMethodCallExpr().getNameAsString())) {
                 return exprStmt;
             } else {
+                Optional<Node> parentNode = exprStmt.get().getParentNode();
+                while (parentNode.isPresent() && !parentNode.get().equals(callableDeclaration)) {
+                    if (parentNode.get() instanceof MethodCallExpr) {
+                        MethodCallExpr methodCallExpr = (MethodCallExpr) parentNode.get();
+                        if (JUnitAssertionType.isJUnitAssertion(methodCallExpr.getNameAsString())) {
+                            while (parentNode.isPresent() && !(parentNode.get() instanceof ExpressionStmt)) {
+                                parentNode = parentNode.get().getParentNode();
+                            }
+                            if (parentNode.isPresent()) {
+                                return Optional.of((Statement) parentNode.get());
+                            }
+                            return Optional.empty();
+                        }
+                    }
+                    parentNode = parentNode.get().getParentNode();
+                }
                 return Optional.empty();
             }
         }

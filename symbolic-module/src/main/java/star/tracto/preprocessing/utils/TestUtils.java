@@ -23,6 +23,8 @@ import star.tracto.preprocessing.components.*;
 import star.tracto.utils.FilesUtils;
 import star.tracto.utils.javaParser.JavaParserUtils;
 import star.tracto.utils.javaParser.visitors.declarations.FieldDeclarationVisitor;
+import star.tracto.utils.javaParser.visitors.expressions.NameExprVisitor;
+import star.tracto.utils.javaParser.visitors.expressions.VariableDeclarationExprVisitor;
 import star.tracto.utils.javaParser.visitors.statements.AssertStmtVisitor;
 import star.tracto.utils.javaParser.visitors.expressions.MethodCallExprVisitor;
 import star.tracto.utils.javaParser.visitors.statements.helper.StmtVisitorHelper;
@@ -44,15 +46,15 @@ import java.util.stream.Collectors;
  */
 public class TestUtils {
 
-    /** A unique id for placeholder variable names when inserting oracles. */
+    /* A unique id for placeholder variable names when inserting oracles. */
     private static int variableID = 0;
 
-    /** The logger for the class. */
+    /* The logger for the class. */
     private static final Logger logger = LoggerFactory.getLogger(TestUtils.class);
-    /** helper labels to identify fake elements added to avoid JavaParser parsing problems */
+    /* helper labels to identify fake elements added to avoid JavaParser parsing problems, like in try-catch statements */
     private static final String FAKE_ELEMENT_LABEL = "<FAKE_ELEMENT>";
 
-    /** Do not instantiate this class. */
+    /* Do not instantiate this class. */
     private TestUtils() {
         throw new UnsupportedOperationException("This class cannot be instantiated.");
     }
@@ -120,6 +122,124 @@ public class TestUtils {
             }
         }
         throw new IllegalStateException("No JUnit version found in the imports");
+    }
+
+    /**
+     * Process the test class and integrate additional asseretion in auxiliary methods, if present.
+     *
+     * @param config the configuration options for the dataset to generate
+     * @param repoRootPath the path to the root of the repository
+     * @param testFilePath the path to the test class file
+     * @param outputPath the path to the normalized test class file
+     * @return the path to the normalized test class file
+     */
+    public static Path normalizeTest(
+            OraclesDatasetConfig config,
+            Path repoRootPath,
+            Path testFilePath,
+            Path outputPath
+    ) {
+        String testFileRelativePath = testFilePath.toString().replace(repoRootPath.getParent().toString(), "");
+        // Regular output path for report analysis
+        Path regularOutputPath = Paths.get(outputPath.toString(), "normalized", testFileRelativePath.replace(".java", TractoNamingConvention.NORMALIZED_TEST_FILE.getConventionName()));
+        // Error output path for error analysis
+        Path errorOutputPath = Paths.get(outputPath.toString(), "error", "normalized", testFileRelativePath);
+        // Test repository output path for further processing
+        Path testRepoOutputPath = Paths.get(testFilePath.toString().replace(".java", TractoNamingConvention.NORMALIZED_TEST_FILE.getConventionName()));
+        // Create a list to store the normalized test cases generated from the original test cases of the given test class
+        List<MethodDeclaration> normalizedTestCases = new ArrayList<>();
+        try {
+            // Parse the test class
+            CompilationUnit cu = JavaParserUtils.getCompilationUnit(testFilePath);
+            // Set the methods of the test case to the normalized test methods
+            TypeDeclaration testClass = cu.getPrimaryType().get();
+            // Get the list of all the methods defined within the test class
+            List<MethodDeclaration> testClassMethods = cu.findAll(MethodDeclaration.class);
+            // Distribute the methods of the class according to their meaning
+            Triplet<List<MethodDeclaration>, HashMap<String, MethodDeclaration>, HashMap<String, MethodDeclaration>> testClassMethodsDistribution = distributeMethods(testClassMethods);
+            // Get the list of all the original test cases within the given test class
+            List<MethodDeclaration> originalTestCases = testClassMethodsDistribution.getValue0();
+            // Get the list of all the auxiliary methods within the given test class
+            HashMap<String, MethodDeclaration> auxiliaryMethods = testClassMethodsDistribution.getValue2();
+
+            if (auxiliaryMethods.isEmpty() || !config.integrateAuxiliaryMethods()) {
+                testClass.setName(testClass.getNameAsString() + TractoNamingConvention.NORMALIZED_TEST_CLASS.getConventionName());
+                // Save the split test class to the output paths (regular and test repository)
+                FilesUtils.writeJavaFile(regularOutputPath, cu);
+                FilesUtils.writeJavaFile(testRepoOutputPath, cu);
+                return testRepoOutputPath;
+            }
+
+            // Iterate over the original test cases
+            for (MethodDeclaration originalTestCase : originalTestCases) {
+                // Get the list of statements within the original test case
+                List<Statement> originalTestCaseStatements = originalTestCase.getBody().orElseThrow().getStatements();
+                // Generate a mold of the test case and set the body to an empty block
+                MethodDeclaration normalizedTestCase = originalTestCase.clone();
+                BlockStmt normalizedTestCaseBody = new BlockStmt();
+                normalizedTestCase.setBody(normalizedTestCaseBody);
+                // Define list of auxiliary methods integrated into the normalized test case body (they haveto be removed from the test class since integrated and no more called)
+                List<MethodDeclaration> integratedAuxiliaryMethods = new ArrayList<>();
+                // Parse the statements block and split the test case into multiple test cases
+                for (Statement stmt: originalTestCaseStatements) {
+                    if (stmt.isExpressionStmt()) {
+                        Expression exprStmt = stmt.asExpressionStmt().getExpression();
+                        if(exprStmt.isMethodCallExpr() && !(JUnitAssertionType.isJUnitAssertion(exprStmt.asMethodCallExpr().getNameAsString()))) {
+                            try {
+                                Optional<MethodDeclaration> auxiliaryMethodDeclaration = integrateAuxiliaryMethodIntoBlockStmt(testClass, normalizedTestCaseBody, exprStmt.asMethodCallExpr(), auxiliaryMethods);
+                                if (auxiliaryMethodDeclaration.isPresent()) {
+                                    integratedAuxiliaryMethods.add(auxiliaryMethodDeclaration.get());
+                                }
+                            } catch (Exception e) {
+                                // Log the error occurred while parsing the statements of the test case
+                                logger.error(e.getMessage());
+                                // Define the error test class compilation unit
+                                CompilationUnit errorCu = cu;
+                                // Define the error test class
+                                TypeDeclaration errorTestClass = cu.getPrimaryType().get();
+                                // Check if the error test class already exists. Otherwise, create a new one from the original test class
+                                if (!Files.exists(errorOutputPath)) {
+                                    errorTestClass.setMembers(new NodeList<>());
+                                } else {
+                                    // Get the error test class from the existing file
+                                    errorCu = JavaParserUtils.getCompilationUnit(errorOutputPath);
+                                    errorTestClass = errorCu.getPrimaryType().get();
+                                }
+                                // Get the list of methods already added in the error test class (if any)
+                                List<MethodDeclaration> errorTestClassMethods = errorTestClass.getMethods();
+                                // Check if the error test class already contains the original test case
+                                if (!errorTestClassMethods.stream().anyMatch(m -> m.getNameAsString().equals(originalTestCase.getNameAsString()))) {
+                                    // Add the original test case to the error test class
+                                    errorTestClass.addMember(originalTestCase);
+                                    // Save the error test class to the error output path
+                                    FilesUtils.writeJavaFile(errorOutputPath, errorCu);
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                    normalizedTestCaseBody.addStatement(stmt);
+                    normalizedTestCases.add(normalizedTestCase);
+                }
+            }
+
+            testClass.setName(testClass.getNameAsString() + TractoNamingConvention.NORMALIZED_TEST_CLASS.getConventionName());
+            for (MethodDeclaration originalTestCase : originalTestCases) {
+                testClass.remove(originalTestCase);
+            }
+            for (MethodDeclaration auxiliaryMethod : auxiliaryMethods.values()) {
+                testClass.remove(auxiliaryMethod);
+            }
+            for (MethodDeclaration normalizedTestCase : normalizedTestCases) {
+                testClass.addMember(normalizedTestCase);
+            }
+            // Save the split test class to the output paths (regular and test repository)
+            FilesUtils.writeJavaFile(regularOutputPath, cu);
+            FilesUtils.writeJavaFile(testRepoOutputPath, cu);
+        } catch (IOException e) {
+            logger.error("Error reading file: " + testFilePath);
+        }
+        return testRepoOutputPath;
     }
 
     /**
@@ -218,11 +338,11 @@ public class TestUtils {
     ) throws IllegalStateException, UnsupportedOperationException {
         String testFileRelativePath = testFilePath.toString().replace(repoRootPath.getParent().toString(), "");
         // Regular output path for report analysis
-        Path regularOutputPath = Paths.get(outputPath.toString(), "regular", testFileRelativePath.replace(".java", TractoNamingConvention.TEST_SPLIT_FILE.getConventionName()));
+        Path regularOutputPath = Paths.get(outputPath.toString(), "regular", testFileRelativePath.replace(TractoNamingConvention.NORMALIZED_TEST_FILE.getConventionName(), TractoNamingConvention.TEST_SPLIT_FILE.getConventionName()));
         // Error output path for error analysis
-        Path errorOutputPath = Paths.get(outputPath.toString(), "error", testFileRelativePath);
+        Path errorOutputPath = Paths.get(outputPath.toString(), "error", "split", testFileRelativePath);
         // Test repository output path for further processing
-        Path testRepoOutputPath = Paths.get(testFilePath.toString().replace(".java", TractoNamingConvention.TEST_SPLIT_FILE.getConventionName()));
+        Path testRepoOutputPath = Paths.get(testFilePath.toString().replace(TractoNamingConvention.NORMALIZED_TEST_FILE.getConventionName(), TractoNamingConvention.TEST_SPLIT_FILE.getConventionName()));
         // Create a list to store the split test cases generated from the original test cases of the given test class
         List<MethodDeclaration> splitTestCases = new ArrayList<>();
         try {
@@ -240,7 +360,6 @@ public class TestUtils {
             HashMap<String, MethodDeclaration> setUpTearDownMethods = testClassMethodsDistribution.getValue1();
             // Get the list of all the auxiliary methods within the given test class
             HashMap<String, MethodDeclaration> auxiliaryMethods = testClassMethodsDistribution.getValue2();
-
             // Iterate over the original test cases
             for (MethodDeclaration originalTestCase : originalTestCases) {
                 // Get the list of statements within the original test case
@@ -291,7 +410,7 @@ public class TestUtils {
             }
             // Set the methods of the test case to the split test methods
             TypeDeclaration testClass = cu.getPrimaryType().get();
-            testClass.setName(testClass.getNameAsString() + TractoNamingConvention.TEST_SPLIT_CLASS.getConventionName());
+            testClass.setName(testClass.getNameAsString().replace(TractoNamingConvention.NORMALIZED_TEST_CLASS.getConventionName(), TractoNamingConvention.TEST_SPLIT_CLASS.getConventionName()));
             for (MethodDeclaration originalTestCase : originalTestCases) {
                 testClass.remove(originalTestCase);
             }
@@ -437,48 +556,41 @@ public class TestUtils {
                     // Flag the statement as an assertion
                     isAssertion = true;
                 } else {
-                    // TODO: Implement check into auxiliary methods
-                    // if (currentExpr.isMethodCallExpr()) {
-                    //     // Get the method call expression
-                    //     MethodCallExpr methodCallExpr = currentExpr.asMethodCallExpr();
-                    //     // Get the name of the method
-                    //     String methodName = methodCallExpr.getNameAsString();
-                    //     // Check if the method is an auxiliary method
-                    //     if (auxiliaryMethods.containsKey(methodName)) {
-                    //         if (auxiliaryMethods.get(methodName).getBody().isPresent()) {
-                    //             // Parse the statements of the do body and split it into multiple test cases
-                    //             Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
-                    //                     splitStrategy,
-                    //                     tryCatchFinallyStrategy,
-                    //                     junitVersion,
-                    //                     auxiliaryMethods.get(methodName).getBody().get().getStatements(),
-                    //                     splitTestCase,
-                    //                     idx,
-                    //                     auxiliaryMethods,
-                    //                     blockStatementsType,
-                    //                     recursionLevel + 1
-                    //             );
-                    //             // Update the split test case with the last generated from the expression statement
-                    //             splitTestCase = result.getValue0();
-                    //             // Update the split test case body
-                    //             splitTestCaseBody = splitTestCase.getBody().get();
-                    //             // Add the split test cases generated from the do statement to the list
-                    //             splitTestCases.addAll(result.getValue1());
-                    //             // Update idx of the split tests
-                    //             idx += result.getValue1().size();
-                    //         }
-                    //     } else {
-                    //         // Add the statement to the current split test case body
-                    //         addStatement(statement, splitTestCaseBody, blockStatementsType);
-                    //         continue;
-                    //     }
-                    // } else {
-                    //     // Add the statement to the current split test case body
-                    //     addStatement(statement, splitTestCaseBody, blockStatementsType);
-                    //     continue;
-                    // }
+                    /*if (currentExpr.isMethodCallExpr()) {
+                        // Get the method call expression
+                        MethodCallExpr methodCallExpr = currentExpr.asMethodCallExpr();
+                        try {
+                            // Resolve the method call expression
+                            Optional<Node> resolvedMethod = methodCallExpr.resolve().toAst();
+                            // Check if the method is an auxiliary method
+                            if (resolvedMethod.isPresent()) {
+                                String methodSignature = ((MethodDeclaration) resolvedMethod.get()).getSignature().asString();
+                                if (auxiliaryMethods.containsKey(methodSignature)) {
+                                    // TODO: Implement check into auxiliary methods
+                                    addStatement(statement, splitTestCaseBody, blockStatementsType);
+                                } else {
+                                    addStatement(statement, splitTestCaseBody, blockStatementsType);
+                                }
+                            } else {
+                                addStatement(statement, splitTestCaseBody, blockStatementsType);
+                            }
+                        } catch (UnsolvedSymbolException | NoSuchElementException e) {
+                            CallableDeclaration callableDeclaration = JavaParserUtils.searchCandidateCallableDeclaration(testClass, methodCallExpr, CallableExprType.METHOD);
+                            if (callableDeclaration != null) {
+                                String methodSignature = callableDeclaration.getSignature().asString();
+                                if (auxiliaryMethods.containsKey(methodSignature)) {
+                                    addStatement(statement, splitTestCaseBody, blockStatementsType);
+                                } else {
+                                    addStatement(statement, splitTestCaseBody, blockStatementsType);
+                                }
+                            } else {
+                                addStatement(statement, splitTestCaseBody, blockStatementsType);
+                            }
+                        }
+                    } else {
+                        addStatement(statement, splitTestCaseBody, blockStatementsType);
+                    }*/
                     addStatement(statement, splitTestCaseBody, blockStatementsType);
-                    // continue;
                 }
             } else if (statement.isForEachStmt()) {
                 // Parse the for each statement and split the test case into multiple test cases
@@ -712,7 +824,7 @@ public class TestUtils {
                     // Add the cloned while statement to the current split test case body
                     addStatement(tryStmtClone, splitTestCaseBody, blockStatementsType);
                     // Parse the statements of the try block and split it into multiple test cases
-                    Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                    Pair<MethodDeclaration, List<MethodDeclaration>> resultTry = parseStatementsBlock(
                             config,
                             junitVersion,
                             new ArrayList<>(Arrays.asList(tryStmtBody)),
@@ -723,13 +835,13 @@ public class TestUtils {
                             recursionLevel + 1
                     );
                     // Update the split test case with the last generated from the while statement
-                    splitTestCase = result.getValue0();
+                    splitTestCase = resultTry.getValue0();
                     // Update the split test case body
                     splitTestCaseBody = splitTestCase.getBody().get();
                     // Add the split test cases generated from the while statement to the list
-                    splitTestCases.addAll(result.getValue1());
+                    splitTestCases.addAll(resultTry.getValue1());
                     // Update idx of the split tests
-                    idx += result.getValue1().size();
+                    idx += resultTry.getValue1().size();
                     // Remove the fake catch clause from the cloned try statement
                     TryStmt lastsplitTestTry = JavaParserUtils.getLastStatementTypeOccurrence(splitTestCaseBody, TryStmt.class).get().asTryStmt();
                     lastsplitTestTry.setCatchClauses(new NodeList<>());
@@ -758,32 +870,32 @@ public class TestUtils {
                         // Add the split test cases generated from the catch statement to the list
                         splitTestCases.addAll(resultCatch.getValue1());
                         // Update idx of the split tests
+                        idx += resultCatch.getValue1().size();
+                    }
+
+                    if (tryStmt.getFinallyBlock().isPresent()) {
+                        // Add the cloned while statement to the current split test case body
+                        addStatement(new BlockStmt(), splitTestCaseBody, BlockStatementsType.FINALLY);
+                        // Parse the statements of the try block and split it into multiple test cases
+                        Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
+                                config,
+                                junitVersion,
+                                new ArrayList<>(Arrays.asList(tryStmt.getFinallyBlock().get())),
+                                splitTestCase,
+                                idx,
+                                auxiliaryMethods,
+                                BlockStatementsType.FINALLY,
+                                recursionLevel + 1
+                        );
+                        // Update the split test case with the last generated from the while statement
+                        splitTestCase = result.getValue0();
+                        // Update the split test case body
+                        splitTestCaseBody = splitTestCase.getBody().get();
+                        // Add the split test cases generated from the while statement to the list
+                        splitTestCases.addAll(result.getValue1());
+                        // Update idx of the split tests
                         idx += result.getValue1().size();
                     }
-                }
-
-                if (tryStmt.getFinallyBlock().isPresent()) {
-                    // Add the cloned while statement to the current split test case body
-                    addStatement(new BlockStmt(), splitTestCaseBody, BlockStatementsType.FINALLY);
-                    // Parse the statements of the try block and split it into multiple test cases
-                    Pair<MethodDeclaration, List<MethodDeclaration>> result = parseStatementsBlock(
-                            config,
-                            junitVersion,
-                            new ArrayList<>(Arrays.asList(tryStmt.getFinallyBlock().get())),
-                            splitTestCase,
-                            idx,
-                            auxiliaryMethods,
-                            BlockStatementsType.FINALLY,
-                            recursionLevel + 1
-                    );
-                    // Update the split test case with the last generated from the while statement
-                    splitTestCase = result.getValue0();
-                    // Update the split test case body
-                    splitTestCaseBody = splitTestCase.getBody().get();
-                    // Add the split test cases generated from the while statement to the list
-                    splitTestCases.addAll(result.getValue1());
-                    // Update idx of the split tests
-                    idx += result.getValue1().size();
                 }
             } else if (statement.isWhileStmt()) {
                 // Parse the while statement and split the test case into multiple test cases
@@ -839,7 +951,7 @@ public class TestUtils {
             throw new IllegalStateException("Unexpected number of split test cases generated from test case " + testCasePrefixName + ". Expected: " + getNumberOfAssertions(statements) + ", Found: " + splitTestCases.size());
         }
         // Check if the current split test case has more statements than the last split test case added to the list
-        if (splitTestCases.size() > 0 && recursionLevel == 0) {
+        if (splitTestCases.size() > 0 && recursionLevel == 0 && config.keepStatementsAfterLastAssertion()) {
             MethodDeclaration lastAddedSplitTestCase = splitTestCases.get(splitTestCases.size() - 1);
             if(!lastAddedSplitTestCase.getBody().get().equals(splitTestCaseBody)) {
                 // Add the last split test case to the list
@@ -848,6 +960,110 @@ public class TestUtils {
         }
         // Return the list of split test cases generated
         return new Pair<>(splitTestCase, splitTestCases);
+    }
+
+    /**
+     * Given a BlockStmt representing the body of a method, and the mapping of the parameters to replace in the block of
+     * statements, replace the parameters with the actual arguments in the block of statements.
+     * @param blockStmt the body of the method to process
+     * @param paramMapping the mapping of the parameters to replace in the block of statements
+     */
+    private static void replaceParams(BlockStmt blockStmt, Map<String, Expression> paramMapping) {
+        NameExprVisitor nameExprCollector = new NameExprVisitor();
+        List<NameExpr> nameExprs = nameExprCollector.visit(blockStmt);
+        nameExprs.forEach(nameExpr -> {
+            String varName = nameExpr.getNameAsString();
+            if (paramMapping.containsKey(varName)) {
+                nameExpr.replace(paramMapping.get(varName).clone());
+            }
+        });
+    }
+
+    /**
+     * Given a BlockStmt representing the body of a method, and the mapping of the variables to replace in the block of
+     * statements, replace the variables with the renamed names in the block of statements.
+     * @param blockStmt the body of the method to process
+     * @param varMapping the mapping of the variables to replace in the block of statements
+     */
+    private static void replaceVariables(BlockStmt blockStmt, Map<String, String> varMapping) {
+        // Rename variable declarations in the block of statements
+        VariableDeclarationExprVisitor varDeclarationExprCollector = new VariableDeclarationExprVisitor();
+        List<VariableDeclarationExpr> varDeclarationExprs = varDeclarationExprCollector.visit(blockStmt);
+        varDeclarationExprs.forEach(varDecl -> {
+            varDecl.getVariables().forEach(var -> {
+                String varName = var.getNameAsString();
+                if (varMapping.containsKey(varName)) {
+                    var.setName(varMapping.get(varName));
+                }
+            });
+        });
+        // Rename variable usages in the block of statements
+        NameExprVisitor nameExprCollector = new NameExprVisitor();
+        List<NameExpr> nameExprs = nameExprCollector.visit(blockStmt);
+        nameExprs.forEach(nameExpr -> {
+            String varName = nameExpr.getNameAsString();
+            if (varMapping.containsKey(varName)) {
+                nameExpr.setName(varMapping.get(varName));
+            }
+        });
+    }
+
+    private static Optional<MethodDeclaration> integrateAuxiliaryMethodIntoBlockStmt(TypeDeclaration testClass, BlockStmt mainMethodBody, MethodCallExpr auxiliaryMethodInvoked, HashMap<String, MethodDeclaration> auxiliaryMethods) {
+        String methodSignature = "";
+
+        try {
+            Optional<Node> resolvedMethod = auxiliaryMethodInvoked.resolve().toAst();
+            if (resolvedMethod.isPresent()) {
+                methodSignature = ((MethodDeclaration) resolvedMethod.get()).getSignature().asString();
+            }
+        } catch (UnsolvedSymbolException e) {
+            CallableDeclaration callableDeclaration = JavaParserUtils.searchCandidateCallableDeclaration(testClass, auxiliaryMethodInvoked, CallableExprType.METHOD);
+            if (callableDeclaration != null) {
+                methodSignature = callableDeclaration.getSignature().asString();
+            }
+        }
+        if (auxiliaryMethods.containsKey(methodSignature)) {
+            MethodDeclaration auxiliaryMethodDeclaration = auxiliaryMethods.get(methodSignature);
+            // Map parameters from the method call to actual arguments
+            Map<String, Expression> paramMapping = new HashMap<>();
+            // Map variables defined both in the auxiliary method and in the main method
+            Map<String, String> varMapping = new HashMap<>();
+            List<Expression> arguments = auxiliaryMethodInvoked.getArguments();
+            List<Parameter> parameters = auxiliaryMethodDeclaration.getParameters();
+            // Check that the number of invocation arguments and the declaration parameters coincide
+            if (arguments.size() != parameters.size()) {
+                logger.error("Parameter mismatch between method call and auxiliary method.");
+                return Optional.empty();
+            }
+            for (int i = 0; i < parameters.size(); i++) {
+                paramMapping.put(parameters.get(i).getNameAsString(), arguments.get(i));
+            }
+            // Clone and modify the auxiliary method body to replace variables
+            BlockStmt auxBody = auxiliaryMethodDeclaration.getBody().get();
+            BlockStmt clonedAuxBody = auxBody.clone();
+            // Map the original variables containing the same name of the variables
+            // defined in the auxiliary method
+            VariableDeclarationExprVisitor varDeclarationExprCollector = new VariableDeclarationExprVisitor();
+            List<VariableDeclarationExpr> auxVarDeclarationExprs = varDeclarationExprCollector.visit(auxBody);
+            List<VariableDeclarationExpr> mainVarDeclarationExprs = varDeclarationExprCollector.visit(mainMethodBody);
+            mainVarDeclarationExprs.forEach(varDecl ->
+                    varDecl.getVariables().forEach(var -> {
+                        auxVarDeclarationExprs.forEach(auxVarDecl ->
+                                auxVarDecl.getVariables().forEach(auxVar -> {
+                                    if (var.getNameAsString().equals(auxVar.getNameAsString())) {
+                                        varMapping.put(var.getNameAsString(), var.getNameAsString() + "_aux");
+                                    }
+                                })
+                        );
+                    })
+            );
+            replaceParams(clonedAuxBody, paramMapping);
+            replaceVariables(clonedAuxBody, varMapping);
+            // Add the cloned auxiliary method body to the main method body
+            mainMethodBody.getStatements().addAll(clonedAuxBody.getStatements());
+            return Optional.of(auxiliaryMethodDeclaration);
+        }
+        return Optional.empty();
     }
 
     /**
@@ -1283,14 +1499,21 @@ public class TestUtils {
 
                 if (config.splitStrategy() == SplitStrategyType.ASSERTION) {
                     // Get the assertion statement in the test case
-                    tgtStatement = JavaParserUtils.getLastAssertionInMethodDeclaration(testCase)
-                            .orElseThrow(() -> new IllegalStateException(
-                                    "No assertion found in test case: " + testCase.getNameAsString()
-                            ));
+                    Optional<Statement> lastAssertion = JavaParserUtils.getLastAssertionInMethodDeclaration(testCase);
+                    if (lastAssertion.isEmpty()) {
+                        logger.error("No assertion found in test case: " + testCase.getNameAsString());
+                        continue;
+                    }
+                    tgtStatement = lastAssertion.get();
                 } else {
                     List<Statement> statements = testCase.findAll(Statement.class);
                     tgtStatement = statements.get(statements.size() - 1);
                 }
+
+                // Remove all comments from the target statement
+                tgtStatement.getAllContainedComments().forEach(Node::remove);
+                tgtStatement.getOrphanComments().forEach(Node::remove);
+                tgtStatement.getComment().ifPresent(Node::remove);
 
                 String target = config.noAssertionTarget();
 
@@ -1327,7 +1550,7 @@ public class TestUtils {
                         tgtStatement.remove();
                     }
                 }
-                Pair<CallableTracto,List<CallableTracto>> invokedMethodsPair = processInvokedMethods(repoSourcePath, focalClass, testClass, testCase, testsProcessingErrors);
+                Pair<CallableTracto,List<CallableTracto>> invokedMethodsPair = processInvokedMethods(repoSourcePath, focalClass, testClass, testCase, testsProcessingErrors, config);
                 if (config.splitStrategy() == SplitStrategyType.ASSERTION && config.assertionStrategy() == AssertionStrategyType.MASK) {
                     // Mask the target statement
                     if (parentNode instanceof BlockStmt) {
@@ -1915,7 +2138,7 @@ public class TestUtils {
         return relatedTypeDeclarations;
     }
 
-    private static Pair<CallableTracto,List<CallableTracto>> processInvokedMethods(Path repoSourcePath, TypeDeclaration focalClass, TypeDeclaration testClass, MethodDeclaration testCase, HashMap<String, HashMap<String, List<String>>> testsProcessingErrors) {
+    private static Pair<CallableTracto,List<CallableTracto>> processInvokedMethods(Path repoSourcePath, TypeDeclaration focalClass, TypeDeclaration testClass, MethodDeclaration testCase, HashMap<String, HashMap<String, List<String>>> testsProcessingErrors, OraclesDatasetConfig config) {
         // Define list of methods invoked in the test case
         List<CallableTracto> invokedMethods = new ArrayList<>();
         // Define the focal method to find. Initially null.
@@ -1932,7 +2155,7 @@ public class TestUtils {
             // Get the list of all the statements within the test
             List<ExpressionStmt> statements = StmtVisitorHelper.getAllExpressionStmts(testCase.getBody().get());
             // Throw an exception if no statements are found (empty test)
-            if (statements.size() <= 0) {
+            if (statements.size() <= 0 && config.targetStrategy() == TargetStrategyType.ASSERTION) {
                 throw new IllegalStateException(String.format("No expression statements found in test %s.", testName));
             }
             // Get statement index

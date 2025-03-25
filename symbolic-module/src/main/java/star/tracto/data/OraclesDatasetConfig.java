@@ -21,5 +21,9 @@ public record OraclesDatasetConfig(
         /* The mask label in case the assertion strategy is set to mask. Can be null */
         @JsonProperty("mask-placeholder") String mask,
         /* The no-assertion target in case the split strategy is set to statement. Can be null */
-        @JsonProperty("no-assertion-target-placeholder") String noAssertionTarget
+        @JsonProperty("no-assertion-target-placeholder") String noAssertionTarget,
+        /* Boolean flag for the integration of the statements of auxiliary methods called within the test cases */
+        @JsonProperty("integrate-auxiliary-methods") boolean integrateAuxiliaryMethods,
+        /* Boolean flag for the integration of the statements after the last assertion */
+        @JsonProperty("keep-statements-after-last-assertion") boolean keepStatementsAfterLastAssertion
 ) {}

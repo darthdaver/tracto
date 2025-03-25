@@ -2,6 +2,8 @@ package star.tracto.preprocessing;
 
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.body.TypeDeclaration;
 import org.javatuples.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -97,20 +99,40 @@ public class OraclesDataset {
         // Store statistics
         statistics.put("perfectMatches", mappedTests.size());
         statistics.put("perfectMatchesNotFound", perfectMatchNotFounds.size());
+        List<Pair<Path,Path>> normalizedTestFilePaths = new ArrayList<>();
+        // Iterate over the original test class files and normalize them
+        for (Path testClassPath : testFilePaths) {
+            try {
+                logger.info("Normalizing test class: {}", testClassPath.toString().replace(repoRootPath.toString(), ""));
+                Path normalizedTestClassPath = TestUtils.normalizeTest(
+                        oraclesDatasetConfig,
+                        repoRootPath,
+                        testClassPath,
+                        Paths.get(outputPath.toString(), "test-normalize", projectIdentifier)
+                );
+                normalizedTestFilePaths.add(new Pair<>(normalizedTestClassPath, testClassPath));
+            } catch (Exception e) {
+                logger.error(e.getMessage());
+            }
+        }
+        // Update java parser considering the new split files generated within the repository
+        JavaParserUtils.setRepoJavaParser(repoRootPath, classpath);
         // Define the list to store the test pair of split test cases (generated from the original test cases) and the
         // corresponding source class (if available)
         List<Pair<Path, Optional<Path>>> splittedTestFilePaths = new ArrayList<>();
         // Iterate over the original test class files and split the test cases at any occurrence of an assertion
-        for (Path testClassPath : testFilePaths) {
-            logger.info("Splitting test class: {}", testClassPath.toString().replace(repoRootPath.toString(), ""));
+        for (Pair<Path,Path> normalizedTestClassPair : normalizedTestFilePaths) {
+            Path normalizedTestClassPath = normalizedTestClassPair.getValue0();
+            Path originalTestClassPath = normalizedTestClassPair.getValue1();
             try {
+                logger.info("Splitting test class: {}", normalizedTestClassPath.toString().replace(repoRootPath.toString(), ""));
                 Path splitTestClassPath = TestUtils.splitTest(
                         oraclesDatasetConfig,
                         repoRootPath,
-                        testClassPath,
+                        normalizedTestClassPath,
                         Paths.get(outputPath.toString(), "test-split", projectIdentifier)
                 );
-                splittedTestFilePaths.add(new Pair<>(splitTestClassPath, Optional.ofNullable(mappedTests.get(testClassPath))));
+                splittedTestFilePaths.add(new Pair<>(splitTestClassPath, Optional.ofNullable(mappedTests.get(originalTestClassPath))));
             } catch (Exception e) {
                 logger.error(e.getMessage());
             }
@@ -128,7 +150,7 @@ public class OraclesDataset {
             logger.info("Processing split test class {} to generate oracles datapoints", splitTestClassPath.toString().replace(repoRootPath.toString(), ""));
             if (sourceFilePath.isPresent()) {
                 // Debugging
-                // if (splitTestClassPath.toString().replace(repoRootPath.toString(), "").contains("SentinelTimeCodingTestTractoSplit")) {
+                // if (splitTestClassPath.toString().replace(repoRootPath.toString(), "").contains("AbstractProductFactoryTest")) {
                 //     Pair<TestClassOracleDatapoints, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(oraclesDatasetConfig, splitTestClassPath, sourceFilePath.get());
                 //     TestClassOracleDatapoints splitTestClasstestClassesOracleDatapoints = processedSplitTestClassResult.getValue0();
                 //     HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();

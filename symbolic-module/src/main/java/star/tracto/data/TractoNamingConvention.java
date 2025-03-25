@@ -1,6 +1,8 @@
 package star.tracto.data;
 
 public enum TractoNamingConvention {
+    NORMALIZED_TEST_CLASS("TractoNormalized"),
+    NORMALIZED_TEST_FILE("TractoNormalized.java"),
     TEST_SPLIT_CLASS("TractoSplit"),
     TEST_SPLIT_FILE("TractoSplit.java"),
     LIB_FOLDER("processed_libs"),
