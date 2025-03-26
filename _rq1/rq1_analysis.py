@@ -1,4 +1,4 @@
-# Run from ./ (root) directory with `python neural-module/scripts/python/analysis/rq1/rq1_analysis.py`
+# Run from ./ (root) directory with `python ./_rq1/rq1_analysis.py`
 
 import csv
 import json
