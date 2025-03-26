@@ -87,6 +87,8 @@ for model_folder in os.listdir(input_folder):
                             if oracle_match:
                                 oracle = oracle_match.group(0).rstrip(';')
 
+                                print(f"Comparing {target} and {oracle}...")
+
                                 if llm_assertion_moderator(target, oracle) == "EQUIVALENT":
                                     data_summary[model_folder][current_input_type]["LLM thinks Match"]+=1
 
