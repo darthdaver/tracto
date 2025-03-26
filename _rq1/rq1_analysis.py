@@ -1,3 +1,7 @@
+# Cmds to run:
+# python3 -m venv .venv
+# source .venv/bin/activate
+# pip3 install ollama
 # Run from ./ (root) directory with `python ./_rq1/rq1_analysis.py`
 
 import csv
