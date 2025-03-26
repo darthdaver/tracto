@@ -11,7 +11,7 @@ import os
 from collections import defaultdict
 import ollama
 
-llm = 'llama3.1:8b'
+llms = ['deepseek-r1', 'llama3.1', 'phi4', 'gemma3', 'qwen2.5']
 
 # Define the input folder
 input_folder = "./_rq1/input_analysis"
@@ -19,33 +19,52 @@ output_path = "./_rq1/output_analysis/output_results.csv"
 input_types = ["prefix only", "javadoc + signature", "signature + body", "javadoc + signature + body"]
 
 # Initialize data storage
-data_summary = defaultdict(lambda: defaultdict(lambda: {"Perfect Match": 0, "Non-Match": 0, "Manual Evaluation": 0, "Total": 0}))
+data_summary = defaultdict(lambda: defaultdict(lambda: {"Perfect Match": 0, "LLM thinks Match":0, "Non-Match": 0, "Manual Evaluation": 0, "Total": 0}))
 
 
 def llm_assertion_moderator(target, oracle_generated):
     #print(test_code)
-    prompt = f"""Given two Java assertions: {target} and {oracle_generated}, determine if they are equivalent. Reply in this form <keep>EQUIVALENT</keep> or <keep>NOT EQUIVALENT</keep>  
+    prompt = f"""Given two Java assertions: {target} and {oracle_generated}, determine if they are semantically equivalent, so do not consider escape characters for your judgement. Put your answer between: <keep></keep>. Reply only in one of these two forms <keep>EQUIVALENT</keep> or <keep>NOT EQUIVALENT</keep>  
+
+    For example:
+    assertEqual("99", variable); and assertEquals("99", variable); are <keep>EQUIVALENT</keep>
+    assertEqual("99", variable); and assertEquals("100", variable); are <keep>NOT EQUIVALENT</keep>
+    assertEqual("99", variable); and assertEquals("\\\"99\\\"", variable); are <keep>EQUIVALENT</keep>
     """
 
     # Check if the model is pulled from ollama
 
     content = None
 
+    equivalent_count = 0
     
-    response = ollama.chat(
-        model=llm, 
-        messages=[{"role": "user", "content": prompt}]
-    )
+    for llm in llms:
+        # Get response from current LLM
+        #ollama.pull(llm)
 
-    content = response['message']['content'].strip()
+        response = ollama.chat(
+            model=llm,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        # Extract the content
+        content = response['message']['content'].strip()
+        
+        
+        # Use regex to extract whatever is between <keep> and </keep>
+        match = re.search(r'<keep>(.*?)</keep>', content, re.DOTALL)
+        if match:
+            extracted_content = match.group(1).strip()
+            print(f"Response from {llm}: {extracted_content}")
+            if extracted_content == "EQUIVALENT":
+                equivalent_count += 1
+        else:
+            print(f"Response from {llm}: Unable to extract content")
     
-    # Use regex to extract whatever is between <keep> and </keep>
-    match = re.search(r'<keep>(.*?)</keep>', content, re.DOTALL)
-    if match:
-        return match.group(1).strip()
+    if equivalent_count >= 3:
+        return "EQUIVALENT"
     else:
-        # Fallback if no <keep>...</keep> block is found
-        return content
+        return "NOT EQUIVALENT"
 
 
 # Process each model folder
@@ -73,23 +92,29 @@ for model_folder in os.listdir(input_folder):
                 file_path = os.path.join(variant_path, file)
                 
                 with open(file_path, 'r', newline='', encoding='utf-8') as infile:
-                    reader = csv.DictReader(infile)
+                    reader = csv.DictReader(infile, quoting=csv.QUOTE_MINIMAL)#, escapechar='\"')
                     for row in reader:
                         data_summary[model_folder][current_input_type]["Total"] += 1
+
                         target = row['target'].rstrip(';')
-                        prediction = row['prediction']
+                        prediction = row['prediction']#.replace('""', '"')
                         
                         try:
                             
-                            oracle_match = re.search(r'\bassert\w+\((.*?)\)', prediction)
+                            oracle_match = re.search(r'\bassert\w+\((.*?)\);', prediction)
                             
 
                             if oracle_match:
                                 oracle = oracle_match.group(0).rstrip(';')
 
-                                print(f"Comparing {target} and {oracle}...")
+                                print(f"\n\n\n{model_folder}: Comparing {target} and {oracle}")
 
-                                if llm_assertion_moderator(target, oracle) == "EQUIVALENT":
+
+                                llm_assert_equivalent = llm_assertion_moderator(target, oracle)
+
+                                print(f"LLM thinks {llm_assert_equivalent}")
+
+                                if  llm_assert_equivalent == "EQUIVALENT":
                                     data_summary[model_folder][current_input_type]["LLM thinks Match"]+=1
 
                                 if target == oracle:
@@ -101,11 +126,12 @@ for model_folder in os.listdir(input_folder):
                                 
                         except (json.JSONDecodeError, KeyError):
                             data_summary[model_folder][current_input_type]["Manual Evaluation"] += 1
+                        break
 
 # Prepare the output data
 headers = [
     # First header row - each input type appears once with empty cells for merging
-    ["LLM"] + sum([[input_type, "", ""] for input_type in input_types], []),
+    ["LLM"] + sum([[input_type, "", "", ""] for input_type in input_types], []),
     # Second header row - M/C/U under each input type group
     [""] + ["Perfect Match", "LLM thinks Match", "Manual Evaluation", "Non-Match"] * len(input_types)
 ]
