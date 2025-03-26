@@ -51,8 +51,13 @@ Pull the models used in the ablation study:
 Replicate the results of RQ1 by running the following command from the current directory (`tracto/_rq1`):
 
 ```shell
-  bash ./scripts/bash/inference/inference-pretrained-ollama.sh > log-ollama-client.out 2>&1 & echo $! >> pid-ollama-client.txt
+  bash ./scripts/bash/inference/inference-pretrained-ollama.sh [query-type] > log-ollama-client.out 2>&1 & echo $! >> pid-ollama-client.txt
 ```
+
+where:
+* `[query-type]` is the query type to replicate the results of RQ1. The possible values are: 
+  * `assertion` - if the model have to predict only the assertion.
+  * `statement` - if the model have to discern if the masked element is the next statement or an assertion (and generate it, in that case).
 
 (The script will start the inference process in the background and save the logs in `log-ollama-client.out` and the process id in `pid-ollama-client.txt`. 
 If you want to run the process in the current terminal without saving the logs, run `bash ./scripts/bash/inference/inference-pretrained-ollama.sh` instead).

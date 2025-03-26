@@ -13,7 +13,7 @@
   "scope": "training",
   "tokens": ["project_tokens", "java_tokens", "generic_tokens"],
   "tokenizer" : "codellama/CodeLlama-7b-hf",
-  "mask_token" : "<extra_id_0>",
+  "mask_token" : "<mask_id>",
   "sections" : ["test_prefix", "test_class", "focal_class"],
   "types" : ["methods", "fields"],
   "strategy": "cascade",
