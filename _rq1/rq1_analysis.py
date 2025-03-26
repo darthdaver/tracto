@@ -7,7 +7,8 @@ import os
 from collections import defaultdict
 
 # Define the input folder
-input_folder = "./neural-module/scripts/python/analysis/rq1/input_analysis"
+input_folder = "./_rq1/input_analysis"
+output_path = "./_rq1/output_analysis/output_results.csv"
 input_types = ["prefix only", "javadoc + signature", "signature + body", "javadoc + signature + body"]
 
 # Initialize data storage
@@ -45,27 +46,19 @@ for model_folder in os.listdir(input_folder):
                         prediction = row['prediction']
                         
                         try:
-                            match = re.search(r'```json\s*(\{.*?\})\s*```', prediction, re.DOTALL)
-                            if match:
-                                json_str = match.group(1)
-                                data = json.loads(json_str)
-                                
-                                if 'oracle' in data:
-                                    oracle_match = re.search(r'\b\w+\(.*?\)', data['oracle'])
-                                    if oracle_match:
-                                        oracle = oracle_match.group(0).rstrip(';')
+                            
+                            oracle_match = re.search(r'\bassert\w+\(.*?\)', prediction)
+                            if oracle_match:
+                                oracle = oracle_match.group(0).rstrip(';')
 
-                                        # TODO: add here LLM moderator check
-                                        if target == oracle:
-                                            data_summary[model_folder][current_input_type]["Perfect Match"] += 1
-                                        else:
-                                            data_summary[model_folder][current_input_type]["Non-Match"] += 1
-                                    else:
-                                        data_summary[model_folder][current_input_type]["Manual Evaluation"] += 1
+                                # TODO: add here LLM moderator check
+                                if target == oracle:
+                                    data_summary[model_folder][current_input_type]["Perfect Match"] += 1
                                 else:
-                                    data_summary[model_folder][current_input_type]["Manual Evaluation"] += 1
+                                    data_summary[model_folder][current_input_type]["Non-Match"] += 1
                             else:
                                 data_summary[model_folder][current_input_type]["Manual Evaluation"] += 1
+                                
                         except (json.JSONDecodeError, KeyError):
                             data_summary[model_folder][current_input_type]["Manual Evaluation"] += 1
 
@@ -98,7 +91,6 @@ for model in sorted(data_summary.keys()):
     output_rows.append(row)
 
 # Write the output CSV file
-output_path = "./neural-module/scripts/python/analysis/rq1/output_analysis/output_results.csv"
 with open(output_path, 'w', newline='', encoding='utf-8') as outfile:
     writer = csv.writer(outfile)
     writer.writerows(output_rows)
