@@ -64,6 +64,12 @@ public abstract class BaseExprVisitor<E extends Expression> extends VoidVisitorA
         return collection;
     }
 
+    public List<E> visit(MethodDeclaration methodDeclaration) {
+        List<E> collection = new java.util.ArrayList<>();
+        visit(methodDeclaration, collection);
+        return collection;
+    }
+
     // Generic method to add the statement to the collection
     protected void addToCollection(E stmt, List<E> collection) {
         collection.add(stmt);

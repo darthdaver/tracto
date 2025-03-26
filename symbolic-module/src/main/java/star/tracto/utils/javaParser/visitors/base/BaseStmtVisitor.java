@@ -1,5 +1,6 @@
 package star.tracto.utils.javaParser.visitors.base;
 
+import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.stmt.*;
 import com.github.javaparser.ast.visitor.VoidVisitorAdapter;
 import java.util.List;
@@ -58,6 +59,12 @@ public abstract class BaseStmtVisitor<S extends Statement> extends VoidVisitorAd
         } else if (statement.isYieldStmt()) {
             visit(statement.asYieldStmt(), collection);
         }
+        return collection;
+    }
+
+    public List<S> visit(MethodDeclaration methodDeclaration) {
+        List<S> collection = new java.util.ArrayList<>();
+        visit(methodDeclaration.getBody().get(), collection);
         return collection;
     }
 

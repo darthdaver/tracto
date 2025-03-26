@@ -1428,7 +1428,11 @@ public class JavaParserUtils {
      * @return the last assertion in the last statement of the method declaration (if any), otherwise return an empty optional
      */
     public static Optional<Statement> getLastAssertionInMethodDeclaration(MethodDeclaration callableDeclaration) throws IllegalStateException {
+        // TODO: Check if assert stmt and expression stmt inteleave in the same nested block
         Statement lastStmt = getLastStatementInMethodDeclaration(callableDeclaration);
+        if (lastStmt.isAssertStmt()) {
+            return Optional.of(lastStmt);
+        }
         Optional<Statement> exprStmt = getLastStatementTypeOccurrence(lastStmt,ExpressionStmt.class);
         if (exprStmt.isPresent()) {
             // Get the expression from the statement
