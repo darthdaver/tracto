@@ -1,5 +1,6 @@
 LLM,prefix only,,,javadoc + signature,,,signature + body,,,javadoc + signature + body,,
 ,Perfect Match,Manual Evaluation,Non-Match,Perfect Match,Manual Evaluation,Non-Match,Perfect Match,Manual Evaluation,Non-Match,Perfect Match,Manual Evaluation,Non-Match
-mixtral:8x7b,0.0%,99.6%,0.4%,0.0%,99.8%,0.2%,0.0%,99.6%,0.4%,0.0%,99.8%,0.2%
-qwen2.5:7b,7.0%,12.4%,80.6%,6.0%,20.6%,73.5%,6.0%,17.9%,76.0%,5.6%,25.0%,69.4%
-starcoder2:7b,0.0%,100.0%,0.0%,0.0%,100.0%,0.0%,0.0%,100.0%,0.0%,0.0%,100.0%,0.0%
+llama3.1:8b,1.8%,1.7%,96.5%,1.0%,1.7%,97.3%,0.9%,1.9%,97.1%,0.5%,4.2%,95.3%
+mixtral:8x7b,3.7%,8.3%,87.9%,2.9%,12.8%,84.3%,3.1%,9.8%,87.1%,2.9%,9.2%,87.9%
+qwen2.5:7b,6.6%,5.6%,87.8%,5.5%,8.3%,86.2%,5.9%,8.1%,86.0%,5.5%,7.5%,87.0%
+starcoder2:7b,0.0%,99.9%,0.1%,0.0%,99.6%,0.4%,0.0%,99.8%,0.2%,0.0%,98.5%,1.5%

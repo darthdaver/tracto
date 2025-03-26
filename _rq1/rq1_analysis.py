@@ -5,6 +5,9 @@ import json
 import re
 import os
 from collections import defaultdict
+import ollama
+
+llm = 'llama3.1:8b'
 
 # Define the input folder
 input_folder = "./_rq1/input_analysis"
@@ -13,6 +16,33 @@ input_types = ["prefix only", "javadoc + signature", "signature + body", "javado
 
 # Initialize data storage
 data_summary = defaultdict(lambda: defaultdict(lambda: {"Perfect Match": 0, "Non-Match": 0, "Manual Evaluation": 0, "Total": 0}))
+
+
+def llm_assertion_moderator(target, oracle_generated):
+    #print(test_code)
+    prompt = f"""Given two Java assertions: {target} and {oracle_generated}, determine if they are equivalent. Reply in this form <keep>EQUIVALENT</keep> or <keep>NOT EQUIVALENT</keep>  
+    """
+
+    # Check if the model is pulled from ollama
+
+    content = None
+
+    
+    response = ollama.chat(
+        model=llm, 
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    content = response['message']['content'].strip()
+    
+    # Use regex to extract whatever is between <keep> and </keep>
+    match = re.search(r'<keep>(.*?)</keep>', content, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    else:
+        # Fallback if no <keep>...</keep> block is found
+        return content
+
 
 # Process each model folder
 for model_folder in os.listdir(input_folder):
@@ -47,11 +77,15 @@ for model_folder in os.listdir(input_folder):
                         
                         try:
                             
-                            oracle_match = re.search(r'\bassert\w+\(.*?\)', prediction)
+                            oracle_match = re.search(r'\bassert\w+\((.*?)\)', prediction)
+                            
+
                             if oracle_match:
                                 oracle = oracle_match.group(0).rstrip(';')
 
-                                # TODO: add here LLM moderator check
+                                if llm_assertion_moderator(target, oracle) == "EQUIVALENT":
+                                    data_summary[model_folder][current_input_type]["LLM thinks Match"]+=1
+
                                 if target == oracle:
                                     data_summary[model_folder][current_input_type]["Perfect Match"] += 1
                                 else:
@@ -67,7 +101,7 @@ headers = [
     # First header row - each input type appears once with empty cells for merging
     ["LLM"] + sum([[input_type, "", ""] for input_type in input_types], []),
     # Second header row - M/C/U under each input type group
-    [""] + ["Perfect Match", "Manual Evaluation", "Non-Match"] * len(input_types)
+    [""] + ["Perfect Match", "LLM thinks Match", "Manual Evaluation", "Non-Match"] * len(input_types)
 ]
 
 output_rows = headers
@@ -81,13 +115,14 @@ for model in sorted(data_summary.keys()):
             print(f"{model} - {input_type}: {total}")
             if total > 0:
                 m_percent = round(data_summary[model][input_type]["Perfect Match"] / total * 100, 1)
+                llm_percent = round(data_summary[model][input_type]["LLM thinks Match"] / total * 100, 1)
                 c_percent = round(data_summary[model][input_type]["Manual Evaluation"] / total * 100, 1)
                 u_percent = round(data_summary[model][input_type]["Non-Match"] / total * 100, 1)
                 row.extend([f"{m_percent}%", f"{c_percent}%", f"{u_percent}%"])
             else:
-                row.extend(["0%", "0%", "0%"])
+                row.extend(["0%", "0%", "0%", "0%"])
         else:
-            row.extend(["N/A", "N/A", "N/A"])
+            row.extend(["N/A", "N/A", "N/A", "N/A"])
     output_rows.append(row)
 
 # Write the output CSV file
