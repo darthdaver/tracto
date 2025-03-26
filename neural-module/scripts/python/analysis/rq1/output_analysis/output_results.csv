@@ -1,0 +1,5 @@
+LLM,prefix only,,,javadoc + signature,,,signature + body,,,javadoc + signature + body,,
+,Perfect Match,Need Manual Check,Unmatch,Perfect Match,Need Manual Check,Unmatch,Perfect Match,Need Manual Check,Unmatch,Perfect Match,Need Manual Check,Unmatch
+mixtral:8x7b,3.7%,6.5%,89.7%,2.9%,10.7%,86.4%,3.1%,8.1%,88.8%,2.9%,6.0%,91.1%
+qwen2.5:7b,6.6%,4.3%,89.1%,5.5%,7.3%,87.2%,5.8%,7.1%,87.1%,5.5%,6.9%,87.6%
+starcoder2:7b,0.0%,99.9%,0.1%,0.0%,99.3%,0.7%,0.0%,99.0%,1.0%,0.0%,96.7%,3.3%
