@@ -1,0 +1,4 @@
+LLM,prefix only
+,,,,javadoc + signature,,,signature + body,,,javadoc + signature + body,
+,Perfect Match,Manual Evaluation,Non-Match,Perfect Match,Manual Evaluation,Non-Match,Perfect Match,Manual Evaluation,Non-Match,Perfect Match,Manual Evaluation,Non-Match
+qwen2.5-coder,7.0%,12.4%,80.6%,6.0%,20.6%,73.5%,6.0%,17.9%,76.0%,5.6%,25.0%,69.4%
