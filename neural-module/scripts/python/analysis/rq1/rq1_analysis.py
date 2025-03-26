@@ -1,3 +1,5 @@
+# Run from ./ (root) directory with `python neural-module/scripts/python/analysis/rq1/rq1_analysis.py`
+
 import csv
 import json
 import re
@@ -5,7 +7,7 @@ import os
 from collections import defaultdict
 
 # Define the input folder
-input_folder = "/Users/luca/Documents/USI/Davide/tracto/neural-module/scripts/python/analysis/rq1/input_analysis"
+input_folder = "./neural-module/scripts/python/analysis/rq1/input_analysis"
 input_types = ["prefix only", "javadoc + signature", "signature + body", "javadoc + signature + body"]
 
 # Initialize data storage
@@ -43,16 +45,25 @@ for model_folder in os.listdir(input_folder):
                         prediction = row['prediction']
                         
                         try:
-                            oracle_match = re.search(r'\b\w+\(.*?\)', prediction)
-                            if oracle_match:
-                                oracle = oracle_match.group(0).rstrip(';')
-                                if target == oracle:
-                                    data_summary[model_folder][current_input_type]["Perfect Match"] += 1
+                            match = re.search(r'```json\s*(\{.*?\})\s*```', prediction, re.DOTALL)
+                            if match:
+                                json_str = match.group(1)
+                                data = json.loads(json_str)
+                                
+                                if 'oracle' in data:
+                                    oracle_match = re.search(r'\b\w+\(.*?\)', data['oracle'])
+                                    if oracle_match:
+                                        oracle = oracle_match.group(0).rstrip(';')
+                                        if target == oracle:
+                                            data_summary[model_folder][current_input_type]["Perfect Match"] += 1
+                                        else:
+                                            data_summary[model_folder][current_input_type]["Non-Match"] += 1
+                                    else:
+                                        data_summary[model_folder][current_input_type]["Manual Evaluation"] += 1
                                 else:
-                                    data_summary[model_folder][current_input_type]["Non-Match"] += 1
+                                    data_summary[model_folder][current_input_type]["Manual Evaluation"] += 1
                             else:
                                 data_summary[model_folder][current_input_type]["Manual Evaluation"] += 1
-                       
                         except (json.JSONDecodeError, KeyError):
                             data_summary[model_folder][current_input_type]["Manual Evaluation"] += 1
 
@@ -61,7 +72,7 @@ headers = [
     # First header row - each input type appears once with empty cells for merging
     ["LLM"] + sum([[input_type, "", ""] for input_type in input_types], []),
     # Second header row - M/C/U under each input type group
-    [""] + ["Perfect Match", "Need Manual Check", "Unmatch"] * len(input_types)
+    [""] + ["Perfect Match", "Manual Evaluation", "Non-Match"] * len(input_types)
 ]
 
 output_rows = headers
@@ -84,7 +95,7 @@ for model in sorted(data_summary.keys()):
     output_rows.append(row)
 
 # Write the output CSV file
-output_path = "/Users/luca/Documents/USI/Davide/tracto/neural-module/scripts/python/analysis/rq1/output_analysis/output_results.csv"
+output_path = "./neural-module/scripts/python/analysis/rq1/output_analysis/output_results.csv"
 with open(output_path, 'w', newline='', encoding='utf-8') as outfile:
     writer = csv.writer(outfile)
     writer.writerows(output_rows)
