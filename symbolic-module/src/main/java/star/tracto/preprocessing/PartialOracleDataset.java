@@ -34,7 +34,7 @@ public class PartialOracleDataset {
     public static void main(String[] args) {
         String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
 
-        long fileLimit = 1;
+        long fileLimit = 1000000;
         String folderPath = "symbolic-module/src/main/resources/dataset/partial-oracles/input"; 
 
         File directory = new File("symbolic-module/src/main/resources/dataset/partial-oracles/output/" + timestamp);
@@ -443,7 +443,7 @@ public class PartialOracleDataset {
 
                         // Create a datapoint object and move the fields inside it
                         ObjectNode datapoint = objectMapper.createObjectNode();
-                        System.out.println("Target: " + targetNode.asText().replace("\"", ""));
+                        //System.out.println("Target: " + targetNode.asText().replace("\"", ""));
 
                         
 
