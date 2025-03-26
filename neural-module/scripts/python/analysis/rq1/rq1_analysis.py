@@ -54,6 +54,8 @@ for model_folder in os.listdir(input_folder):
                                     oracle_match = re.search(r'\b\w+\(.*?\)', data['oracle'])
                                     if oracle_match:
                                         oracle = oracle_match.group(0).rstrip(';')
+
+                                        # TODO: add here LLM moderator check
                                         if target == oracle:
                                             data_summary[model_folder][current_input_type]["Perfect Match"] += 1
                                         else:
@@ -83,6 +85,7 @@ for model in sorted(data_summary.keys()):
     for input_type in input_types:
         if input_type in data_summary[model]:
             total = data_summary[model][input_type]["Total"]
+            print(f"{model} - {input_type}: {total}")
             if total > 0:
                 m_percent = round(data_summary[model][input_type]["Perfect Match"] / total * 100, 1)
                 c_percent = round(data_summary[model][input_type]["Manual Evaluation"] / total * 100, 1)
