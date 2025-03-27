@@ -82,13 +82,13 @@ if __name__ == "__main__":
         # Read the csv file and load the data
         with open(file_path, mode='r', newline='') as input_file:
             reader = csv.DictReader(input_file)
-            rows_len = len(list(reader))
+            rows = list(reader)
             inputs = []
             targets = []
             predictions = []
             checkpoint = 100
             # Read each row as a dictionary
-            for i, row in enumerate(reader):
+            for i, row in enumerate(rows):
                 src = row[data_args.src_col]
                 tgt = row[data_args.tgt_col]
                 query = preprocess_dp(query_template, src)
@@ -112,7 +112,7 @@ if __name__ == "__main__":
                     inputs.append(src)
                     targets.append(tgt)
                     predictions.append("Error")
-                if data_args.ram_saving and ((i % checkpoint == 0) or (i == rows_len - 1)):
+                if data_args.ram_saving and ((i % checkpoint == 0) or (i == len(rows) - 1)):
                     # Save the predictions one by one
                     logger.log(f"Saving prediction to {output_path}")
                     with open(os.path.join(output_path, filename), mode='a', newline='') as out_file:
