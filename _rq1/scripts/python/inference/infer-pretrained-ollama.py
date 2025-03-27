@@ -1,30 +1,28 @@
 import os
 import sys
 import csv
-
 import ollama
 import pandas as pd
-
+from transformers import HfArgumentParser
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "neural-module"))
 from src.parsers.ModelArgs import ModelArgs
 from src.parsers.OllamaInferenceArgs import OllamaInferenceArgs
 from src.utils.Logger import Logger
-from transformers import HfArgumentParser
 
 # Setup the logger
 logger = Logger("main", "infer")
 
 
-def preprocess_dp(query_text, src_col):
+def preprocess_dp(query_template, src_col):
     """
     Preprocess a single datapoint from the dataset.
     Args:
-        query_text (`str`):
+        query_template (`str`):
             The query text to prepend to the source text.
         src_col (`str`):
             The name of the source column in the dataset.
     """
-    query = query_text.replace("<QUERY_INPUT>", src_col)
+    query = query_template.replace("<QUERY_INPUT>", src_col)
     return query
 
 
@@ -55,7 +53,7 @@ if __name__ == "__main__":
     model_args, data_args = parser.parse_args_into_dataclasses()
     # Get query text
     with open(data_args.query_path, 'r') as query_file:
-        query_text = query_file.read()
+        query_template = query_file.read()
     # Set output path
     output_path = data_args.output_path
     if not os.path.exists(output_path):
@@ -75,6 +73,8 @@ if __name__ == "__main__":
                     llm_dataset_files.append(os.path.join(root, file))
     else:
         llm_dataset_files = [data_args.dataset_path]
+    # Check and notify if ram saving mode is on
+    logger.log(f"RAM saving mode { 'on' if data_args.ram_saving else 'off' }")
     # Process each file in the dataset
     for file_path in llm_dataset_files:
         logger.log(f'Processing file {file_path}')
@@ -82,14 +82,15 @@ if __name__ == "__main__":
         # Read the csv file and load the data
         with open(file_path, mode='r', newline='') as file:
             reader = csv.DictReader(file)
-            inputs = []
-            targets = []
-            predictions = []
+            if not data_args.ram_saving:
+                inputs = []
+                targets = []
+                predictions = []
             # Read each row as a dictionary
             for row in reader:
                 src = row[data_args.src_col]
                 tgt = row[data_args.tgt_col]
-                query = preprocess_dp(query_text, src)
+                query = preprocess_dp(query_template, src)
                 # Predict the output with ollama
                 try:
                     response = ollama.generate(
@@ -97,21 +98,30 @@ if __name__ == "__main__":
                         prompt=query,
                         options={
                             "num_ctx": int(data_args.num_ctx),
-                            "seed": 42,
-                            "num_predict": 100
+                            "seed": 42
                         }
                     )
                     out = response['response'].strip()
-                    inputs.append(src)
-                    targets.append(tgt)
-                    predictions.append(out)
+                    if not data_args.ram_saving:
+                        inputs.append(src)
+                        targets.append(tgt)
+                        predictions.append(out)
                 except Exception as e:
                     logger.log(f"Error while processing the input:\n{query}")
                     logger.log(f"Error: {e}")
-                    inputs.append(src)
-                    targets.append(tgt)
-                    predictions.append("Error")
-        # Save stats of predictions
-        logger.log(f"Saving predictions to {output_path}")
-        save_prediction_stats(os.path.join(output_path, filename), inputs, targets, predictions)
-
+                    out = "Error"
+                    if not data_args.ram_saving:
+                        inputs.append(src)
+                        targets.append(tgt)
+                        predictions.append(out)
+                if data_args.ram_saving:
+                    # Save the predictions one by one
+                    logger.log(f"Saving prediction to {output_path}")
+                    with open(os.path.join(output_path, filename), mode='a', newline='') as file:
+                        writer = csv.writer(file)
+                        writer.writerow([src, tgt, out])
+        # Save the predictions all at once
+        if not data_args.ram_saving:
+            # Save stats of predictions
+            logger.log(f"Saving predictions to {output_path}")
+            save_prediction_stats(os.path.join(output_path, filename), inputs, targets, predictions)

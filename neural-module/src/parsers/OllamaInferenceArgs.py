@@ -23,3 +23,7 @@ class OllamaInferenceArgs:
         default=None,
         metadata={"help": "Path to the query request template file."}
     )
+    ram_saving: bool = field(
+        default=False,
+        metadata={"help": "Whether to use RAM saving mode."}
+    )
