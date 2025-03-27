@@ -80,14 +80,14 @@ if __name__ == "__main__":
         logger.log(f'Processing file {file_path}')
         filename = os.path.basename(file_path)
         # Read the csv file and load the data
-        with open(file_path, mode='r', newline='') as file:
-            reader = csv.DictReader(file)
-            if not data_args.ram_saving:
-                inputs = []
-                targets = []
-                predictions = []
+        with open(file_path, mode='r', newline='') as input_file:
+            reader = csv.DictReader(input_file)
+            inputs = []
+            targets = []
+            predictions = []
+            checkpoint = 100
             # Read each row as a dictionary
-            for row in reader:
+            for i, row in enumerate(reader):
                 src = row[data_args.src_col]
                 tgt = row[data_args.tgt_col]
                 query = preprocess_dp(query_template, src)
@@ -102,24 +102,25 @@ if __name__ == "__main__":
                         }
                     )
                     out = response['response'].strip()
-                    if not data_args.ram_saving:
-                        inputs.append(src)
-                        targets.append(tgt)
-                        predictions.append(out)
+                    inputs.append(src)
+                    targets.append(tgt)
+                    predictions.append(out)
                 except Exception as e:
                     logger.log(f"Error while processing the input:\n{query}")
                     logger.log(f"Error: {e}")
-                    out = "Error"
-                    if not data_args.ram_saving:
-                        inputs.append(src)
-                        targets.append(tgt)
-                        predictions.append(out)
-                if data_args.ram_saving:
+                    inputs.append(src)
+                    targets.append(tgt)
+                    predictions.append("Error")
+                if data_args.ram_saving and ((i % checkpoint == 0) or (i == len(reader) - 1)):
                     # Save the predictions one by one
                     logger.log(f"Saving prediction to {output_path}")
-                    with open(os.path.join(output_path, filename), mode='a', newline='') as file:
-                        writer = csv.writer(file)
-                        writer.writerow([src, tgt, out])
+                    with open(os.path.join(output_path, filename), mode='a', newline='') as out_file:
+                        writer = csv.writer(out_file)
+                        for src, tgt, out in zip(inputs, targets, predictions):
+                            writer.writerow([src, tgt, out])
+                    inputs = []
+                    targets = []
+                    predictions = []
         # Save the predictions all at once
         if not data_args.ram_saving:
             # Save stats of predictions

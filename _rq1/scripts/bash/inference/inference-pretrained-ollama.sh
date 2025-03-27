@@ -25,6 +25,7 @@ while IFS=, read -r ol_model hf_tokenizer num_ctx; do
         --output_path "${ROOT_DIR}/output/${ol_model}-${i}" \
         --src_col "src" \
         --tgt_col "tgt" \
-        --num_ctx "${num_ctx}"
+        --num_ctx "${num_ctx}" \
+        --ram_saving true
   done
 done < "$RQ1_MODELS_LIST"
