@@ -117,8 +117,8 @@ if __name__ == "__main__":
     # Process each model folder within the input directory
     for model_preds_dir in os.listdir(input_path):
         # Extract the name of the model and the query template id
-        model_id = model_preds_dir.split('-')[0]
-        query_id = int(model_preds_dir.split('-')[1])
+        model_id = model_preds_dir.split(':')[0]
+        query_id = int(model_preds_dir.split('-')[-1])
         assert model_id in [ l[0] for l in llms ]
         logger.log(f"Processing model {model_id} with query template {query_id}")
         # Initialize the list of the results of the moderation task for the current model-query couple
