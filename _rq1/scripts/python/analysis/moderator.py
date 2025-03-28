@@ -31,12 +31,13 @@ def preprocess_query(query_template, target, prediction):
     return query
 
 
-def llm_assertion_moderator(llm, num_ctx, query):
+def llm_assertion_moderator(llm, num_ctx, llm_type, query):
     """
     Use the LLM as moderator to determine if the target and the prediction assertions are equivalent.
     Args:
         llm: the identifier of the LLM model to use as moderator.
         num_ctx: the context length of the model
+        llm_type: the type of the LLM model to use as moderator (`base` or `reasoning`).
         query: the query to use as prompt to the moderator model.
 
     Returns:
@@ -50,11 +51,15 @@ def llm_assertion_moderator(llm, num_ctx, query):
             options={
                 "num_ctx": int(num_ctx),
                 "seed": 42,
-                "num_predict": 100
+                "num_predict": 500 if llm_type == "base" else 4096,
             }
         )
         # Use regex to extract whatever is between <keep> and </keep>
         match = re.search(r'<keep>(.*?)</keep>', response['response'].strip(), re.DOTALL)
+        
+        if llm_type == "reasoning":
+            response['response'] = response['response'].split("</think>")[-1]
+        
         if match:
             out = match.group(1).strip()
             logger.log(f"Response from {llm}: {out}")
@@ -74,6 +79,8 @@ def llm_assertion_moderator(llm, num_ctx, query):
                     logger.log(f"Response from {llm}: Regex extracted, but response different from ['EQUIVALENT', 'NOT EQUIVALENT']")
                     return "UNKNOWN"
             else:
+                if response['response'].strip() in ["EQUIVALENT", "NOT EQUIVALENT"]:
+                    return response['response'].strip()
                 logger.log(f"Response from {llm}: Unable to extract content")
                 return "UNKNOWN"
     except Exception as e:
@@ -124,7 +131,8 @@ if __name__ == "__main__":
         for row in csv_reader:
             ollama_model_name = row[0]
             num_ctx = int(row[2])
-            llms.append((ollama_model_name, num_ctx))
+            model_type = row[3]
+            llms.append((ollama_model_name, num_ctx, model_type))
     # Get query text template
     with open(moderator_args.query_path, 'r') as query_file:
         query_template = query_file.read()
@@ -166,6 +174,7 @@ if __name__ == "__main__":
                         # Generate the query for the moderators, from the query template
                         query = preprocess_query(query_template, target, prediction)
                         pred_stats = {
+                            "llm": model_id,
                             "file_path": preds_file_path.replace(input_path, ''),
                             "promt-prediction": row[0],
                             "prompt-moderator": query,
@@ -176,8 +185,8 @@ if __name__ == "__main__":
                             "match": True if target == prediction else False
                         }
                         # Run the moderators
-                        for llm, num_ctx in llms:
-                            result = llm_assertion_moderator(llm, num_ctx, query)
+                        for llm, num_ctx, llm_type in llms:
+                            result = llm_assertion_moderator(llm, num_ctx, llm_type, query)
                             pred_stats[llm] = result
                         pred_stats['equivalence_counter'] = log_equivalence_threshold(pred_stats, [ l[0] for l in llms ])
                         moderators_stats.append(pred_stats)

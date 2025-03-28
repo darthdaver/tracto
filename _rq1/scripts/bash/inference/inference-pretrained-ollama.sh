@@ -14,11 +14,12 @@ if [ ! -d "${RQ1_DATASET_DIR}" ]; then
     rm "${ROOT_DIR}/rq1-dataset.zip"
 fi
 
-while IFS=, read -r ol_model hf_tokenizer num_ctx; do
+while IFS=, read -r ol_model hf_tokenizer num_ctx model_type; do
   for i in {1..4}; do
     echo "Running inference with ${ol_model} on query template ${i}"
     "${PY_BIN}" "${PY_INFERENCE_DIR}/infer-pretrained-ollama.py" \
         --model_name_or_path "${ol_model}" \
+        --model_type "${model_type}" \
         --tokenizer_name "${hf_tokenizer}" \
         --query_path "${ROOT_DIR}/scripts/resources/queries/pretrained/${query_type}/${i}/query-template.txt" \
         --dataset_path "${RQ1_DATASET_DIR}/${i}" \

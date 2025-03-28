@@ -16,6 +16,9 @@ class OllamaInferenceArgs:
     tgt_col: str = field(
         metadata={"help": "The name of the column in the datasets containing the target."}
     )
+    model_type: str = field(
+        metadata={"help": "The type of model to use for inference (`base` or `reasoning`)."}
+    )
     num_ctx: int = field(
         metadata={"help": "The context length. Sequences exceeding the length will be truncated, otherwise they will be padded."}
     )
