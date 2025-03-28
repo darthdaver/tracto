@@ -1,8 +1,13 @@
+===== TASK DESCRIPTION =====
 Given a Java test prefix and contextual information such as the javadoc and the signature of the methods invoked within the test prefix, generate the test oracle to add to the current test prefix substituting the mask placeholder <mask_id> (the oracle must conform the api of given JUnit version).
-Put your answer between: <keep></keep> and reply only with the oracle code (do not add any context or comments).
-The content of the answer must be less than 200 characters.
+Put your answer between: <keep></keep> and reply only with the assertion (do not add any context or comments).
+The content of the answer must be less than 200 characters. 
+Do not show me the reasoning behind your answer, but only the answer in the mentioned format.
 
-Q:
+===== EXAMPLES =====
+Here are 3 examples of queries and expected answers:
+
+Query:
 // Test prefix
 public void testMergeNodes() throws Exception {
     List<Node> fromParents = new ArrayList<>();
@@ -116,10 +121,10 @@ public void mergeNodes(List<Node> fromParents, Element toParent, Document toDocu
 
 DurationMerger()
 
-A:
+Answer:
 <keep>assertEquals(0, manifestElement.getAttributes().getLength());</keep>
 
-Q:
+Query:
 // Test prefix
 public void testAddGetCoefficients() {
     SstCoefficients coeffs1 = new SstCoefficients(1, 2);
@@ -166,10 +171,10 @@ public final void addCoefficients(SstCoefficients coeffs)
  */
 public final SstCoefficients getCoefficientsAt(int index)
 
-A:
+Answer:
 <keep>Exception e42 = assertThrows(""exception expected"", Exception.class, () -> _set.getCoefficientsAt(-3));"</keep>
 
-Q:
+Query:
 // Test prefix
 public void testTiePointAccess() {
     // initially empty
@@ -217,10 +222,13 @@ void addTiePointGrid(final ModisTiePointDescription desc)
  */
 public ModisTiePointDescription(final String name, final String scaleAttribute, final String offsetAttribute, final String unitAttribute)
 
-A:
+Answer:
 <keep>assertEquals(tp[n], tpNames[n]);</keep>
 
-Q:
+===== TASK TO EXECUTE =====
+Here is the query for this task:
+
+Query:
 <QUERY_INPUT>
 
-A:
+Answer:

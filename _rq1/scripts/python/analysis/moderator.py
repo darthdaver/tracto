@@ -5,6 +5,7 @@ import os
 import sys
 import ollama
 from sympy.solvers.ode.hypergeometric import equivalence
+from torch.distributed.pipeline.sync.checkpoint import checkpoint
 from transformers import HfArgumentParser
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "neural-module"))
 from src.parsers.OllamaModeratorArgs import OllamaModeratorArgs
@@ -115,6 +116,7 @@ if __name__ == "__main__":
     moderator_args = parser.parse_args_into_dataclasses()[0]
     input_path = moderator_args.input_path
     output_path = moderator_args.output_path
+    checkpoint = 100
     # Read the model list from the file where they are listed
     llms = []
     with open(moderator_args.model_list_path, 'r') as model_list_file:
@@ -142,8 +144,9 @@ if __name__ == "__main__":
                 preds_file_path = os.path.join(input_path, model_preds_dir, preds_file_name)
                 with open(preds_file_path, 'r', newline='', encoding='utf-8') as preds_file:
                     reader = csv.reader(preds_file)
+                    rows = list(reader)
                     # Process each prediction from the file
-                    for row in reader:
+                    for i, row in enumerate(rows,1):
                         target = row[1].rstrip(';')
                         raw_prediction = row[2]
                         parsing = False
@@ -178,10 +181,12 @@ if __name__ == "__main__":
                             pred_stats[llm] = result
                         pred_stats['equivalence_counter'] = log_equivalence_threshold(pred_stats, [ l[0] for l in llms ])
                         moderators_stats.append(pred_stats)
-        # Save the results of the moderation task
-        if not os.path.exists(output_path):
-            os.makedirs(output_path)
-        output_file = os.path.join(output_path, f"{model_preds_dir}.json")
-        logger.log(f"Processing complete. Results saved to {output_file}.")
-        with open(output_file, 'w', newline='', encoding='utf-8') as output:
-            json.dump(moderators_stats, output, indent=4)
+
+                        if ((i % checkpoint) == 0) or (i == len(rows) - 1):
+                            # Save the intermediate result of the moderation task
+                            logger.log(f"Saving intermediate results to {output_path}")
+                            if not os.path.exists(output_path):
+                                os.makedirs(output_path)
+                            output_file = os.path.join(output_path, f"{model_preds_dir}_{i/100}.json")
+                            with open(output_file, 'w', newline='', encoding='utf-8') as output:
+                                json.dump(moderators_stats, output, indent=4)

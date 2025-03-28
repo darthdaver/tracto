@@ -88,7 +88,7 @@ if __name__ == "__main__":
             predictions = []
             checkpoint = 100
             # Read each row as a dictionary
-            for i, row in enumerate(rows):
+            for i, row in enumerate(rows,1):
                 src = row[data_args.src_col]
                 tgt = row[data_args.tgt_col]
                 query = preprocess_dp(query_template, src)
