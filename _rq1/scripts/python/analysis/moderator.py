@@ -57,11 +57,12 @@ def llm_assertion_moderator(llm, num_ctx, query):
         if match:
             out = match.group(1).strip()
             logger.log(f"Response from {llm}: {out}")
+            if out in ["EQUIVALENT", "NOT EQUIVALENT"]:
+                return out
+            else:
+                return "UNKNOWN"
         else:
             logger.log(f"Response from {llm}: Unable to extract content")
-        if out in ["EQUIVALENT", "NOT EQUIVALENT"]:
-            return out
-        else:
             return "UNKNOWN"
     except Exception as e:
         logger.log(f"Error while processing the input:\n{query}")
@@ -100,6 +101,8 @@ if __name__ == "__main__":
     # Read the args passed to the script
     parser = HfArgumentParser(OllamaModeratorArgs)
     moderator_args = parser.parse_args_into_dataclasses()[0]
+    input_path = moderator_args.input_path
+    output_path = moderator_args.output_path
     # Read the model list from the file where they are listed
     llms = []
     with open(moderator_args.model_list_path, 'r') as model_list_file:
@@ -111,9 +114,8 @@ if __name__ == "__main__":
     # Get query text template
     with open(moderator_args.query_path, 'r') as query_file:
         query_template = query_file.read()
-
     # Process each model folder within the input directory
-    for model_preds_dir in os.listdir(moderator_args.input_path):
+    for model_preds_dir in os.listdir(input_path):
         # Extract the name of the model and the query template id
         model_id = model_preds_dir.split('-')[0]
         query_id = int(model_preds_dir.split('-')[1])
@@ -122,16 +124,14 @@ if __name__ == "__main__":
         # Initialize the list of the results of the moderation task for the current model-query couple
         moderators_stats = []
         # Process each file of predictions within the model folder
-        for preds_file_name in os.listdir(model_preds_dir):
+        for preds_file_name in os.listdir(os.path.join(input_path, model_preds_dir)):
             if preds_file_name.endswith(".csv"):
                 logger.log(f"Processing file {preds_file_name}")
-                preds_file_path = os.path.join(model_preds_dir, preds_file_name)
+                preds_file_path = os.path.join(input_path, model_preds_dir, preds_file_name)
                 with open(preds_file_path, 'r', newline='', encoding='utf-8') as preds_file:
                     reader = csv.DictReader(preds_file)
                     # Process each prediction from the file
                     for row in reader:
-                        # Generate the query for the moderators, from the query template
-                        query = preprocess_query(query_template, target, prediction)
                         target = row['target'].rstrip(';')
                         raw_prediction = row['prediction']
                         # Use regex to extract the assertion between <keep> and </keep>
@@ -142,8 +142,10 @@ if __name__ == "__main__":
                         else:
                             prediction = raw_prediction.strip(';')
                         logger.log(f"Analyzing equivalence between {target} and {prediction}")
+                        # Generate the query for the moderators, from the query template
+                        query = preprocess_query(query_template, target, prediction)
                         pred_stats = {
-                            "file_path": preds_file_path.replace(moderator_args.input_path, ''),
+                            "file_path": preds_file_path.replace(input_path, ''),
                             "prompt": query,
                             "target": row['target'],
                             "raw_prediction": raw_prediction,
@@ -153,13 +155,14 @@ if __name__ == "__main__":
                         }
                         # Run the moderators
                         for llm, num_ctx in llms:
-                            print(f"\n{model_preds_dir}: Comparing {target} with {prediction}")
-                            result = llm_assertion_moderator(query, llm, num_ctx)
+                            result = llm_assertion_moderator(llm, num_ctx, query)
                             pred_stats[llm] = result
                         log_equivalence_threshold(pred_stats, [ l[0] for l in llms ])
                         moderators_stats.append(pred_stats)
         # Save the results of the moderation task
-        output_file = os.path.join(moderator_args.output_path, f"{model_preds_dir}.json")
+        if not os.path.exists(output_path):
+            os.makedirs(output_path)
+        output_file = os.path.join(output_path, f"{model_preds_dir}.json")
         logger.log(f"Processing complete. Results saved to {output_file}.")
         with open(output_file, 'w', newline='', encoding='utf-8') as output:
             json.dump(moderators_stats, output, indent=4)

@@ -10,10 +10,10 @@ class OllamaModeratorArgs:
     output_path: str = field(
         metadata={"help": "Output path where to save the results of the predictions analysis."}
     )
-    model_list_path: list = field(
+    model_list_path: str = field(
         metadata={"help": "Path to the file containing the list of models to be analyzed."}
     )
-    query_path: Optional[str] = field(
+    query_path: str = field(
         default=None,
         metadata={"help": "Path to the query request template file."}
     )
