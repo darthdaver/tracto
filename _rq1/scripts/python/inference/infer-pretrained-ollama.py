@@ -99,7 +99,8 @@ if __name__ == "__main__":
                         prompt=query,
                         options={
                             "num_ctx": int(data_args.num_ctx),
-                            "seed": 42
+                            "seed": 42,
+                            "num_predict": 4096
                         }
                     )
                     out = response['response'].strip()

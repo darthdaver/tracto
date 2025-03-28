@@ -1,0 +1,30 @@
+Given two Java assertions, determine if they are semantically equivalent.
+Do not consider escape characters for your judgement. Put your answer between: <keep></keep>.
+Reply only in one of these two forms <keep>EQUIVALENT</keep> or <keep>NOT EQUIVALENT</keep>
+
+Q:
+assertEqual("99", variable); and assertEquals("99", variable);
+
+A:
+<keep>EQUIVALENT</keep>
+
+Q:
+assertEqual("99", variable); and assertEquals("100", variable);
+
+A:
+<keep>NOT EQUIVALENT</keep>
+
+Q:
+assertEqual("99", variable); and assertEquals("\\\"99\\\"", variable);
+
+A:
+<keep>EQUIVALENT</keep>
+
+Q:
+assertEqual("99", variable); and assertEquals("99 ", variable);
+
+A:
+<keep>NOT EQUIVALENT</keep>
+
+Q:
+<TARGET> and <PREDICTION>
