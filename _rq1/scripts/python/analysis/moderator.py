@@ -60,10 +60,21 @@ def llm_assertion_moderator(llm, num_ctx, query):
             if out in ["EQUIVALENT", "NOT EQUIVALENT"]:
                 return out
             else:
+                logger.log(f"Response from {llm}: Regex extracted, but response different from ['EQUIVALENT', 'NOT EQUIVALENT']")
                 return "UNKNOWN"
         else:
-            logger.log(f"Response from {llm}: Unable to extract content")
-            return "UNKNOWN"
+            match = re.search(r'\bassert\w+\((.*?)\);', response['response'].strip())
+            if match:
+                out = match.group(1).strip()
+                logger.log(f"Response from {llm}: {out}")
+                if out in ["EQUIVALENT", "NOT EQUIVALENT"]:
+                    return out
+                else:
+                    logger.log(f"Response from {llm}: Regex extracted, but response different from ['EQUIVALENT', 'NOT EQUIVALENT']")
+                    return "UNKNOWN"
+            else:
+                logger.log(f"Response from {llm}: Unable to extract content")
+                return "UNKNOWN"
     except Exception as e:
         logger.log(f"Error while processing the input:\n{query}")
         logger.log(f"Error: {e}")
@@ -81,6 +92,7 @@ def log_equivalence_threshold(pred_stats, llms):
         if pred_stats[llm] == "EQUIVALENT":
             equivalence_counter += 1
     logger.log(f"Equivalence threshold: {equivalence_counter}/{len(llms)}")
+    return equivalence_counter
 
 
 if __name__ == "__main__":
@@ -117,7 +129,7 @@ if __name__ == "__main__":
     # Process each model folder within the input directory
     for model_preds_dir in os.listdir(input_path):
         # Extract the name of the model and the query template id
-        model_id = model_preds_dir.split(':')[0]
+        model_id = model_preds_dir.split(':')[0] + ':' + model_preds_dir.split(':')[1].replace("-" + model_preds_dir.split('-')[-1], "")
         query_id = int(model_preds_dir.split('-')[-1])
         assert model_id in [ l[0] for l in llms ]
         logger.log(f"Processing model {model_id} with query template {query_id}")
@@ -129,35 +141,42 @@ if __name__ == "__main__":
                 logger.log(f"Processing file {preds_file_name}")
                 preds_file_path = os.path.join(input_path, model_preds_dir, preds_file_name)
                 with open(preds_file_path, 'r', newline='', encoding='utf-8') as preds_file:
-                    reader = csv.DictReader(preds_file)
+                    reader = csv.reader(preds_file)
                     # Process each prediction from the file
                     for row in reader:
-                        target = row['target'].rstrip(';')
-                        raw_prediction = row['prediction']
+                        target = row[1].rstrip(';')
+                        raw_prediction = row[2]
+                        parsing = False
                         # Use regex to extract the assertion between <keep> and </keep>
                         match = re.search(r'<keep>(.*?)</keep>', raw_prediction, re.DOTALL)
                         if match:
-                            pred_stats['parsing'] = True
+                            parsing = True
                             prediction = match.group(1).strip(';')
                         else:
-                            prediction = raw_prediction.strip(';')
+                            match = re.search(r'\bassert\w+\((.*?)\);', raw_prediction)
+                            if match:
+                                parsing = True
+                                prediction = match.group(1).strip(';')
+                            else:
+                                prediction = raw_prediction.strip(';')
                         logger.log(f"Analyzing equivalence between {target} and {prediction}")
                         # Generate the query for the moderators, from the query template
                         query = preprocess_query(query_template, target, prediction)
                         pred_stats = {
                             "file_path": preds_file_path.replace(input_path, ''),
-                            "prompt": query,
-                            "target": row['target'],
+                            "promt-prediction": row[0],
+                            "prompt-moderator": query,
+                            "target": target,
                             "raw_prediction": raw_prediction,
                             "prediction": prediction,
-                            "parsing": False,
-                            "match": True if prediction == target else False
+                            "parsing": parsing,
+                            "match": True if target == prediction else False
                         }
                         # Run the moderators
                         for llm, num_ctx in llms:
                             result = llm_assertion_moderator(llm, num_ctx, query)
                             pred_stats[llm] = result
-                        log_equivalence_threshold(pred_stats, [ l[0] for l in llms ])
+                        pred_stats['equivalence_counter'] = log_equivalence_threshold(pred_stats, [ l[0] for l in llms ])
                         moderators_stats.append(pred_stats)
         # Save the results of the moderation task
         if not os.path.exists(output_path):
