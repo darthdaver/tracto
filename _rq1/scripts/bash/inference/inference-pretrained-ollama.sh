@@ -23,7 +23,7 @@ while IFS=, read -r ol_model hf_tokenizer num_ctx model_type; do
         --tokenizer_name "${hf_tokenizer}" \
         --query_path "${ROOT_DIR}/scripts/resources/queries/pretrained/${query_type}/${i}/query-template.txt" \
         --dataset_path "${RQ1_DATASET_DIR}/${i}" \
-        --output_path "${ROOT_DIR}/output/${ol_model}-${i}" \
+        --output_path "${ROOT_DIR}/output/inference/${ol_model}-${i}" \
         --src_col "src" \
         --tgt_col "tgt" \
         --num_ctx "${num_ctx}" \
