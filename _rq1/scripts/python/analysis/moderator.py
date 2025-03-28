@@ -190,3 +190,4 @@ if __name__ == "__main__":
                             output_file = os.path.join(output_path, f"{model_preds_dir}_{i/100}.json")
                             with open(output_file, 'w', newline='', encoding='utf-8') as output:
                                 json.dump(moderators_stats, output, indent=4)
+                            moderators_stats = []
