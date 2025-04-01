@@ -3,11 +3,13 @@ import sys
 import csv
 import ollama
 import pandas as pd
+import time
 from transformers import HfArgumentParser
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "neural-module"))
 from src.parsers.ModelArgs import ModelArgs
 from src.parsers.OllamaInferenceArgs import OllamaInferenceArgs
 from src.utils.Logger import Logger
+
 
 # Setup the logger
 logger = Logger("main", "infer")
@@ -86,6 +88,7 @@ if __name__ == "__main__":
             inputs = []
             targets = []
             predictions = []
+            times = []
             checkpoint = 100
             # Read each row as a dictionary
             for i, row in enumerate(rows,1):
@@ -94,6 +97,7 @@ if __name__ == "__main__":
                 query = preprocess_dp(query_template, src)
                 # Predict the output with ollama
                 try:
+                    start_time = time.time()
                     response = ollama.generate(
                         model=model_args.model_name_or_path,
                         prompt=query,
@@ -103,26 +107,31 @@ if __name__ == "__main__":
                             "num_predict": 500 if data_args.model_type == "base" else 4096
                         }
                     )
+                    end_time = time.time()
                     out = response['response'].strip()
                     inputs.append(src)
                     targets.append(tgt)
                     predictions.append(out)
+                    times.append(end_time - start_time)
                 except Exception as e:
+                    end_time = time.time()
                     logger.log(f"Error while processing the input:\n{query}")
                     logger.log(f"Error: {e}")
                     inputs.append(src)
                     targets.append(tgt)
+                    times.append(end_time - start_time)
                     predictions.append("Error")
                 if data_args.ram_saving and ((i % checkpoint == 0) or (i == len(rows) - 1)):
                     # Save the predictions one by one
                     logger.log(f"Saving prediction to {output_path}")
                     with open(os.path.join(output_path, filename), mode='a', newline='') as out_file:
                         writer = csv.writer(out_file)
-                        for src, tgt, out in zip(inputs, targets, predictions):
-                            writer.writerow([src, tgt, out])
+                        for src, tgt, out, request_time in zip(inputs, targets, predictions, times):
+                            writer.writerow([src, tgt, out, request_time])
                     inputs = []
                     targets = []
                     predictions = []
+                    times = []
         # Save the predictions all at once
         if not data_args.ram_saving:
             # Save stats of predictions
