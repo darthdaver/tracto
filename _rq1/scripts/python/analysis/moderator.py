@@ -10,7 +10,7 @@ from src.parsers.OllamaModeratorArgs import OllamaModeratorArgs
 from src.utils.Logger import Logger
 
 # Setup the logger
-logger = Logger("main", "moderator")
+logger = Logger("main", "RQ1 - moderator")
 
 
 def preprocess_query(query_template, target, prediction):
@@ -124,8 +124,8 @@ if __name__ == "__main__":
     checkpoint = 100
     # Read the model list from the file where they are listed
     llms = []
-    with open(moderator_args.model_list_path, 'r') as model_list_file:
-        csv_reader = csv.reader(model_list_file)
+    with open(moderator_args.moderator_list_path, 'r') as moderator_list_file:
+        csv_reader = csv.reader(moderator_list_file)
         for row in csv_reader:
             ollama_model_name = row[0]
             num_ctx = int(row[2])
@@ -178,7 +178,7 @@ if __name__ == "__main__":
                                 match = re.search(r'\bassert\w+\((.*?)\);', raw_prediction)
                                 if match:
                                     parsing = True
-                                    prediction = match.group(1).strip(';')
+                                    prediction = match.group(0).strip(';')
                                 else:
                                     prediction = raw_prediction.strip(';')
                             logger.log(f"Analyzing equivalence between {target} and {prediction}")
@@ -187,7 +187,7 @@ if __name__ == "__main__":
                             pred_stats = {
                                 "llm": model_id,
                                 "file_path": preds_file_path.replace(input_path, ''),
-                                "promt-prediction": row[0],
+                                "prompt-prediction": row[0],
                                 "prompt-moderator": query,
                                 "target": target,
                                 "raw_prediction": raw_prediction,

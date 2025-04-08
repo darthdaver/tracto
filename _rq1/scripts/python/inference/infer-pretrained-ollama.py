@@ -12,7 +12,7 @@ from src.utils.Logger import Logger
 
 
 # Setup the logger
-logger = Logger("main", "infer")
+logger = Logger("main", "RQ1 - inference")
 
 
 def preprocess_dp(query_template, src_col):

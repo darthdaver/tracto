@@ -10,7 +10,7 @@ class OllamaModeratorArgs:
     output_path: str = field(
         metadata={"help": "Output path where to save the results of the predictions analysis."}
     )
-    model_list_path: str = field(
+    moderator_list_path: str = field(
         metadata={"help": "Path to the file containing the list of models to be analyzed."}
     )
     query_path: str = field(

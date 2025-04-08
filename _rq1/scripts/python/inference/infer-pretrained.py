@@ -17,7 +17,7 @@ from transformers import (
 )
 
 # Setup the logger
-logger = Logger("main", "infer")
+logger = Logger("main", "RQ1 - inference")
 
 
 def preprocess_dp(query_text, dp: Dict[str, str], src_col, max_len: int, tokenizer: AutoTokenizer, bos_token: list):

@@ -16,6 +16,7 @@ TOGLL_DIR="${ROOT_DIR}/togll"
 
 # Files
 RQ1_MODELS_LIST="${SCRIPTS_RESOURCES_DIR}/models-list.csv"
+RQ1_MODERATORS_LIST="${SCRIPTS_RESOURCES_DIR}/moderators-list.csv"
 
 # Links
 RQ1_MOTIVATIONAL_PROJECT_EXAMPLE_LINK="https://drive.switch.ch/index.php/s/zRkRD5kWLL92zVR/download"
