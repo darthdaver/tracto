@@ -5,6 +5,7 @@ from collections import defaultdict, Counter
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import numpy as np
+import pandas as pd
 
 # === CONFIGURATION ===
 root_data_folder = './_rq1/input_analysis/moderators/analysis'
@@ -14,7 +15,7 @@ output_pdf_path = '_rq1/output_analysis/moderators_analyisis/equivalence_analysi
 def load_all_datapoint_jsons(root_folder):
     all_entries = []
     datapoint_vote_stats = []
-    prompt_type_votes = defaultdict(lambda: Counter({'EQUIVALENT': 0, 'NOT EQUIVALENT': 0}))
+    prompt_type_votes = defaultdict(lambda: Counter({'EQUIVALENT': 0, 'NOT EQUIVALENT': 0, 'UNKNOWN':0, 'NO PREDICTION': 0, 'EXACT MATCH': 0}))
 
     for root, _, files in os.walk(root_folder):
         for fname in files:
@@ -38,10 +39,15 @@ def load_all_datapoint_jsons(root_folder):
                             # Count votes per datapoint
                             per_datapoint = Counter()
                             for key, value in entry.items():
-                                if ':' in key and value in ('EQUIVALENT', 'NOT EQUIVALENT'):
+                                if ':' in key and value in ('EQUIVALENT', 'NOT EQUIVALENT', 'UNKNOWN'):
                                     per_datapoint[value] += 1
                                     if prompt_type:
                                         prompt_type_votes[prompt_type][value] += 1
+                                if key == 'prediction' and value == "":
+                                    per_datapoint['NO PREDICTION'] += 1
+                                elif key == 'match' and value == True:
+                                    per_datapoint['EXACT MATCH'] += 1
+                                    
 
                             datapoint_vote_stats.append(per_datapoint)
 
@@ -54,7 +60,7 @@ data, datapoint_vote_stats, prompt_type_votes = load_all_datapoint_jsons(root_da
 print(f"Loaded {len(data)} datapoints.")
 
 # === AGGREGATE MODEL STATS ===
-model_equiv_counts = defaultdict(lambda: Counter({'EQUIVALENT': 0, 'NOT EQUIVALENT': 0}))
+model_equiv_counts = defaultdict(lambda: Counter({'EQUIVALENT': 0, 'NOT EQUIVALENT': 0, 'UNKNOWN': 0, 'NO PREDICTION': 0, 'EXACT MATCH': 0}))
 model_names = set()
 
 for entry in data:
@@ -62,20 +68,89 @@ for entry in data:
         if ':' in key and value in ('EQUIVALENT', 'NOT EQUIVALENT'):
             model_equiv_counts[key][value] += 1
             model_names.add(key)
+        if key == 'prediction' and value == "":
+            model_equiv_counts['prediction']['NO PREDICTION'] += 1
+        elif key == 'match' and value == True:
+            model_equiv_counts['match']['EXACT MATCH'] += 1
 
 model_names = sorted(model_names)
 
 # === PLOTTING ===
 with PdfPages(output_pdf_path) as pdf:
 
+    # 0. Table of model equivalence counts
+    # Collect percentages per model
+    percent_data = {}
+
+    # Add global NO PREDICTION and EXACT MATCH
+    global_no_pred = model_equiv_counts['prediction']['NO PREDICTION']
+    global_exact_match = model_equiv_counts['match']['EXACT MATCH']
+    global_total = sum(model_equiv_counts[model]['EQUIVALENT'] + model_equiv_counts[model]['NOT EQUIVALENT'] for model in model_names)
+
+    if global_total > 0:
+        no_predictions = round((global_no_pred / global_total) * 100, 1)
+        exact_matchs = round((global_exact_match / global_total) * 100, 1)
+    else:
+        no_predictions = 0
+        exact_matchs = 0
+
+    
+    for model in model_names:
+        equiv = model_equiv_counts[model]['EQUIVALENT']
+        not_equiv = model_equiv_counts[model]['NOT EQUIVALENT']
+        total = equiv + not_equiv
+        if total == 0:
+            continue  # skip if no data
+
+        percent_data[model] = {
+            'EQUIVALENT': round((equiv / total) * 100, 1),
+            'NOT EQUIVALENT': round((not_equiv / total) * 100, 1),
+            'NO PREDICTION': no_predictions,  # leave blank for now
+            'EXACT MATCH': exact_matchs     # leave blank for now
+        }
+
+    
+
+    # Plot table
+    df = pd.DataFrame.from_dict(percent_data, orient='index')
+    df = df[['EQUIVALENT', 'NOT EQUIVALENT', 'NO PREDICTION', 'EXACT MATCH']]
+
+    plt.figure(figsize=(10, len(df) * 0.6 + 1))
+    plt.axis('off')
+    table = plt.table(cellText=df.values,
+                    rowLabels=df.index,
+                    colLabels=df.columns,
+                    cellLoc='center',
+                    loc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(12)
+    table.scale(1, 1.5)
+
+    plt.title("Moderator decision in tabular form", pad=20, fontsize=14)
+    plt.tight_layout()
+    pdf.savefig()
+    plt.close()
+
     # 1. Bar chart per model: EQUIVALENT vs NOT
     equivalents = [model_equiv_counts[model]['EQUIVALENT'] for model in model_names]
     not_equivalents = [model_equiv_counts[model]['NOT EQUIVALENT'] for model in model_names]
-    x = range(len(model_names))
+    no_predictions = [model_equiv_counts['prediction']['NO PREDICTION'] for model in model_names]
+    exact_matchs = [model_equiv_counts['match']['EXACT MATCH'] for model in model_names]
+    x = np.arange(len(model_names))  # use numpy for easy offset math
+    bar_width = 0.2
 
     plt.figure(figsize=(12, 6))
-    plt.bar(x, equivalents, width=0.4, label='EQUIVALENT', color='green', align='center')
-    plt.bar(x, not_equivalents, width=0.4, label='NOT EQUIVALENT', color='red', align='edge')
+    plt.bar(x - 1.5*bar_width, equivalents, width=bar_width, label='EQUIVALENT', color='blue')
+    plt.bar(x - 0.5*bar_width, not_equivalents, width=bar_width, label='NOT EQUIVALENT', color='orange')
+    plt.bar(x + 0.5*bar_width, no_predictions, width=bar_width, label='NO PREDICTION', color='red')
+    plt.bar(x + 1.5*bar_width, exact_matchs, width=bar_width, label='EXACT MATCH', color='green')
+
+    # add one more bar for NO PREDICTION and EXACT MATCH
+    #no_prediction = [model_equiv_counts[model]['NO PREDICTION'] for model in model_names]
+    #exact_match = [model_equiv_counts[model]['EXACT MATCH'] for model in model_names]
+    #plt.bar(x, no_prediction, width=0.4, label='NO PREDICTION', color='blue', align='edge')
+    #plt.bar(x, exact_match, width=0.4, label='EXACT MATCH', color='purple', align='edge')
+
     plt.xticks(x, model_names, rotation=45, ha='right')
     plt.ylabel('Count')
     plt.title('Equivalence Judgments per Model')
@@ -84,48 +159,7 @@ with PdfPages(output_pdf_path) as pdf:
     pdf.savefig()
     plt.close()
 
-    # 2. Pie chart per model
-    for model in model_names:
-        labels = ['EQUIVALENT', 'NOT EQUIVALENT']
-        sizes = [model_equiv_counts[model][label] for label in labels]
-        colors = ['green', 'red']
-        explode = (0.1, 0)
-
-        plt.figure(figsize=(6, 6))
-        plt.pie(sizes, explode=explode, labels=labels, colors=colors,
-                autopct='%1.1f%%', shadow=True, startangle=140)
-        plt.title(f'Equivalence Distribution for {model}')
-        pdf.savefig()
-        plt.close()
-
-    # 3. Distribution per datapoint: how many models said EQUIVALENT or NOT
-    datapoint_eq = [d['EQUIVALENT'] for d in datapoint_vote_stats]
-    datapoint_neq = [d['NOT EQUIVALENT'] for d in datapoint_vote_stats]
-
-    plt.figure(figsize=(10, 5))
-    plt.hist(datapoint_eq, bins=range(0, max(datapoint_eq)+2), alpha=0.6, label='EQUIVALENT', color='green')
-    plt.hist(datapoint_neq, bins=range(0, max(datapoint_neq)+2), alpha=0.6, label='NOT EQUIVALENT', color='red')
-    plt.xlabel('Number of Votes per Datapoint')
-    plt.ylabel('Datapoint Count')
-    plt.title('Vote Distribution Across Datapoints')
-    plt.legend()
-    plt.tight_layout()
-    pdf.savefig()
-    plt.close()
-
-    # 4. Prompt type statistics
-    for prompt_type, counts in sorted(prompt_type_votes.items()):
-        labels = ['EQUIVALENT', 'NOT EQUIVALENT']
-        sizes = [counts['EQUIVALENT'], counts['NOT EQUIVALENT']]
-        colors = ['green', 'red']
-
-        plt.figure(figsize=(6, 6))
-        plt.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
-        plt.title(f'Prompt Type {prompt_type}: Equivalence Vote Distribution')
-        pdf.savefig()
-        plt.close()
-
-    # 5. Bar plot: Prompt types comparison
+    # 2. Bar plot: Prompt types comparison
     prompt_types = sorted(prompt_type_votes.keys())
     equivs = [prompt_type_votes[t]['EQUIVALENT'] for t in prompt_types]
     not_equivs = [prompt_type_votes[t]['NOT EQUIVALENT'] for t in prompt_types]
@@ -142,7 +176,7 @@ with PdfPages(output_pdf_path) as pdf:
     pdf.savefig()
     plt.close()
 
-    # 6. Agreement when match == true
+    # 3. Agreement when match == true
     match_equiv_counts = []
     for entry in data:
         if entry.get("match") == True:
@@ -158,7 +192,7 @@ with PdfPages(output_pdf_path) as pdf:
     pdf.savefig()
     plt.close()
 
-    # 7. Statistical metrics & threshold analysis
+    # 4. Statistical metrics & threshold analysis
     equiv_per_datapoint = [sum(1 for k, v in entry.items() if ':' in k and v == 'EQUIVALENT') for entry in data]
     mean_val = np.mean(equiv_per_datapoint)
     median_val = np.median(equiv_per_datapoint)
@@ -177,7 +211,7 @@ with PdfPages(output_pdf_path) as pdf:
     pdf.savefig()
     plt.close()
 
-    # 8. Full agreement vs disagreement
+    # 5. Full agreement vs disagreement
     full_agree_equiv = 0
     full_agree_nonequiv = 0
     partial_agree = 0
@@ -202,37 +236,6 @@ with PdfPages(output_pdf_path) as pdf:
     plt.title('Full Agreement vs Disagreement Among Models')
     for i, v in enumerate(values):
         plt.text(i, v + 1, str(v), ha='center')
-    plt.tight_layout()
-    pdf.savefig()
-    plt.close()
-
-
-    # 9. Prompt accuracy when match == True (on EQUIVALENT)
-    prompt_match_equiv = defaultdict(int)
-    prompt_match_total = defaultdict(int)
-
-    for entry in data:
-        if entry.get("match") == True and '__prompt_type' in entry:
-            prompt_type = entry['__prompt_type']
-            num_equiv = sum(1 for k, v in entry.items() if ':' in k and v == 'EQUIVALENT')
-            total_votes = sum(1 for k, v in entry.items() if ':' in k and v in ('EQUIVALENT', 'NOT EQUIVALENT'))
-
-            if num_equiv >= 3:  # majority voted EQUIVALENT
-                prompt_match_equiv[prompt_type] += 1
-            prompt_match_total[prompt_type] += 1
-
-    types = sorted(prompt_match_total.keys())
-    correct = [prompt_match_equiv[t] for t in types]
-    total = [prompt_match_total[t] for t in types]
-    accuracy = [correct[i] / total[i] if total[i] > 0 else 0 for i in range(len(types))]
-
-    plt.figure(figsize=(8, 5))
-    plt.bar([f'Prompt {t}' for t in types], accuracy, color='dodgerblue')
-    plt.ylim(0, 1.05)
-    plt.ylabel('Accuracy (Majority EQUIVALENT when Match=True)')
-    plt.title('Prompt Effectiveness on EQUIVALENT (Match=True)')
-    for i, acc in enumerate(accuracy):
-        plt.text(i, acc + 0.02, f'{acc:.2f}', ha='center')
     plt.tight_layout()
     pdf.savefig()
     plt.close()
