@@ -1,32 +1,10 @@
 import os
 import sys
 import pandas as pd
-# from transformers import AutoTokenizer
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "neural-module"))
 from src.utils.Logger import Logger
 # Setup the logger
 logger = Logger("main", "RQ1 - stats")
-
-def count_model_query_tokens(query, tokenizer_name):
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-    except Exception as e:
-        default_tokenizer = "codellama/CodeLlama-7b-hf"
-        tokenizer = AutoTokenizer.from_pretrained(default_tokenizer)
-    tokens = len(tokenizer.encode(query, add_special_tokens=False))
-    return tokens
-
-def count_moderators_query_tokens(query, moderators_tokenizer_name_list):
-    tokens = []
-    for tokenizer_name in moderators_tokenizer_name_list:
-        try:
-            tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-        except Exception as e:
-            default_tokenizer = "codellama/CodeLlama-7b-hf"
-            tokenizer = AutoTokenizer.from_pretrained(default_tokenizer)
-        tokens.append(len(tokenizer.encode(query, add_special_tokens=False)))
-    return max(tokens)
-
 
 if __name__ == "__main__":
     # Paths
