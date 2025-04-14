@@ -54,7 +54,7 @@ public class JavaFileCollector {
                         // Process each line of the file and check if it contains the @Test annotation
                         for (String line : lines) {
                             // If the line contains the @Test annotation, add the file to the list
-                            if (line.contains("@Test") || line.contains("@org.junit.Test") || line.contains("org.junit.jupiter.api.Test")) {
+                            if (line.contains("@Test") || line.contains("@org.junit.Test") || line.contains("org.junit.jupiter.api.Test") || line.contains("@ParameterizedTest")) {
                                 testFiles.add(file);
                                 break;
                             }

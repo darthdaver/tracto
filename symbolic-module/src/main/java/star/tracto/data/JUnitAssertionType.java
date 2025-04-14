@@ -14,6 +14,7 @@ public enum JUnitAssertionType {
     ASSERT_NOT_SAME("assertNotSame"),
     ASSERT_NULL("assertNull"),
     ASSERT_SAME("assertSame"),
+    ASSERT_THAT("assertThat"),
     ASSERT_THROWS("assertThrows"),
     ASSERT_THROWS_EXACTLY("assertThrowsExactly"),
     ASSERT_TIMEOUT("assertTimeout"),
