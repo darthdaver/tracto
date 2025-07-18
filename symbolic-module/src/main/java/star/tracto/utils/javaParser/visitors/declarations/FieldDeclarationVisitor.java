@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.body.FieldDeclaration} found.
+ * {@link FieldDeclaration} found.
  *
  */
 public class FieldDeclarationVisitor extends BaseDeclarationVisitor<FieldDeclaration> {
@@ -20,7 +20,7 @@ public class FieldDeclarationVisitor extends BaseDeclarationVisitor<FieldDeclara
      */
     @Override
     public void visit(FieldDeclaration fieldDeclaration, List<FieldDeclaration> collection) {
-        super.visit(fieldDeclaration, collection);
         addToCollection(fieldDeclaration, collection);
+        super.visit(fieldDeclaration, collection);
     }
 }

@@ -1,6 +1,5 @@
 package star.tracto.utils.javaParser.visitors.types;
 
-import com.github.javaparser.ast.type.UnionType;
 import com.github.javaparser.ast.type.UnknownType;
 import star.tracto.utils.javaParser.visitors.base.BaseTypeVisitor;
 
@@ -8,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.type.UnknownType} found.
+ * {@link UnknownType} found.
  *
  */
 public class UnknownTypeVisitor extends BaseTypeVisitor<UnknownType> {
@@ -21,7 +20,7 @@ public class UnknownTypeVisitor extends BaseTypeVisitor<UnknownType> {
      */
     @Override
     public void visit(UnknownType unknownType, List<UnknownType> collection) {
-        super.visit(unknownType, collection);
         addToCollection(unknownType, collection);
+        super.visit(unknownType, collection);
     }
 }

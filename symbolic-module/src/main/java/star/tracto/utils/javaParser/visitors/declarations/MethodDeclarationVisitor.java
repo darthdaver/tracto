@@ -1,6 +1,5 @@
 package star.tracto.utils.javaParser.visitors.declarations;
 
-import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import star.tracto.utils.javaParser.visitors.base.BaseDeclarationVisitor;
 
@@ -8,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.body.MethodDeclaration} found.
+ * {@link MethodDeclaration} found.
  *
  */
 public class MethodDeclarationVisitor extends BaseDeclarationVisitor<MethodDeclaration> {
@@ -21,7 +20,7 @@ public class MethodDeclarationVisitor extends BaseDeclarationVisitor<MethodDecla
      */
     @Override
     public void visit(MethodDeclaration methodDeclaration, List<MethodDeclaration> collection) {
-        super.visit(methodDeclaration, collection);
         addToCollection(methodDeclaration, collection);
+        super.visit(methodDeclaration, collection);
     }
 }

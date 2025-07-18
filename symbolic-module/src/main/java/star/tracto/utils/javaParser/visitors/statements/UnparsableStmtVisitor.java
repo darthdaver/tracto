@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.stmt.UnparsableStmt} found.
+ * {@link UnparsableStmt} found.
  *
  */
 public class UnparsableStmtVisitor extends BaseStmtVisitor<UnparsableStmt> {
@@ -20,7 +20,7 @@ public class UnparsableStmtVisitor extends BaseStmtVisitor<UnparsableStmt> {
      */
     @Override
     public void visit(UnparsableStmt unparsableStmt, List<UnparsableStmt> collection) {
-        super.visit(unparsableStmt, collection);
         addToCollection(unparsableStmt, collection);
+        super.visit(unparsableStmt, collection);
     }
 }

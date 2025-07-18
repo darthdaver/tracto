@@ -1,14 +1,13 @@
 package star.tracto.utils.javaParser.visitors.declarations;
 
 import com.github.javaparser.ast.body.ConstructorDeclaration;
-import com.github.javaparser.ast.body.FieldDeclaration;
 import star.tracto.utils.javaParser.visitors.base.BaseDeclarationVisitor;
 
 import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.body.ConstructorDeclaration} found.
+ * {@link ConstructorDeclaration} found.
  *
  */
 public class ConstructorDeclarationVisitor extends BaseDeclarationVisitor<ConstructorDeclaration> {
@@ -21,7 +20,7 @@ public class ConstructorDeclarationVisitor extends BaseDeclarationVisitor<Constr
      */
     @Override
     public void visit(ConstructorDeclaration constructorDeclaration, List<ConstructorDeclaration> collection) {
-        super.visit(constructorDeclaration, collection);
         addToCollection(constructorDeclaration, collection);
+        super.visit(constructorDeclaration, collection);
     }
 }

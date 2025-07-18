@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.type.TypeParameter} found.
+ * {@link TypeParameter} found.
  *
  */
 public class TypeParameterVisitor extends BaseTypeVisitor<TypeParameter> {
@@ -20,7 +20,7 @@ public class TypeParameterVisitor extends BaseTypeVisitor<TypeParameter> {
      */
     @Override
     public void visit(TypeParameter typeParameter, List<TypeParameter> collection) {
-        super.visit(typeParameter, collection);
         addToCollection(typeParameter, collection);
+        super.visit(typeParameter, collection);
     }
 }

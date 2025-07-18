@@ -1,13 +1,14 @@
 package star.tracto.utils.javaParser.visitors.base;
 
 import com.github.javaparser.ast.body.MethodDeclaration;
-import com.github.javaparser.ast.stmt.*;
+import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.visitor.VoidVisitorAdapter;
+
 import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the nodes <S>
- * that extends {@link com.github.javaparser.ast.stmt.Statement} found.
+ * that extends {@link Statement} found.
  *
  */
 public abstract class BaseStmtVisitor<S extends Statement> extends VoidVisitorAdapter<List<S>> {

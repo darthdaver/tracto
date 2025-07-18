@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.type.ClassOrInterfaceType} found.
+ * {@link ClassOrInterfaceType} found.
  *
  */
 public class ClassOrInterfaceTypeVisitor extends BaseTypeVisitor<ClassOrInterfaceType> {
@@ -20,7 +20,7 @@ public class ClassOrInterfaceTypeVisitor extends BaseTypeVisitor<ClassOrInterfac
      */
     @Override
     public void visit(ClassOrInterfaceType classOrInterfaceType, List<ClassOrInterfaceType> collection) {
-        super.visit(classOrInterfaceType, collection);
         addToCollection(classOrInterfaceType, collection);
+        super.visit(classOrInterfaceType, collection);
     }
 }

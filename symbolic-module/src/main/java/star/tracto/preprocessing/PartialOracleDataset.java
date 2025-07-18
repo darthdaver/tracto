@@ -35,7 +35,7 @@ public class PartialOracleDataset {
         String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
 
         long fileLimit = 1;
-        String folderPath = "symbolic-module/src/main/resources/dataset/partial-oracles/input"; 
+        String folderPath = "symbolic-module/src/main/resources/dataset/partial-oracles/input";
 
         File directory = new File("symbolic-module/src/main/resources/dataset/partial-oracles/output/" + timestamp);
 
@@ -50,7 +50,7 @@ public class PartialOracleDataset {
         } else {
             System.out.println("Directory already exists: " + directory.getAbsolutePath());
         }
-        
+
 
         try {
             // Define the filename pattern to match: oracles-datapoints-*.json
@@ -59,49 +59,49 @@ public class PartialOracleDataset {
             Files.walk(Paths.get(folderPath))
                     .filter(Files::isRegularFile) // Only process files, not directories
                     .filter(path -> filePattern.matcher(path.getFileName().toString()).matches()) // Match pattern
-                    .limit(fileLimit) 
+                    .limit(fileLimit)
                     .forEach(filePath -> {
 
-                    List<ArrayNode> allResults = new ArrayList<>();
+                        List<ArrayNode> allResults = new ArrayList<>();
 
-                    String finalJsonFilePath = "symbolic-module/src/main/resources/dataset/partial-oracles/output/"+ timestamp + "/" + timestamp + "_dataset_partialoracles_" + filePath.getFileName().toString();
+                        String finalJsonFilePath = "symbolic-module/src/main/resources/dataset/partial-oracles/output/"+ timestamp + "/" + timestamp + "_dataset_partialoracles_" + filePath.getFileName().toString();
 
-                    File finalJsonFile = new File(finalJsonFilePath);
-                    if(finalJsonFile.exists()){
-                        System.out.println("Skipping file: " + filePath);
-                        return;
-                    }
-                    
-                    if (filePath.getFileName().toString().contains("32104835")){
-                        System.out.println("Skipping file: " + filePath);
-                        return;
-                    }
+                        File finalJsonFile = new File(finalJsonFilePath);
+                        if(finalJsonFile.exists()){
+                            System.out.println("Skipping file: " + filePath);
+                            return;
+                        }
 
-                    System.out.println("\nChecking file: " + filePath);
-                        
-                    // Check if file matches the pattern
-                    if (Files.isRegularFile(filePath) && filePattern.matcher(filePath.getFileName().toString()).matches()) {
-                        System.out.println("Processing file: " + filePath);
+                        if (filePath.getFileName().toString().contains("32104835")){
+                            System.out.println("Skipping file: " + filePath);
+                            return;
+                        }
 
-                        // Define input and output paths for the function
-                        String inputJsonPath = filePath.toString();
-                        String outputJsonPath = filePath.getParent().resolve("output-" + filePath.getFileName()).toString();
+                        System.out.println("\nChecking file: " + filePath);
 
-                        // Call the function
-                        ArrayNode x = saveNextTokensToJson(inputJsonPath, outputJsonPath);
+                        // Check if file matches the pattern
+                        if (Files.isRegularFile(filePath) && filePattern.matcher(filePath.getFileName().toString()).matches()) {
+                            System.out.println("Processing file: " + filePath);
 
-                        // Collect the output paths for final aggregation
-                        allResults.add(x);
+                            // Define input and output paths for the function
+                            String inputJsonPath = filePath.toString();
+                            String outputJsonPath = filePath.getParent().resolve("output-" + filePath.getFileName()).toString();
 
-                        // After the loop, save the final aggregated result
-                        writeFinalJson(allResults, finalJsonFilePath);
-                        System.out.println("JSON file saved to: " + finalJsonFilePath);
-                        allResults.clear();
-                        // Optionally: System.gc();
+                            // Call the function
+                            ArrayNode x = saveNextTokensToJson(inputJsonPath, outputJsonPath);
 
-                    }
-                });
-                
+                            // Collect the output paths for final aggregation
+                            allResults.add(x);
+
+                            // After the loop, save the final aggregated result
+                            writeFinalJson(allResults, finalJsonFilePath);
+                            System.out.println("JSON file saved to: " + finalJsonFilePath);
+                            allResults.clear();
+                            // Optionally: System.gc();
+
+                        }
+                    });
+
 
             System.out.println("Processing completed.");
 
@@ -118,23 +118,23 @@ public class PartialOracleDataset {
         try {
             // Create a root node with the "processedFiles" array
             ArrayNode processedFilesNode = objectMapper.createArrayNode();
-    
+
             // Add all ArrayNodes to the "processedFiles" array
             for (ArrayNode arrayNode : outputJsonPaths) {
                 processedFilesNode.addAll(arrayNode);
             }
-    
+
             objectMapper
-                        .writerWithDefaultPrettyPrinter()
-                        .writeValue(new File(finalJsonFilePath), processedFilesNode);
-    
+                    .writerWithDefaultPrettyPrinter()
+                    .writeValue(new File(finalJsonFilePath), processedFilesNode);
+
             System.out.println("Final JSON file written to: " + finalJsonFilePath);
         } catch (IOException e) {
             System.err.println("Error writing final JSON file: " + finalJsonFilePath);
             e.printStackTrace();
         }
     }
-    
+
 
     /**
      * Reads a JSON file, processes the target field to determine next possible tokens,
@@ -143,7 +143,7 @@ public class PartialOracleDataset {
      * @param inputJsonPath  Path to the input JSON file.
      * @param outputJsonPath Path to the output JSON file.
      * @return ArrayNode containing the processed JSON objects.
-          */
+     */
     private static ArrayNode saveNextTokensToJson(String inputJsonPath, String outputJsonPath) {
         ObjectMapper objectMapper_root = new ObjectMapper();
         ObjectMapper objectMapper = new ObjectMapper();
@@ -151,9 +151,9 @@ public class PartialOracleDataset {
 
         // Define the set of literal tokens to be replaced with "LITERAL"
         Set<String> literalsSet = new HashSet<>(Arrays.asList(
-            "DECIMAL_LITERAL", "HEX_LITERAL", "OCT_LITERAL", "BINARY_LITERAL",
-            "FLOAT_LITERAL", "HEX_FLOAT_LITERAL", "BOOL_LITERAL",
-            "CHAR_LITERAL", "STRING_LITERAL"
+                "DECIMAL_LITERAL", "HEX_LITERAL", "OCT_LITERAL", "BINARY_LITERAL",
+                "FLOAT_LITERAL", "HEX_FLOAT_LITERAL", "BOOL_LITERAL",
+                "CHAR_LITERAL", "STRING_LITERAL"
         ));
 
 
@@ -164,7 +164,7 @@ public class PartialOracleDataset {
 
             // Each file in the dataset is composed as a list of lists (each elements in the list have the same focalClass and the same testClass. This complexity can be relaxed simply considering a flatten list.
 
-            
+
 
             ObjectNode outputObject = objectMapper.createObjectNode();
 
@@ -195,8 +195,6 @@ public class PartialOracleDataset {
                 for (JsonNode arrayItem : DatapointsNode) {
                     JsonNode targetNode = arrayItem.get("target");
 
-                    
-                    
 
                     JsonNode testPrefixNode = arrayItem.get("testPrefix");
                     JsonNode bodyNode = null;
@@ -254,7 +252,7 @@ public class PartialOracleDataset {
                             JsonNode focalMethods = focalClassNode.get("methods");
                             for (JsonNode method : focalMethods) {
                                 if (method.has("identifier")) {
-    
+
                                     String mName = method.get("identifier").asText();
                                     identifiers.add(mName);
                                 }
@@ -282,7 +280,7 @@ public class PartialOracleDataset {
                             identifiers.add(focalClassNode.get("identifier").asText());
                         }
 
-                        
+
                         ArrayNode tokenSteps = objectMapper.createArrayNode();
 
                         StringBuilder currentSnippet = new StringBuilder();
@@ -311,7 +309,7 @@ public class PartialOracleDataset {
 
                             // Find the signature of the method
                             List<String> signature = methodSignatures.get(tokens.get(i));
-                            
+
                             if (signature != null) {
                                 currentSnippetTypes.add(signature.get(0));
                             }
@@ -350,7 +348,7 @@ public class PartialOracleDataset {
                                             actualType = "Object";
                                         }
                                         //if (typesAreCompatible(actualType, expectedType)) {
-                                    
+
                                         adjustedNextConcreteTokens.add(id);
                                         //}
                                     }
@@ -364,8 +362,8 @@ public class PartialOracleDataset {
 
                             // Filter out abstract tokens that don't match expectedType
                             adjustedNextAbstractTokens = adjustedNextAbstractTokens.stream()
-                                //.filter(t -> shouldKeepAbstractToken(t, expectedType))
-                                .collect(Collectors.toList());
+                                    //.filter(t -> shouldKeepAbstractToken(t, expectedType))
+                                    .collect(Collectors.toList());
 
                             ObjectNode step = objectMapper.createObjectNode();
                             step.put("partialOracle", currentSnippet.toString());
@@ -376,16 +374,16 @@ public class PartialOracleDataset {
                             ArrayNode nextGenericTokensArray = step.putArray("genericTokens");
                             if (adjustedNextConcreteTokens.isEmpty() && adjustedNextAbstractTokens.isEmpty() &&  adjustedNextGenericTokens.isEmpty()) {
                                 step.put("isSyntaxCorrect", "true");
-                                if (i < tokens.size() - 1){ 
+                                if (i < tokens.size() - 1){
                                     step.put("target", tokens.get(i + 1));
                                 }else{
-                                     // Remove the last datapoint (equivalent to target)
+                                    // Remove the last datapoint (equivalent to target)
                                     continue;
                                 }
 
                             } else {
                                 step.put("isSyntaxCorrect", "false");
-                                if (i < tokens.size() - 1){ 
+                                if (i < tokens.size() - 1){
                                     step.put("target", tokens.get(i + 1));
                                 }
                             }
@@ -394,7 +392,7 @@ public class PartialOracleDataset {
                                 nextAbstractTokensArray.add(token);
                             }
 
-                            
+
 
                             if (!adjustedNextConcreteTokens.isEmpty()) {
                                 nextGenericTokensArray.add("IDENTIFIER");
@@ -439,13 +437,13 @@ public class PartialOracleDataset {
 
                         outputObject.put("focalClass", focalClassNode);
                         outputObject.put("testClass", testClassNode);
-                        
+
 
                         // Create a datapoint object and move the fields inside it
                         ObjectNode datapoint = objectMapper.createObjectNode();
                         System.out.println("Target: " + targetNode.asText().replace("\"", ""));
 
-                        
+
 
                         // Clean and set the testPrefix
                         ObjectNode cleanedTestPrefixNode = testPrefixCleaning(testPrefixNode);
@@ -477,12 +475,12 @@ public class PartialOracleDataset {
                         datapoints.add(datapoint);
 
                     }
-                       
+
                 }
-                
+
             }
 
-            
+
             outputObjectArray.add(outputObject);
 
 
@@ -532,12 +530,12 @@ public class PartialOracleDataset {
 
         // Subfields to remove from "methods" and "constructors"
         List<String> subfieldsToRemove = Arrays.asList(
-            "annotations", 
-            "modifiers", 
-            "thrownExceptions", 
-            "parameters", 
-            "returnType", 
-            "invokedMethods"
+                "annotations",
+                "modifiers",
+                "thrownExceptions",
+                "parameters",
+                "returnType",
+                "invokedMethods"
         );
 
         // Helper to remove subfields from an array node
@@ -587,11 +585,11 @@ public class PartialOracleDataset {
 
         // Fields to remove from testPrefixNode
         List<String> fieldsToRemove = Arrays.asList(
-            "annotations",
-            "modifiers",
-            "thrownExceptions",
-            "parameters",
-            "returnType"
+                "annotations",
+                "modifiers",
+                "thrownExceptions",
+                "parameters",
+                "returnType"
         );
 
         mutableNode.remove(fieldsToRemove);

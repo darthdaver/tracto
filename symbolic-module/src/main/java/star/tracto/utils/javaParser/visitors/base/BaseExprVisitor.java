@@ -2,14 +2,14 @@ package star.tracto.utils.javaParser.visitors.base;
 
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.Expression;
-import com.github.javaparser.ast.stmt.*;
+import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.visitor.VoidVisitorAdapter;
 
 import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the nodes <E>
- * that extends {@link com.github.javaparser.ast.expr.Expression} found.
+ * that extends {@link Expression} found.
  *
  */
 public abstract class BaseExprVisitor<E extends Expression> extends VoidVisitorAdapter<List<E>> {

@@ -1,14 +1,13 @@
 package star.tracto.utils.javaParser.visitors.types;
 
 import com.github.javaparser.ast.type.WildcardType;
-import com.github.javaparser.ast.type.WildcardType;
 import star.tracto.utils.javaParser.visitors.base.BaseTypeVisitor;
 
 import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.type.WildcardType} found.
+ * {@link WildcardType} found.
  *
  */
 public class WilcardTypeVisitor extends BaseTypeVisitor<WildcardType> {
@@ -21,7 +20,7 @@ public class WilcardTypeVisitor extends BaseTypeVisitor<WildcardType> {
      */
     @Override
     public void visit(WildcardType wildcardType, List<WildcardType> collection) {
-        super.visit(wildcardType, collection);
         addToCollection(wildcardType, collection);
+        super.visit(wildcardType, collection);
     }
 }

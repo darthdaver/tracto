@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.type.VoidType} found.
+ * {@link VoidType} found.
  *
  */
 public class VoidTypeVisitor extends BaseTypeVisitor<VoidType> {
@@ -20,7 +20,7 @@ public class VoidTypeVisitor extends BaseTypeVisitor<VoidType> {
      */
     @Override
     public void visit(VoidType voidType, List<VoidType> collection) {
-        super.visit(voidType, collection);
         addToCollection(voidType, collection);
+        super.visit(voidType, collection);
     }
 }

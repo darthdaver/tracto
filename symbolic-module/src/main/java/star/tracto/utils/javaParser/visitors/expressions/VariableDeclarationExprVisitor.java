@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.expr.VariableDeclarationExpr} found.
+ * {@link VariableDeclarationExpr} found.
  *
  */
 public class VariableDeclarationExprVisitor extends BaseExprVisitor<VariableDeclarationExpr> {
@@ -20,7 +20,7 @@ public class VariableDeclarationExprVisitor extends BaseExprVisitor<VariableDecl
      */
     @Override
     public void visit(VariableDeclarationExpr variableDeclarationExpr, List<VariableDeclarationExpr> collection) {
-        super.visit(variableDeclarationExpr, collection);
         addToCollection(variableDeclarationExpr, collection);
+        super.visit(variableDeclarationExpr, collection);
     }
 }

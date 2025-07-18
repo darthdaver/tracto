@@ -11,7 +11,7 @@ package star.tracto.preprocessing.components;
  */
 public record OracleDatapoint(
         /* The test prefix */
-        CallableTracto testPrefix,
+        Callable testPrefix,
         /* The target, i.e. the next assertion to generate */
         String target
 ) {}

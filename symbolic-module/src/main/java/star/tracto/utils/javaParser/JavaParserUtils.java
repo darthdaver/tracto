@@ -2,22 +2,15 @@ package star.tracto.utils.javaParser;
 
 import com.github.javaparser.JavaParser;
 import com.github.javaparser.ParserConfiguration;
-import com.github.javaparser.ast.CompilationUnit;
-import com.github.javaparser.ast.Modifier;
-import com.github.javaparser.ast.Node;
-import com.github.javaparser.ast.NodeList;
+import com.github.javaparser.ast.*;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.comments.JavadocComment;
-import com.github.javaparser.ast.expr.AnnotationExpr;
-import com.github.javaparser.ast.expr.Expression;
-import com.github.javaparser.ast.expr.MethodCallExpr;
-import com.github.javaparser.ast.expr.ObjectCreationExpr;
+import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.stmt.*;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.ReferenceType;
 import com.github.javaparser.ast.type.TypeParameter;
 import com.github.javaparser.resolution.MethodUsage;
-import com.github.javaparser.resolution.SymbolResolver;
 import com.github.javaparser.resolution.UnsolvedSymbolException;
 import com.github.javaparser.resolution.declarations.ResolvedMethodDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedParameterDeclaration;
@@ -32,14 +25,25 @@ import com.github.javaparser.symbolsolver.reflectionmodel.ReflectionMethodDeclar
 import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JarTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
-import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver;
-import com.github.javaparser.symbolsolver.utils.SymbolSolverCollectionStrategy;
 import org.javatuples.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import star.tracto.data.*;
+import star.tracto.data.enums.CallableExprType;
+import star.tracto.data.enums.JUnitAssertionType;
+import star.tracto.data.enums.NamingConvention;
+import star.tracto.data.exceptions.CandidateCallableDeclarationNotFoundException;
+import star.tracto.data.exceptions.CandidateCallableMethodUsageNotFoundException;
+import star.tracto.data.exceptions.MultipleCandidatesException;
+import star.tracto.data.exceptions.UnrecognizedExprException;
+import star.tracto.preprocessing.builders.TestClazzDatapointsBuilder;
+import star.tracto.preprocessing.components.OracleDatapoint;
+import star.tracto.preprocessing.components.PartialOracleDatapoint;
+import star.tracto.preprocessing.components.TestClazzDatapoints;
+import star.tracto.preprocessing.utils.TokensUtils;
 import star.tracto.utils.FilesUtils;
+import star.tracto.utils.javaParser.visitors.expressions.VariableDeclarationExprVisitor;
 import star.tracto.utils.javaParser.visitors.statements.helper.StmtVisitorHelper;
+
 import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -600,7 +604,7 @@ public class JavaParserUtils {
         // Define the list of potential projects roots and initialize it with an empty list
         List<Path> potentialProjectsRoots = new ArrayList<>();
 
-        if (rootPath.endsWith(TractoNamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())) {
+        if (rootPath.endsWith(NamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())) {
             return FilesUtils.listDirectories(rootPath);
         }
 
@@ -1421,6 +1425,94 @@ public class JavaParserUtils {
         return lastOccurrence;
     }
 
+    public static HashMap<String, VariableDeclarator> collectExistingVariables(
+            HashMap<String, VariableDeclarator> existingVariables,
+            BlockStmt blockStmt
+    ) {
+        VariableDeclarationExprVisitor varDeclarationExprCollector = new VariableDeclarationExprVisitor();
+        List<VariableDeclarationExpr> newVarDeclarationExprs = varDeclarationExprCollector.visit(blockStmt);
+        newVarDeclarationExprs.forEach(varDecl -> {
+            varDecl.getVariables().forEach(var -> {
+                String varName = var.getNameAsString();
+                if (!existingVariables.containsKey(varName)) {
+                    existingVariables.put(varName, var);
+                }
+            });
+        });
+        return existingVariables;
+    }
+
+    public static HashMap<String, VariableDeclarator> collectExistingVariables(
+            HashMap<String, VariableDeclarator> existingVariables,
+            List<FieldDeclaration> fieldDeclarations
+    ) {
+        for (FieldDeclaration fieldDecl : fieldDeclarations) {
+            for (VariableDeclarator varDecl : fieldDecl.getVariables()) {
+                String varName = varDecl.getNameAsString();
+                if (!existingVariables.containsKey(varName)) {
+                    existingVariables.put(varName, varDecl);
+                }
+            }
+        }
+        return existingVariables;
+    }
+
+    public static HashMap<String, TypeDeclaration> collectClassesInSamePackage(
+            HashMap<String, TypeDeclaration> existingClasses,
+            Path repoSourcePath,
+            CompilationUnit cu
+    ) {
+        String packageIdentifier = cu.getPackageDeclaration().toString();
+        Path pathToPackage = repoSourcePath.resolve(packageIdentifier.replace(".","/"));
+
+        try {
+            Files.walk(pathToPackage)
+                    .filter(Files::isRegularFile) // Only process files, not directories
+                    .filter(path -> path.endsWith(".java")) // Match pattern
+                    .forEach(filePath -> {
+                        try {
+                            CompilationUnit javaFileCu = JavaParserUtils.getCompilationUnit(filePath);
+                            Optional<TypeDeclaration<?>> typeDeclaration = javaFileCu.getPrimaryType();
+                            if (typeDeclaration.isPresent()) {
+                                existingClasses.put(typeDeclaration.get().getFullyQualifiedName().get().toString(), typeDeclaration.get());
+                            }
+                        } catch (Exception e) {
+                            logger.error("Failed to process compilation unit from file " + filePath + " in the same package of class " + cu.getPrimaryType().get().getNameAsString());
+                        }
+                    });
+        } catch (IOException e) {
+            logger.error("Failed to walk through java classes in the same package of class " + cu.getPrimaryType().get().getNameAsString());
+        }
+        return existingClasses;
+    }
+
+    /**
+     * Collect all the imported classes in a compilation unit.
+     *
+     * @param existingClasses the map of existing classes to update
+     * @param cu the compilation unit to process
+     * @return the map of existing classes updated with the imported classes
+     */
+    public static HashMap<String, TypeDeclaration> collectImportedClasses(
+            HashMap<String, TypeDeclaration> existingClasses,
+            Path repoSourcePath,
+            CompilationUnit cu
+    ) {
+        // Iterate over all the imports in the compilation unit
+        for (ImportDeclaration importDecl : cu.getImports()) {
+            // Get the fully qualified name of the imported class
+            String fqn = importDecl.getNameAsString();
+            // Retrieve the type declaration from the fully qualified name
+            Optional<TypeDeclaration> typeDeclOpt = retrieveTypeDeclarationFromFullyQualifiedName(fqn, repoSourcePath);
+            if (typeDeclOpt.isPresent()) {
+                TypeDeclaration typeDecl = typeDeclOpt.get();
+                // Add the type declaration to the map of existing classes
+                existingClasses.put(fqn, typeDecl);
+            }
+        }
+        return existingClasses;
+    }
+
     /**
      * Retrieve the last assertion, assuming it is in the last statement of a method declaration.
      *
@@ -1484,14 +1576,14 @@ public class JavaParserUtils {
         Path referencePath = repoSourcePath;
         List<Path> candidatePrefixPaths = new ArrayList<>();
         candidatePrefixPaths.add(repoSourcePath);
-        boolean hasLibFolder = FilesUtils.hasChildDirectory(referencePath, TractoNamingConvention.LIB_FOLDER.getConventionName());
+        boolean hasLibFolder = FilesUtils.hasChildDirectory(referencePath, NamingConvention.LIB_FOLDER.getConventionName());
         while(!hasLibFolder && !(referencePath.getParent() == null)) {
             referencePath = referencePath.getParent();
-            hasLibFolder = FilesUtils.hasChildDirectory(referencePath, TractoNamingConvention.LIB_FOLDER.getConventionName());
+            hasLibFolder = FilesUtils.hasChildDirectory(referencePath, NamingConvention.LIB_FOLDER.getConventionName());
         }
         if (hasLibFolder) {
             candidatePrefixPaths = FilesUtils.listDirectories(
-                    referencePath.resolve(TractoNamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())
+                    referencePath.resolve(NamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())
             );
         }
         candidatePrefixPaths.add(repoSourcePath);

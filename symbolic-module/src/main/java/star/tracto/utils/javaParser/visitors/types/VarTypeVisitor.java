@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.type.VarType} found.
+ * {@link VarType} found.
  *
  */
 public class VarTypeVisitor extends BaseTypeVisitor<VarType> {
@@ -20,7 +20,7 @@ public class VarTypeVisitor extends BaseTypeVisitor<VarType> {
      */
     @Override
     public void visit(VarType varType, List<VarType> collection) {
-        super.visit(varType, collection);
         addToCollection(varType, collection);
+        super.visit(varType, collection);
     }
 }

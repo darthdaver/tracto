@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the nodes <B>
- * that extends {@link com.github.javaparser.ast.body.BodyDeclaration} found.
+ * that extends {@link BodyDeclaration} found.
  *
  */
 public abstract class BaseDeclarationVisitor<B extends BodyDeclaration> extends VoidVisitorAdapter<List<B>> {

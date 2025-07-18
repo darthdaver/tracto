@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.stmt.ExplicitConstructorInvocationStmt} found.
+ * {@link ExplicitConstructorInvocationStmt} found.
  *
  */
 public class ExplicitConstructorInvocationStmtVisitor extends BaseStmtVisitor<ExplicitConstructorInvocationStmt> {
@@ -20,7 +20,7 @@ public class ExplicitConstructorInvocationStmtVisitor extends BaseStmtVisitor<Ex
      */
     @Override
     public void visit(ExplicitConstructorInvocationStmt explicitConstructorInvocationStmt, List<ExplicitConstructorInvocationStmt> collection) {
-        super.visit(explicitConstructorInvocationStmt, collection);
         addToCollection(explicitConstructorInvocationStmt, collection);
+        super.visit(explicitConstructorInvocationStmt, collection);
     }
 }

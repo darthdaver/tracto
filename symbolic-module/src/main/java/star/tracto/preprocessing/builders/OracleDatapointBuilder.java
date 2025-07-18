@@ -1,11 +1,10 @@
 package star.tracto.preprocessing.builders;
 
 import star.tracto.preprocessing.components.*;
-import java.util.List;
 
 public class OracleDatapointBuilder {
 
-    private CallableTracto testPrefix;
+    private Callable testPrefix;
     private String target;
 
     public OracleDatapoint build() {
@@ -20,7 +19,7 @@ public class OracleDatapointBuilder {
      *
      * @param testPrefix the test prefix
      */
-    public void setTestClass(CallableTracto testPrefix) {
+    public void setTestPrefix(Callable testPrefix) {
         this.testPrefix = testPrefix;
     }
 

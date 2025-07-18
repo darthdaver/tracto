@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.stmt.WhileStmt} found.
+ * {@link WhileStmt} found.
  *
  */
 public class WhileStmtVisitor extends BaseStmtVisitor<WhileStmt> {
@@ -20,7 +20,7 @@ public class WhileStmtVisitor extends BaseStmtVisitor<WhileStmt> {
      */
     @Override
     public void visit(WhileStmt whileStmt, List<WhileStmt> collection) {
-        super.visit(whileStmt, collection);
         addToCollection(whileStmt, collection);
+        super.visit(whileStmt, collection);
     }
 }

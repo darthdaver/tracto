@@ -1,7 +1,7 @@
 package star.tracto.preprocessing.builders;
 
-import star.tracto.preprocessing.components.FieldTracto;
-import star.tracto.preprocessing.components.TypeTracto;
+import star.tracto.preprocessing.components.Field;
+import star.tracto.preprocessing.components.Type;
 
 import java.util.List;
 
@@ -10,10 +10,10 @@ public class FieldBuilder {
     private String signature;
     private String declarator;
     private List<String> modifiers;
-    private TypeTracto type;
+    private Type type;
 
-    public FieldTracto build() {
-        return new FieldTracto(
+    public Field build() {
+        return new Field(
             this.identifier,
             this.signature,
             this.declarator,
@@ -63,7 +63,7 @@ public class FieldBuilder {
      *
      * @param type the type of the field
      */
-    public void setType(TypeTracto type) {
+    public void setType(Type type) {
         this.type = type;
     }
 

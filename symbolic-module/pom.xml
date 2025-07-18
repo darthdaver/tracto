@@ -147,6 +147,11 @@
             <artifactId>jackson-databind</artifactId>
             <version>2.14.2</version>
         </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jdk8</artifactId>
+            <version>2.14.2</version> <!-- match your Jackson core version -->
+        </dependency>
         <!-- Javaparser -->
         <dependency>
             <groupId>com.github.javaparser</groupId>

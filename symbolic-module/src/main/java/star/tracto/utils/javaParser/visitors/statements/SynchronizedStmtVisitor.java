@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.stmt.SynchronizedStmt} found.
+ * {@link SynchronizedStmt} found.
  *
  */
 public class SynchronizedStmtVisitor extends BaseStmtVisitor<SynchronizedStmt> {
@@ -20,7 +20,7 @@ public class SynchronizedStmtVisitor extends BaseStmtVisitor<SynchronizedStmt> {
      */
     @Override
     public void visit(SynchronizedStmt synchronizedStmt, List<SynchronizedStmt> collection) {
-        super.visit(synchronizedStmt, collection);
         addToCollection(synchronizedStmt, collection);
+        super.visit(synchronizedStmt, collection);
     }
 }

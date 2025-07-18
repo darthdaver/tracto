@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.stmt.LocalRecordDeclarationStmt} found.
+ * {@link LocalRecordDeclarationStmt} found.
  *
  */
 public class LocalRecordDeclarationStmtVisitor extends BaseStmtVisitor<LocalRecordDeclarationStmt> {
@@ -20,7 +20,7 @@ public class LocalRecordDeclarationStmtVisitor extends BaseStmtVisitor<LocalReco
      */
     @Override
     public void visit(LocalRecordDeclarationStmt localRecordDeclarationStmt, List<LocalRecordDeclarationStmt> collection) {
-        super.visit(localRecordDeclarationStmt, collection);
         addToCollection(localRecordDeclarationStmt, collection);
+        super.visit(localRecordDeclarationStmt, collection);
     }
 }

@@ -1,6 +1,6 @@
 {
   "split": "assertion",
-  "try-catch-finally": "flat",
+  "try-catch-finally": "standard",
   "statement": "keep",
   "condition": "keep",
   "assertion": "mask",

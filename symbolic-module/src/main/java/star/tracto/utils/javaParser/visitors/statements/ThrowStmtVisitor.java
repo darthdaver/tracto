@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.stmt.ThrowStmt} found.
+ * {@link ThrowStmt} found.
  *
  */
 public class ThrowStmtVisitor extends BaseStmtVisitor<ThrowStmt> {
@@ -20,7 +20,7 @@ public class ThrowStmtVisitor extends BaseStmtVisitor<ThrowStmt> {
      */
     @Override
     public void visit(ThrowStmt throwStmt, List<ThrowStmt> collection) {
-        super.visit(throwStmt, collection);
         addToCollection(throwStmt, collection);
+        super.visit(throwStmt, collection);
     }
 }

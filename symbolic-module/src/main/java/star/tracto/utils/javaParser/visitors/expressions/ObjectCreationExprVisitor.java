@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.expr.ObjectCreationExpr} found.
+ * {@link ObjectCreationExpr} found.
  *
  */
 public class ObjectCreationExprVisitor extends BaseExprVisitor<ObjectCreationExpr> {
@@ -20,7 +20,7 @@ public class ObjectCreationExprVisitor extends BaseExprVisitor<ObjectCreationExp
      */
     @Override
     public void visit(ObjectCreationExpr objCreationExprStmt, List<ObjectCreationExpr> collection) {
-        super.visit(objCreationExprStmt, collection);
         addToCollection(objCreationExprStmt, collection);
+        super.visit(objCreationExprStmt, collection);
     }
 }

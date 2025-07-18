@@ -1,8 +1,8 @@
 package star.tracto.preprocessing.builders;
 
 import org.javatuples.Pair;
-import star.tracto.preprocessing.components.CallableTracto;
-import star.tracto.preprocessing.components.TypeTracto;
+import star.tracto.preprocessing.components.Callable;
+import star.tracto.preprocessing.components.Type;
 
 import java.util.List;
 
@@ -15,14 +15,14 @@ public class CallableBuilder {
     private String fullSignature;
     private String classTestMethodSignature;
     private List<String> thrownExceptions;
-    private List<Pair<String, TypeTracto>> parameters;
-    private TypeTracto returnType;
+    private List<Callable.Parameter> parameters;
+    private Type returnType;
     private String javadoc;
     private String body;
-    private List<CallableTracto> invokedMethods;
+    private List<Callable> invokedMethods;
 
-    public CallableTracto build() {
-        return new CallableTracto(
+    public Callable build() {
+        return new Callable(
                 this.identifier,
                 this.annotations,
                 this.modifiers,
@@ -96,7 +96,7 @@ public class CallableBuilder {
      *
      * @param parameters the test method parameters
      */
-    public void setParameters(List<Pair<String, TypeTracto>> parameters) {
+    public void setParameters(List<Callable.Parameter> parameters) {
         this.parameters = parameters;
     }
 
@@ -123,7 +123,7 @@ public class CallableBuilder {
      *
      * @param returnType the test method return type
      */
-    public void setReturnType(TypeTracto returnType) {
+    public void setReturnType(Type returnType) {
         this.returnType = returnType;
     }
 
@@ -132,7 +132,7 @@ public class CallableBuilder {
      *
      * @param invokedMethods the list of methods invoked within the method. It can be null
      */
-    public void setInvokedMethods(List<CallableTracto> invokedMethods) {
+    public void setInvokedMethods(List<Callable> invokedMethods) {
         this.invokedMethods = invokedMethods;
     }
 }

@@ -1,15 +1,13 @@
 package star.tracto.utils.javaParser.visitors.types;
 
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.type.ArrayType;
-import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import star.tracto.utils.javaParser.visitors.base.BaseTypeVisitor;
 
 import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.type.ArrayType} found.
+ * {@link ArrayType} found.
  *
  */
 public class ArrayTypeVisitor extends BaseTypeVisitor<ArrayType> {
@@ -22,7 +20,7 @@ public class ArrayTypeVisitor extends BaseTypeVisitor<ArrayType> {
      */
     @Override
     public void visit(ArrayType arrayType, List<ArrayType> collection) {
-        super.visit(arrayType, collection);
         addToCollection(arrayType, collection);
+        super.visit(arrayType, collection);
     }
 }

@@ -1,6 +1,5 @@
 import logging
 import os
-import sys
 
 class Logger:
     """

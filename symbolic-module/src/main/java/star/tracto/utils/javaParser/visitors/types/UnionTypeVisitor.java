@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.type.UnionType} found.
+ * {@link UnionType} found.
  *
  */
 public class UnionTypeVisitor extends BaseTypeVisitor<UnionType> {
@@ -20,7 +20,7 @@ public class UnionTypeVisitor extends BaseTypeVisitor<UnionType> {
      */
     @Override
     public void visit(UnionType unionType, List<UnionType> collection) {
-        super.visit(unionType, collection);
         addToCollection(unionType, collection);
+        super.visit(unionType, collection);
     }
 }

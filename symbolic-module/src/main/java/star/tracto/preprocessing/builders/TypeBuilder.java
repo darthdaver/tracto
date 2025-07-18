@@ -1,8 +1,9 @@
 package star.tracto.preprocessing.builders;
 
-import star.tracto.preprocessing.components.ClassTracto;
-import star.tracto.preprocessing.components.TypeTracto;
+import star.tracto.preprocessing.components.Clazz;
+import star.tracto.preprocessing.components.Type;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -14,17 +15,17 @@ public class TypeBuilder {
     private boolean isPrimitive;
     private boolean isGeneric;
     private int arrayLevel;
-    private List<ClassTracto> clazzes;
+    private List<Clazz> clazzes;
 
-    public TypeTracto build() {
-        return new TypeTracto(
+    public Type build() {
+        return new Type(
                 this.identifier,
                 this.fullyQualifiedIdentifiers,
                 this.isVoid,
                 this.isPrimitive,
                 this.isGeneric,
                 this.arrayLevel,
-                this.clazzes.size() > 0 ? Optional.of(this.clazzes) : Optional.empty()
+                this.clazzes.size() > 0 ? this.clazzes : new ArrayList<>()
         );
     }
 
@@ -89,9 +90,9 @@ public class TypeBuilder {
     /**
      * Set the class of the type.
      *
-     * @param classTracto the class of the type. It can be null
+     * @param clazz the class of the type. It can be null
      */
-    public void setClazzes(List<ClassTracto> classTracto) {
-        this.clazzes = classTracto;
+    public void setClazzes(List<Clazz> clazz) {
+        this.clazzes = clazz;
     }
 }

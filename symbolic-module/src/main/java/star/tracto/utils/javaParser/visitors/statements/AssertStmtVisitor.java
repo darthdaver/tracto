@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.stmt.AssertStmt} found.
+ * {@link AssertStmt} found.
  *
  */
 public class AssertStmtVisitor extends BaseStmtVisitor<AssertStmt> {
@@ -20,7 +20,7 @@ public class AssertStmtVisitor extends BaseStmtVisitor<AssertStmt> {
      */
     @Override
     public void visit(AssertStmt assertStmt, List<AssertStmt> collection) {
-        super.visit(assertStmt, collection);
         addToCollection(assertStmt, collection);
+        super.visit(assertStmt, collection);
     }
 }

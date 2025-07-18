@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.type.PrimitiveType} found.
+ * {@link PrimitiveType} found.
  *
  */
 public class PrimitiveTypeVisitor extends BaseTypeVisitor<PrimitiveType> {
@@ -20,7 +20,7 @@ public class PrimitiveTypeVisitor extends BaseTypeVisitor<PrimitiveType> {
      */
     @Override
     public void visit(PrimitiveType primitiveType, List<PrimitiveType> collection) {
-        super.visit(primitiveType, collection);
         addToCollection(primitiveType, collection);
+        super.visit(primitiveType, collection);
     }
 }

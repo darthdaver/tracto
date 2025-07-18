@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.stmt.ContinueStmt} found.
+ * {@link ContinueStmt} found.
  *
  */
 public class ContinueStmtVisitor extends BaseStmtVisitor<ContinueStmt> {
@@ -20,7 +20,7 @@ public class ContinueStmtVisitor extends BaseStmtVisitor<ContinueStmt> {
      */
     @Override
     public void visit(ContinueStmt continueStmt, List<ContinueStmt> collection) {
-        super.visit(continueStmt, collection);
         addToCollection(continueStmt, collection);
+        super.visit(continueStmt, collection);
     }
 }

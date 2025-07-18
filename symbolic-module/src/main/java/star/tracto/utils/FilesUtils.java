@@ -1,11 +1,18 @@
 package star.tracto.utils;
 
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.github.javaparser.ast.CompilationUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import star.tracto.preprocessing.components.OracleDatapoint;
+import star.tracto.preprocessing.components.TestClazzDatapoints;
 
+import java.io.BufferedWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -105,6 +112,24 @@ public class FilesUtils {
     }
 
     /**
+     * Reads a JSON file containing a list and maps it to a Java record.
+     *
+     * @param path the path to the file
+     * @param clazz the class of the objects to read
+     * @return the list of Java record representing the JSON file
+     * @throws Error if an error occurs while reading the file
+     */
+    public static <T> List<T> readJSONList(Path path, JavaType javaType) {
+        try {
+            ObjectMapper objectMapper = new ObjectMapper();
+            objectMapper.registerModule(new Jdk8Module());
+            return objectMapper.readValue(path.toFile(), javaType);
+        } catch (IOException e) {
+            throw new Error("Error when reading file " + path, e);
+        }
+    }
+
+    /**
      * Writes an object representing a compilation unit to a Java file.
      *
      * @param path the path to the file
@@ -192,5 +217,24 @@ public class FilesUtils {
      */
     public static boolean hasChildDirectory(Path parent, String child) {
         return listDirectories(parent).stream().anyMatch(p -> p.getFileName().toString().equals(child));
+    }
+
+    /**
+     * Writes a chunk of datapoints to a JSON file.
+     *
+     * @param chunk the list of datapoints to write
+     * @param fileCounter the counter for the file name
+     * @param outputPath the path where the file will be written
+     * @param projectIdentifier the project identifier to include in the file name
+     * @param objectMapper the ObjectMapper instance to use for writing JSON
+     * @throws IOException if an error occurs while writing the file
+     */
+    public static <T> void writeChunkToFile(List<TestClazzDatapoints<T>> chunk, int fileCounter, Path outputPath, String projectIdentifier, ObjectMapper objectMapper) throws IOException {
+        Path outputFile = Paths.get(outputPath.toString(), String.format("oracles-datapoints-%s-%d.json", projectIdentifier, fileCounter));
+        FilesUtils.createFile(outputFile);
+        try (BufferedWriter writer = Files.newBufferedWriter(outputFile, StandardCharsets.UTF_8);
+             JsonGenerator jsonGenerator = objectMapper.getFactory().createGenerator(writer)) {
+            objectMapper.writeValue(jsonGenerator, chunk);
+        }
     }
 }

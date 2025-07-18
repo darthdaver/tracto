@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.stmt.SwitchStmt} found.
+ * {@link SwitchStmt} found.
  *
  */
 public class SwitchStmtVisitor extends BaseStmtVisitor<SwitchStmt> {
@@ -20,7 +20,7 @@ public class SwitchStmtVisitor extends BaseStmtVisitor<SwitchStmt> {
      */
     @Override
     public void visit(SwitchStmt switchStmt, List<SwitchStmt> collection) {
-        super.visit(switchStmt, collection);
         addToCollection(switchStmt, collection);
+        super.visit(switchStmt, collection);
     }
 }

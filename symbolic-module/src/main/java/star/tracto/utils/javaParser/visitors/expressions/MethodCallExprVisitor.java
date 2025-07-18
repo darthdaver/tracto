@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.expr.MethodCallExpr} found.
+ * {@link MethodCallExpr} found.
  *
  */
 public class MethodCallExprVisitor extends BaseExprVisitor<MethodCallExpr> {
@@ -20,7 +20,7 @@ public class MethodCallExprVisitor extends BaseExprVisitor<MethodCallExpr> {
      */
     @Override
     public void visit(MethodCallExpr methodCallExprStmt, List<MethodCallExpr> collection) {
-        super.visit(methodCallExprStmt, collection);
         addToCollection(methodCallExprStmt, collection);
+        super.visit(methodCallExprStmt, collection);
     }
 }

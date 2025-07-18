@@ -1,6 +1,5 @@
 package star.tracto.utils.javaParser.visitors.types;
 
-import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.IntersectionType;
 import star.tracto.utils.javaParser.visitors.base.BaseTypeVisitor;
 
@@ -8,7 +7,7 @@ import java.util.List;
 
 /**
  * The class visit a node (and all its descendants within the AST) and collects all the
- * {@link com.github.javaparser.ast.type.IntersectionType} found.
+ * {@link IntersectionType} found.
  *
  */
 public class IntersectionTypeVisitor extends BaseTypeVisitor<IntersectionType> {
@@ -21,7 +20,7 @@ public class IntersectionTypeVisitor extends BaseTypeVisitor<IntersectionType> {
      */
     @Override
     public void visit(IntersectionType intersectionType, List<IntersectionType> collection) {
-        super.visit(intersectionType, collection);
         addToCollection(intersectionType, collection);
+        super.visit(intersectionType, collection);
     }
 }
