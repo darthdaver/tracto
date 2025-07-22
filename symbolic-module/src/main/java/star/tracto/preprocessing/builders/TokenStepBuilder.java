@@ -29,7 +29,7 @@ public class TokenStepBuilder {
      *
      * @param partialSnippet the partial oracle
      */
-    public void setTestPrefix(String partialSnippet) {
+    public void setPartialSnippet(String partialSnippet) {
         this.partialSnippet = partialSnippet;
     }
 
@@ -76,5 +76,14 @@ public class TokenStepBuilder {
      */
     public void setTarget(String target) {
         this.target = target;
+    }
+
+    /**
+     * Get the partialSnippet.
+     *
+     * @param
+     */
+    public String getPartialSnippet() {
+        return partialSnippet;
     }
 }

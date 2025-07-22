@@ -1,40 +1,31 @@
 package star.tracto.preprocessing;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JavaType;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
-import com.github.javaparser.JavaParser;
-import com.github.javaparser.ParseResult;
-import com.github.javaparser.ast.CompilationUnit;
-import com.github.javaparser.ast.body.VariableDeclarator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import star.tracto.SymbolicModule;
 import star.tracto.data.records.OraclesDatasetConfig;
-import star.tracto.lsp.antlr4.Antlr4Utils;
-import star.tracto.preprocessing.builders.TestClazzDatapointsBuilder;
 import star.tracto.preprocessing.components.OracleDatapoint;
 import star.tracto.preprocessing.components.PartialOracleDatapoint;
 import star.tracto.preprocessing.components.TestClazzDatapoints;
-import star.tracto.preprocessing.components.TokenStep;
 import star.tracto.preprocessing.utils.TokensUtils;
 import star.tracto.utils.FilesUtils;
 import star.tracto.utils.javaParser.JavaParserUtils;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 // antlr4 -Dlanguage=Java ./grammars/JavaLexer.g4 ./grammars/JavaParser.g4
 
 public class TokensDataset {
+
+    /* The logger for the class. */
+    private static final Logger logger = LoggerFactory.getLogger(TokensUtils.class);
 
     public static void generate(Path repoRootPath, Path outputPath, Path configPath, String projectIdentifier, String classpath) throws IOException {
         // Update classpath with the libraries paths
@@ -54,6 +45,8 @@ public class TokensDataset {
         FilesUtils.createDirectories(outputStatisticsPath);
         // Setup the repository root path for JavaParser
         JavaParserUtils.setRepoJavaParser(repoRootPath, classpath);
+        // Convert statistics to JSON
+        ObjectMapper objectMapper = new ObjectMapper();
         // Define the filename pattern to match: oracles-datapoints-*.json
         Pattern filePattern = Pattern.compile(".*oracles-datapoints-.*\\.json");
         ObjectMapper mapper = new ObjectMapper();
@@ -64,12 +57,28 @@ public class TokensDataset {
                 .filter(Files::isRegularFile) // Only process files, not directories
                 .filter(path -> filePattern.matcher(path.getFileName().toString()).matches()) // Match pattern
                 .forEach(filePath -> {
-                    TestClazzDatapointsBuilder<PartialOracleDatapoint> testClazzDatapointsBuilder = new TestClazzDatapointsBuilder<>();
-                    List<PartialOracleDatapoint> partialOracleDatapoints = new ArrayList<>();
-                    List<TestClazzDatapoints<OracleDatapoint>> testClazzDatapoints = FilesUtils.readJSONList(filePath, listType);
-                    for (TestClazzDatapoints testClazzDatapoint : testClazzDatapoints) {
-                        TokensUtils.generateTokenSteps(oraclesDatasetConfig, repoRootPath, testClazzDatapoint);
+                    List<List<PartialOracleDatapoint>> testClazzTokensDatapoints = new ArrayList<>();
+                    List<TestClazzDatapoints<OracleDatapoint>> testClazzOraclesDatapoints = FilesUtils.readJSONList(filePath, listType);
+                    for (TestClazzDatapoints testClazzDatapoint : testClazzOraclesDatapoints) {
+                        try {
+                            TestClazzDatapoints testClazzDatapoints = TokensUtils.generateTokenSteps(oraclesDatasetConfig, repoRootPath, testClazzDatapoint);
+                            testClassesPartialOracleDatapoints.add(testClazzDatapoints);
+                        } catch (IllegalStateException e) {
+                            logger.error(e.getMessage().toString());
+                        }
+                    }
+                    // Save it in a json file
+                    logger.info("Datapoints processed: {}", testClassesPartialOracleDatapoints.size());
+
+                    // Convert individual data points to JSON to estimate their size
+                    String dataPointJSON = null;
+                    try {
+                        dataPointJSON = objectMapper.writeValueAsString(testClassesPartialOracleDatapoints);
+                        FilesUtils.writeJSONFile(outputDatasetPath.resolve(filePath.getFileName().toString()), dataPointJSON);
+                    } catch (JsonProcessingException e) {
+                        throw new RuntimeException(e);
                     }
                 });
+
     }
 }

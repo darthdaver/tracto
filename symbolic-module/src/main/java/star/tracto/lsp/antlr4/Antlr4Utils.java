@@ -3,6 +3,9 @@ package star.tracto.lsp.antlr4;
 import org.antlr.v4.runtime.*;
 import star.tracto.lsp.antlr4.antlr4Class.JavaLexer;
 import star.tracto.lsp.antlr4.antlr4Class.JavaParser;
+import star.tracto.lsp.antlr4.antlr4Class.JavaParserListener;
+import star.tracto.lsp.antlr4.antlr4Class.JavaParserBaseListener;
+
 
 import java.util.ArrayList;
 import java.util.List;
@@ -114,4 +117,29 @@ public class Antlr4Utils {
         // Return the next possible tokens
         return errorListener.getNextTokens();
     }
+
+    /**
+     * Given a literal token type, return its corresponding Java type.
+     */
+    public static String getLiteralType(String literalTokenType) {
+        switch (literalTokenType) {
+            case "DECIMAL_LITERAL":
+            case "HEX_LITERAL":
+            case "OCT_LITERAL":
+            case "BINARY_LITERAL":
+                return "int";
+            case "FLOAT_LITERAL":
+            case "HEX_FLOAT_LITERAL":
+                return "float";
+            case "BOOL_LITERAL":
+                return "boolean";
+            case "CHAR_LITERAL":
+                return "char";
+            case "STRING_LITERAL":
+                return "String";
+            default:
+                return "Object";
+        }
+    }
+
 }

@@ -1,4 +1,5 @@
 package star.tracto.lsp.antlr4.antlr4Class;
+// Generated from /Users/luca/Documents/USI/tracto/symbolic-module/src/main/java/star/tracto/lsp/antlr4/grammars/JavaParser.g4 by ANTLR 4.13.2
 
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.tree.ErrorNode;
