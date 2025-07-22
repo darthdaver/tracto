@@ -1462,10 +1462,9 @@ public class JavaParserUtils {
             Path repoSourcePath,
             CompilationUnit cu
     ) {
-        String packageIdentifier = cu.getPackageDeclaration().toString();
-        Path pathToPackage = repoSourcePath.resolve(packageIdentifier.replace(".","/"));
-
         try {
+            String packageIdentifier = cu.getPackageDeclaration().orElseThrow(IllegalStateException::new).getNameAsString();
+            Path pathToPackage = repoSourcePath.resolve(packageIdentifier.replace(".","/"));
             Files.walk(pathToPackage)
                     .filter(Files::isRegularFile) // Only process files, not directories
                     .filter(path -> path.endsWith(".java")) // Match pattern
@@ -1482,6 +1481,8 @@ public class JavaParserUtils {
                     });
         } catch (IOException e) {
             logger.error("Failed to walk through java classes in the same package of class " + cu.getPrimaryType().get().getNameAsString());
+        } catch (IllegalStateException e) {
+            logger.error("Package declaration not found in compilation unit from file " + cu.getPrimaryType().get().getNameAsString());
         }
         return existingClasses;
     }
