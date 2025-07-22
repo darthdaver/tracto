@@ -1467,7 +1467,7 @@ public class JavaParserUtils {
             Path pathToPackage = repoSourcePath.resolve(packageIdentifier.replace(".","/"));
             Files.walk(pathToPackage)
                     .filter(Files::isRegularFile) // Only process files, not directories
-                    .filter(path -> path.endsWith(".java")) // Match pattern
+                    .filter(path -> path.toString().endsWith(".java")) // Match pattern
                     .forEach(filePath -> {
                         try {
                             CompilationUnit javaFileCu = JavaParserUtils.getCompilationUnit(filePath);

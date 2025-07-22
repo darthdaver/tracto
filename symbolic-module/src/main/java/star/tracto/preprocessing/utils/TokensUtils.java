@@ -51,7 +51,10 @@ public class TokensUtils {
         List<OracleDatapoint> datapoints = testClazzDatapoints.datapoints();
         Path testFilePath = repoRootPath.resolve(testClazzDatapoints.testClass().filePath().substring(1));
         Path focalFilePath = repoRootPath.resolve(testClazzDatapoints.focalClass().filePath().substring(1));
+        String fqnTestClass = testClazzDatapoints.testClass().packageIdentifier() + "." + testClazzDatapoints.testClass().identifier();
         String fqnFocalClass = testClazzDatapoints.focalClass().packageIdentifier() + "." + testClazzDatapoints.focalClass().identifier();
+        // Get the path of the test directory of the repository
+        Path repoTestPath = Path.of(testFilePath.toString().replace(FilesUtils.getFQNPath(fqnTestClass).toString(), ""));
         // Get the path of the source directory of the repository
         Path repoSourcePath = Path.of(focalFilePath.toString().replace(FilesUtils.getFQNPath(fqnFocalClass).toString(), ""));
         
@@ -112,7 +115,7 @@ public class TokensUtils {
                         HashMap<String, VariableDeclarator> fcVariablesMap = JavaParserUtils.collectExistingVariables(new HashMap<>(), focalClass.getFields());
                         // TC_IMPORTED_CLASS_NAME
                         HashMap<String, TypeDeclaration> tcImportedClassesMap = JavaParserUtils.collectImportedClasses(new HashMap<>(), repoSourcePath, tcCu);
-                        JavaParserUtils.collectClassesInSamePackage(tcImportedClassesMap, repoSourcePath, tcCu);
+                        JavaParserUtils.collectClassesInSamePackage(tcImportedClassesMap, repoTestPath, tcCu);
                         // FC_IMPORTED_CLASS_NAME
                         HashMap<String, TypeDeclaration> fcImportedClassesMap = JavaParserUtils.collectImportedClasses(new HashMap<>(), repoSourcePath, fcCu);
                         JavaParserUtils.collectClassesInSamePackage(fcImportedClassesMap, repoSourcePath, fcCu);
