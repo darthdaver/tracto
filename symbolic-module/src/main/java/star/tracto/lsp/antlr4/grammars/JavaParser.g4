@@ -536,7 +536,7 @@ assign_operators : '=' | '+=' | '-=' | '*=' | '/=' | '&=' | '|=' | '^=' | '>>=' 
 expression
     // Expression order in accordance with https://introcs.cs.princeton.edu/java/11precedence/
     // Level 16, Primary, array and member access
-    : primary                                                       #PrimaryExpression
+    : primarymini                                                       #PrimaryExpression
     | expression '[' expression ']'                                 #SquareBracketExpression
     | expression bop = '.' (
         identifier
@@ -549,8 +549,8 @@ expression
     // Method calls and method references are part of primary, and hence level 16 precedence
     | methodCall                                                    #MethodCallExpression
     | expression '::' typeArguments? identifier                     #MethodReferenceExpression
-    | typeType '::' (typeArguments? identifier | NEW)               #MethodReferenceExpression
-    | classType '::' typeArguments? NEW                             #MethodReferenceExpression
+    //| typeType '::' (typeArguments? identifier | NEW)               #MethodReferenceExpression
+    //| classType '::' typeArguments? NEW                             #MethodReferenceExpression
     
 
     // Level 15 Post-increment/decrement operators
@@ -638,6 +638,16 @@ lambdaParameters
 lambdaBody
     : expression
     | block
+    ;
+
+primarymini
+    : '(' expression ')'
+    | THIS
+    //| SUPER
+    | literal
+    //| identifier
+    //| typeTypeOrVoid '.' CLASS
+    | nonWildcardTypeArguments (explicitGenericInvocationSuffix | THIS arguments)
     ;
 
 primary

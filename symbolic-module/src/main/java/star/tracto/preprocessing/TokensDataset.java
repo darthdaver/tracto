@@ -67,6 +67,7 @@ public class TokensDataset {
                             logger.error(e.getMessage().toString());
                         }
                     }
+
                     // Save it in a json file
                     logger.info("Datapoints processed: {}", testClassesPartialOracleDatapoints.size());
 

@@ -160,16 +160,6 @@ public class TokensUtils {
                                 throw exception;
                             }
 
-                            /*if (nextANTLRTokens.isEmpty() || i == (tokens.size() - 1) ) ) {
-                                tokenStepBuilder.setNextPossibleGenericTokens(new ArrayList<>());
-                                tokenStepBuilder.setNextPossibleProjectTokens(new ArrayList<>());
-                                tokenStepBuilder.setNextPossibleJavaTokens(new ArrayList<>());
-                                tokenStepBuilder.setSyntaxCorrect(true);
-                                tokenStepBuilder.setTarget(";");
-                                tokenSteps.add(tokenStepBuilder.build());
-                                break;
-                            }*/
-
                             // Adjust nextTokens by replacing literals and IDENTIFIER tokens
                             List<Pair<String, JavaTokenType>> adjustedNextJavaTokens = new ArrayList<>();
                             List<Pair<String, ConcreteTokenType>> adjustedNextConcreteTokens = new ArrayList<>();
@@ -180,7 +170,7 @@ public class TokensUtils {
 
                             for (String nextANTLRToken : nextANTLRTokens) {
                                 // A token can be: a Java token, a literal, an identifier
-                                if (literalsSet.contains(token)) {
+                                if (literalsSet.contains(nextANTLRToken)) {
                                     // It's a literal: determine its type
                                     String literalType = Antlr4Utils.getLiteralType(nextANTLRToken);
                                     // Only add if compatible
