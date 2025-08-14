@@ -1,44 +1,110 @@
 package star.tracto.lsp.antlr4;
 
+import com.github.javaparser.ast.body.TypeDeclaration;
+import com.vmware.antlr4c3.CodeCompletionCore;
 import org.antlr.v4.runtime.*;
+import org.javatuples.Pair;
+import star.tracto.data.enums.*;
 import star.tracto.lsp.antlr4.antlr4Class.JavaLexer;
 import star.tracto.lsp.antlr4.antlr4Class.JavaParser;
 import star.tracto.lsp.antlr4.antlr4Class.JavaParserListener;
 import star.tracto.lsp.antlr4.antlr4Class.JavaParserBaseListener;
+import star.tracto.preprocessing.utils.TokensUtils;
 
 
+import javax.swing.text.html.Option;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 public class Antlr4Utils {
 
-    /**
-     * Checks the syntax of a snippet and returns syntax errors and next possible tokens.
-     *
-     * @param snippet The Java snippet to check.
-     * @return A list of syntax errors or suggestions for next tokens.
-     */
-    public static List<String> checkSyntax(String snippet) {
-        CharStream charStream = CharStreams.fromString(snippet);
+    public static AntlrToken getAntlrToken(String token) {
+        CharStream input = CharStreams.fromString(token);
 
+        JavaLexer lexer = new JavaLexer(input);
+        CommonTokenStream tokenStream = new CommonTokenStream(lexer);
+        JavaParser parser = new JavaParser(tokenStream);
+        String tokenSymbolName = parser.getVocabulary().getSymbolicName(parser.getCurrentToken().getType());
+        return AntlrToken.valueOf(tokenSymbolName);
+    }
+
+    public static List<String> parseSnippet(JUnitAssertionType assertionType, String snippet) {
         // Initialize lexer and parser
-        JavaLexer lexer = new JavaLexer(charStream);
+        CharStream input = CharStreams.fromString(snippet);
+        JavaLexer lexer = new JavaLexer(input);
         CommonTokenStream tokenStream = new CommonTokenStream(lexer);
         JavaParser parser = new JavaParser(tokenStream);
 
-        // Add custom error listener
-        SyntaxErrorListener errorListener = new SyntaxErrorListener();
-        parser.removeErrorListeners(); // Remove default error listeners
-        parser.addErrorListener(errorListener);
+        Optional<ParserRuleContext> ctx = Optional.empty();
 
-        try {
-            parser.methodCall(); // Call the entry rule
-        } catch (Exception e) {
-            // Ignore exceptions as they are handled by the listener
+        switch (assertionType) {
+            case ASSERT_ALL:
+                ctx = Optional.of(parser.assertAllMethodCall());
+                break;
+            case ASSERT_ARRAY_EQUALS:
+                ctx = Optional.of(parser.assertArrayEqualsMethodCall());
+                break;
+            case ASSERT_EQUALS:
+                ctx = Optional.of(parser.assertEqualsMethodCall());
+                break;
+            case ASSERT_FALSE:
+                ctx = Optional.of(parser.assertFalseMethodCall());
+                break;
+            case ASSERT_ITERABLE_EQUALS:
+                ctx = Optional.of(parser.assertIterableEqualsMethodCall());
+                break;
+            case ASSERT_LINES_MATCH:
+                ctx = Optional.of(parser.assertLinesMatchMethodCall());
+                break;
+            case ASSERT_NOT_EQUALS:
+                ctx = Optional.of(parser.assertNotEqualsMethodCall());
+                break;
+            case ASSERT_NOT_NULL:
+                ctx = Optional.of(parser.assertNotNullMethodCall());
+                break;
+            case ASSERT_NOT_SAME:
+                ctx = Optional.of(parser.assertNotSameMethodCall());
+                break;
+            case ASSERT_NULL:
+                ctx = Optional.of(parser.assertNullMethodCall());
+                break;
+            case ASSERT_SAME:
+                ctx = Optional.of(parser.assertSameMethodCall());
+                break;
+            case ASSERT_THROWS:
+                ctx = Optional.of(parser.assertThrowsMethodCall());
+                break;
+            case ASSERT_TIMEOUT:
+                ctx = Optional.of(parser.assertTimeoutMethodCall());
+                break;
+            case ASSERT_TIMEOUT_PREEMPTIVELY:
+                ctx = Optional.of(parser.assertTimeoutPreemptivelyMethodCall());
+                break;
+            case ASSERT_TRUE:
+                ctx = Optional.of(parser.assertTrueMethodCall());
+                break;
+            case FAIL:
+                ctx = Optional.of(parser.failMethodCall());
+                break;
         }
-
-        return errorListener.getErrors().isEmpty() ? errorListener.getNextTokens() : errorListener.getErrors();
+        if (ctx.isPresent()) {
+            // Pass null for preferredRules and ignoredTokens
+            CodeCompletionCore core = new CodeCompletionCore(parser, null, null);
+            // Position: index of last token
+            int caretTokenIndex = tokenStream.size() - 1;
+            // Collect candidates
+            CodeCompletionCore.CandidatesCollection candidates = core.collectCandidates(caretTokenIndex, ctx.get());
+            // Return the list of token names
+            return candidates.tokens.keySet().stream()
+                    .map(tokenType -> parser.getVocabulary().getDisplayName(tokenType).replace("'", ""))
+                    .flatMap(t -> AntlrTokenMapper.getValuesByName(t).stream())
+                    .collect(Collectors.toCollection(ArrayList::new));
+        }
+        throw new IllegalArgumentException("Unsupported assertion type: " + assertionType);
     }
+
 
     /**
      * Returns a list of next possible tokens for a given snippet.
@@ -65,7 +131,9 @@ public class Antlr4Utils {
             // Ignore exceptions as they are handled by the listener
         }
 
-        return errorListener.getNextTokens();
+        return errorListener.getNextTokens().stream()
+                .flatMap(t -> AntlrTokenMapper.getValuesByName(t).stream())
+                .collect(Collectors.toCollection(ArrayList::new));
     }
 
     /**
@@ -90,32 +158,6 @@ public class Antlr4Utils {
         }
 
         return tokens;
-    }
-
-    public static List<String> getNextPossibleTokensWithContext(String snippet, String context) {
-        // Combine snippet with context to enhance predictions
-        String combinedInput = context + "\n" + snippet;
-
-        // Create CharStream and set up lexer/parser
-        CharStream charStream = CharStreams.fromString(combinedInput);
-        JavaLexer lexer = new JavaLexer(charStream);
-        CommonTokenStream tokenStream = new CommonTokenStream(lexer);
-        JavaParser parser = new JavaParser(tokenStream);
-
-        // Add error listener for token predictions
-        SyntaxErrorListener errorListener = new SyntaxErrorListener();
-        parser.removeErrorListeners();
-        parser.addErrorListener(errorListener);
-
-        try {
-            // Attempt to parse the snippet using the main rule
-            parser.methodCall();
-        } catch (Exception ignored) {
-            // Errors are handled by the error listener
-        }
-
-        // Return the next possible tokens
-        return errorListener.getNextTokens();
     }
 
     /**

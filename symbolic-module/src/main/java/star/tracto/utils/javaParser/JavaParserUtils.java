@@ -2,6 +2,7 @@ package star.tracto.utils.javaParser;
 
 import com.github.javaparser.JavaParser;
 import com.github.javaparser.ParserConfiguration;
+import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.*;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.comments.JavadocComment;
@@ -41,6 +42,7 @@ import star.tracto.preprocessing.components.PartialOracleDatapoint;
 import star.tracto.preprocessing.components.TestClazzDatapoints;
 import star.tracto.preprocessing.utils.TokensUtils;
 import star.tracto.utils.FilesUtils;
+import star.tracto.utils.JavaUtils;
 import star.tracto.utils.javaParser.visitors.expressions.VariableDeclarationExprVisitor;
 import star.tracto.utils.javaParser.visitors.statements.helper.StmtVisitorHelper;
 
@@ -61,6 +63,7 @@ import static org.plumelib.util.CollectionsPlume.mapList;
 public class JavaParserUtils {
 
     private static JavaParser javaParser;
+    private static JavaSymbolSolver symbolSolver;
     private static final Logger logger = LoggerFactory.getLogger(JavaParserUtils.class);
     /** Regex to match the Javadoc of a class or method. */
     private static final Pattern javadocPattern = Pattern.compile("/\\*\\*(.*?)\\*/", Pattern.DOTALL);
@@ -149,9 +152,10 @@ public class JavaParserUtils {
                 }
             }
         }
-        JavaSymbolSolver symbolSolver = new JavaSymbolSolver(typeSolver);
+        symbolSolver = new JavaSymbolSolver(typeSolver);
         ParserConfiguration parserConfiguration = new ParserConfiguration().setSymbolResolver(symbolSolver);
         javaParser = new JavaParser(parserConfiguration);
+        StaticJavaParser.setConfiguration(parserConfiguration);
         return javaParser;
     }
 
@@ -239,7 +243,7 @@ public class JavaParserUtils {
      *                          {@link JavassistMethodDeclaration}.
      * @return the modifiers of the method
      */
-    private static List<String> getMethodModifiers(ResolvedMethodDeclaration methodDeclaration) {
+    public static List<String> getMethodModifiers(ResolvedMethodDeclaration methodDeclaration) {
         Matcher reflectionMatcher = REFLECTION_METHOD_DECLARATION.matcher(methodDeclaration.toString());
         Matcher javassistMatcher = JAVASSIST_METHOD_DECLARATION.matcher(methodDeclaration.toString());
         if (!reflectionMatcher.find() && !javassistMatcher.find()) {
@@ -1444,9 +1448,14 @@ public class JavaParserUtils {
 
     public static HashMap<String, VariableDeclarator> collectExistingVariables(
             HashMap<String, VariableDeclarator> existingVariables,
-            List<FieldDeclaration> fieldDeclarations
+            List<FieldDeclaration> fieldDeclarations,
+            List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules
     ) {
         for (FieldDeclaration fieldDecl : fieldDeclarations) {
+            if (!checkModifiersRules(modifiersRules, fieldDecl.getModifiers())) {
+                // Skip the field declaration if it does not satisfy the modifiers rules
+                continue;
+            }
             for (VariableDeclarator varDecl : fieldDecl.getVariables()) {
                 String varName = varDecl.getNameAsString();
                 if (!existingVariables.containsKey(varName)) {
@@ -1457,10 +1466,12 @@ public class JavaParserUtils {
         return existingVariables;
     }
 
-    public static HashMap<String, TypeDeclaration> collectClassesInSamePackage(
-            HashMap<String, TypeDeclaration> existingClasses,
+    public static HashMap<String, List<Path>> collectPathsOfClassesInSamePackage(
+            HashMap<String, List<Path>> existingClasses,
             Path repoSourcePath,
-            CompilationUnit cu
+            CompilationUnit cu,
+            List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules,
+            List<String> errorMessages
     ) {
         try {
             String packageIdentifier = cu.getPackageDeclaration().orElseThrow(IllegalStateException::new).getNameAsString();
@@ -1471,9 +1482,92 @@ public class JavaParserUtils {
                     .forEach(filePath -> {
                         try {
                             CompilationUnit javaFileCu = JavaParserUtils.getCompilationUnit(filePath);
-                            Optional<TypeDeclaration<?>> typeDeclaration = javaFileCu.getPrimaryType();
-                            if (typeDeclaration.isPresent()) {
-                                existingClasses.put(typeDeclaration.get().getFullyQualifiedName().get().toString(), typeDeclaration.get());
+                            for (TypeDeclaration typeDeclaration : javaFileCu.getTypes()) {
+                                // Skip the type declaration if it does not satisfy the modifiers rules or in
+                                if(!checkModifiersRules(modifiersRules, typeDeclaration.getModifiers())) {
+                                    continue;
+                                }
+                                // If the type declaration is a class or an interface, add it to the map of existing classes
+                                if (typeDeclaration.isClassOrInterfaceDeclaration()) {
+                                    ClassOrInterfaceDeclaration classOrInterfaceDecl = typeDeclaration.asClassOrInterfaceDeclaration();
+                                    if (classOrInterfaceDecl.isInterface()) {
+                                        // Skip interfaces that cannot be instantiated or used in test assertions
+                                        continue;
+                                    }
+                                    ClassOrInterfaceDeclaration classOrInterfaceDeclaration = typeDeclaration.asClassOrInterfaceDeclaration();
+                                    if (!existingClasses.containsKey(classOrInterfaceDeclaration.getNameAsString())) {
+                                        existingClasses.put(classOrInterfaceDeclaration.getNameAsString(), new ArrayList<>());
+                                    }
+                                    boolean isAlreadyPresent = existingClasses.get(classOrInterfaceDeclaration.getNameAsString()).stream()
+                                            .anyMatch(t -> t.equals(filePath));
+                                    if (!isAlreadyPresent) {
+                                        // Add the type declaration to the list of existing classes
+                                        existingClasses.get(classOrInterfaceDeclaration.getNameAsString()).add(filePath);
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {
+                            String message = "Failed to process compilation unit from file " + filePath + " in the same package of class " + cu.getPrimaryType().get().getNameAsString();
+                            logger.error(message);
+                            if (errorMessages != null) {
+                                errorMessages.add(message);
+                            }
+                        }
+                    });
+        } catch (IOException e) {
+            String message = "Failed to walk through java classes in the same package of class " + cu.getPrimaryType().get().getNameAsString();
+            logger.error(message);
+            if (errorMessages != null) {
+                errorMessages.add(message);
+            }
+        } catch (IllegalStateException e) {
+            String message = "Package declaration not found in compilation unit from file " + cu.getPrimaryType().get().getNameAsString();
+            logger.error(message);
+            if (errorMessages != null) {
+                errorMessages.add(message);
+            }
+        }
+        return existingClasses;
+    }
+
+    public static HashMap<String, List<TypeDeclaration>> collectClassesInSamePackage(
+            HashMap<String, List<TypeDeclaration>> existingClasses,
+            Path repoSourcePath,
+            CompilationUnit cu,
+            List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules
+    ) {
+        try {
+            String packageIdentifier = cu.getPackageDeclaration().orElseThrow(IllegalStateException::new).getNameAsString();
+            Path pathToPackage = repoSourcePath.resolve(packageIdentifier.replace(".","/"));
+            Files.walk(pathToPackage)
+                    .filter(Files::isRegularFile) // Only process files, not directories
+                    .filter(path -> path.toString().endsWith(".java")) // Match pattern
+                    .forEach(filePath -> {
+                        try {
+                            CompilationUnit javaFileCu = JavaParserUtils.getCompilationUnit(filePath);
+                            for (TypeDeclaration typeDeclaration : javaFileCu.getTypes()) {
+                                // Skip the type declaration if it does not satisfy the modifiers rules or in
+                                if(!checkModifiersRules(modifiersRules, typeDeclaration.getModifiers())) {
+                                    continue;
+                                }
+                                // If the type declaration is a class or an interface, add it to the map of existing classes
+                                if (typeDeclaration.isClassOrInterfaceDeclaration()) {
+                                    ClassOrInterfaceDeclaration classOrInterfaceDecl = typeDeclaration.asClassOrInterfaceDeclaration();
+                                    if (classOrInterfaceDecl.isInterface()) {
+                                        // Skip interfaces that cannot be instantiated or used in test assertions
+                                        continue;
+                                    }
+                                    ClassOrInterfaceDeclaration classOrInterfaceDeclaration = typeDeclaration.asClassOrInterfaceDeclaration();
+                                    if (!existingClasses.containsKey(classOrInterfaceDeclaration.getNameAsString())) {
+                                        existingClasses.put(classOrInterfaceDeclaration.getNameAsString(), new ArrayList<>());
+                                    }
+                                    boolean isAlreadyPresent = existingClasses.get(classOrInterfaceDeclaration.getNameAsString()).stream()
+                                            .anyMatch(t -> t.equals(typeDeclaration));
+                                    if (!isAlreadyPresent) {
+                                        // Add the type declaration to the list of existing classes
+                                        existingClasses.get(classOrInterfaceDeclaration.getNameAsString()).add(typeDeclaration);
+                                    }
+                                }
                             }
                         } catch (Exception e) {
                             logger.error("Failed to process compilation unit from file " + filePath + " in the same package of class " + cu.getPrimaryType().get().getNameAsString());
@@ -1492,26 +1586,171 @@ public class JavaParserUtils {
      *
      * @param existingClasses the map of existing classes to update
      * @param cu the compilation unit to process
-     * @return the map of existing classes updated with the imported classes
+     * @return the map of existing classes updated with the imported classes file paths
      */
-    public static HashMap<String, TypeDeclaration> collectImportedClasses(
-            HashMap<String, TypeDeclaration> existingClasses,
-            Path repoSourcePath,
-            CompilationUnit cu
+    public static HashMap<String, List<Path>> collectPathsOfImportedClasses(
+            HashMap<String, List<Path>> existingClasses,
+            List<Path> repoSourcePaths,
+            CompilationUnit cu,
+            List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules
     ) {
         // Iterate over all the imports in the compilation unit
         for (ImportDeclaration importDecl : cu.getImports()) {
+            Set<Path> relatedTypeDeclarationPaths = new HashSet<>();
+
             // Get the fully qualified name of the imported class
             String fqn = importDecl.getNameAsString();
             // Retrieve the type declaration from the fully qualified name
-            Optional<TypeDeclaration> typeDeclOpt = retrieveTypeDeclarationFromFullyQualifiedName(fqn, repoSourcePath);
-            if (typeDeclOpt.isPresent()) {
-                TypeDeclaration typeDecl = typeDeclOpt.get();
-                // Add the type declaration to the map of existing classes
-                existingClasses.put(fqn, typeDecl);
+            Optional<Path> pathOpt = Optional.empty();
+
+            for (Path repoSourcePath : repoSourcePaths) {
+                pathOpt = retrieveFilePathFromFullyQualifiedName(fqn, repoSourcePath);
+                if (pathOpt.isPresent()) {
+                    relatedTypeDeclarationPaths.add(pathOpt.get());
+                    break; // Exit the loop if the type declaration is found
+                }
+            }
+            // Check if the fqn corresponds to a whole package (e.g., "java.util.*")
+            // Retrieve all type declarations in the package if the type declaration is not found
+            if (pathOpt.isEmpty()) {
+                for (Path repoSourcePath : repoSourcePaths) {
+                    relatedTypeDeclarationPaths.addAll(retrieveFilePathsFromPackageName(fqn, repoSourcePath));
+                }
+            }
+
+            for (Path relatedTypeDeclPath : relatedTypeDeclarationPaths) {
+                try {
+                    CompilationUnit importedCu = getCompilationUnit(relatedTypeDeclPath);
+                    for (TypeDeclaration typeDecl : importedCu.getTypes()) {
+                        // Skip the type declaration if it does not satisfy the modifiers rules or in
+                        if (!checkModifiersRules(modifiersRules, typeDecl.getModifiers())) {
+                            continue;
+                        }
+                        // If the type declaration is a class or an interface, add it to the map of existing classes
+                        if (typeDecl.isClassOrInterfaceDeclaration()) {
+                            ClassOrInterfaceDeclaration classOrInterfaceDecl = typeDecl.asClassOrInterfaceDeclaration();
+                            if (classOrInterfaceDecl.isInterface()) {
+                                // Skip interfaces that cannot be instantiated or used in test assertions
+                                continue;
+                            }
+                            if (!existingClasses.containsKey(classOrInterfaceDecl.getNameAsString())) {
+                                existingClasses.put(classOrInterfaceDecl.getNameAsString(), new ArrayList<>());
+                            }
+                            boolean isAlreadyPresent = existingClasses.get(classOrInterfaceDecl.getNameAsString()).stream().anyMatch(t -> t.equals(relatedTypeDeclPath));
+                            if (!isAlreadyPresent) {
+                                // Add the type declaration to the list of existing classes
+                                existingClasses.get(classOrInterfaceDecl.getNameAsString()).add(relatedTypeDeclPath);
+                            }
+                        }
+                    }
+                } catch (IOException e) {
+                    logger.error("Failed to process compilation unit from file " + relatedTypeDeclPath + " in the imports of class " + cu.getPrimaryType().get().getNameAsString());
+                }
             }
         }
         return existingClasses;
+    }
+
+    /**
+     * Collect all the imported classes in a compilation unit.
+     *
+     * @param existingClasses the map of existing classes to update
+     * @param cu the compilation unit to process
+     * @return the map of existing classes updated with the imported classes
+     */
+    public static HashMap<String, List<TypeDeclaration>> collectImportedClasses(
+            HashMap<String, List<TypeDeclaration>> existingClasses,
+            List<Path> repoSourcePaths,
+            CompilationUnit cu,
+            List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules
+    ) {
+        // Iterate over all the imports in the compilation unit
+        for (ImportDeclaration importDecl : cu.getImports()) {
+            Set<TypeDeclaration> relatedTypeDeclarations = new HashSet<>();
+
+            // Get the fully qualified name of the imported class
+            String fqn = importDecl.getNameAsString();
+            // Retrieve the type declaration from the fully qualified name
+            Optional<TypeDeclaration> typeDeclOpt = Optional.empty();
+
+            for (Path repoSourcePath : repoSourcePaths) {
+                typeDeclOpt = retrieveTypeDeclarationFromFullyQualifiedName(fqn, repoSourcePath);
+                if (typeDeclOpt.isPresent()) {
+                    relatedTypeDeclarations.add(typeDeclOpt.get());
+                    break; // Exit the loop if the type declaration is found
+                }
+            }
+            // Check if the fqn corresponds to a whole package (e.g., "java.util.*")
+            // Retrieve all type declarations in the package if the type declaration is not found
+            if (typeDeclOpt.isEmpty()) {
+                for (Path repoSourcePath : repoSourcePaths) {
+                    relatedTypeDeclarations.addAll(retrieveTypeDeclarationsFromPackageName(fqn, repoSourcePath));
+                }
+            }
+
+            for (TypeDeclaration relatedTypeDecl : relatedTypeDeclarations) {
+                CompilationUnit importedCu = (CompilationUnit) relatedTypeDecl.getParentNode().get();
+                for (TypeDeclaration typeDecl : importedCu.getTypes()) {
+                    // Skip the type declaration if it does not satisfy the modifiers rules or in
+                    if(!checkModifiersRules(modifiersRules, typeDecl.getModifiers())) {
+                        continue;
+                    }
+                    // If the type declaration is a class or an interface, add it to the map of existing classes
+                    if (typeDecl.isClassOrInterfaceDeclaration()) {
+                        ClassOrInterfaceDeclaration classOrInterfaceDecl = typeDecl.asClassOrInterfaceDeclaration();
+                        if (classOrInterfaceDecl.isInterface()) {
+                            // Skip interfaces that cannot be instantiated or used in test assertions
+                            continue;
+                        }
+                        if (!existingClasses.containsKey(classOrInterfaceDecl.getNameAsString())) {
+                            existingClasses.put(classOrInterfaceDecl.getNameAsString(), new ArrayList<>());
+                        }
+                        boolean isAlreadyPresent = existingClasses.get(classOrInterfaceDecl.getNameAsString()).stream().anyMatch(t -> t.equals(typeDecl));
+                        if (!isAlreadyPresent) {
+                            // Add the type declaration to the list of existing classes
+                            existingClasses.get(classOrInterfaceDecl.getNameAsString()).add(typeDecl);
+                        }
+                    }
+                }
+            }
+        }
+        return existingClasses;
+    }
+
+    /**
+     * Check if the modifiers of a method declaration satisfy at least one of the set of rules defined in the modifiersRules.
+     * The rules are defined as a list of lists of pairs, where each pair contains a modifier keyword and a boolean value
+     * indicating if the modifier is required (true) or not allowed (false).
+     *
+     * @param modifiersRules the list of lists of pairs defining the rules for the modifiers
+     * @param nodeModifiers the list of modifiers of the method declaration to check
+     * @return true if the modifiers satisfy at least one rule, false otherwise
+     */
+    public static boolean checkModifiersRules(
+            List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules,
+            List<Modifier> nodeModifiers
+    ) {
+        for (List<Pair<Modifier.Keyword, Boolean>> modifier : modifiersRules) {
+            boolean checker = true;
+            for (Pair<Modifier.Keyword, Boolean> mod : modifier) {
+                // If the modifier is required, check if it is present in the method modifiers
+                if (mod.getValue1()) {
+                    if (!nodeModifiers.stream().anyMatch(m -> m.getKeyword().equals(mod.getValue0()))) {
+                        checker = false;
+                    }
+                } else {
+                    // If the modifier is not allowed, check if it is present in the method modifiers
+                    if (nodeModifiers.stream().anyMatch(m -> m.getKeyword().equals(mod.getValue0()))) {
+                        checker = false;
+                    }
+                }
+            }
+            if (checker) {
+                // If all the modifiers in the rule are satisfied, return true
+                return true;
+            }
+        }
+        return true;
     }
 
     /**
@@ -1577,6 +1816,7 @@ public class JavaParserUtils {
         Path referencePath = repoSourcePath;
         List<Path> candidatePrefixPaths = new ArrayList<>();
         candidatePrefixPaths.add(repoSourcePath);
+        candidatePrefixPaths.addAll(JavaUtils.getPathToJavaLibClassFromFqn(fqnPath, true));
         boolean hasLibFolder = FilesUtils.hasChildDirectory(referencePath, NamingConvention.LIB_FOLDER.getConventionName());
         while(!hasLibFolder && !(referencePath.getParent() == null)) {
             referencePath = referencePath.getParent();
@@ -1605,5 +1845,172 @@ public class JavaParserUtils {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Retrieve the file path of a corresponding type declaration from the fully qualified name of the class and
+     * the root path of the repository where the class should be located (source code or decompiled library),
+     * or an empty optional if the class cannot be found.
+     *
+     * @param fqn the fully qualified name of the class to retrieve
+     * @param repoSourcePath the root path of the repository where the class should be located
+     * @return the file path of the type declaration of the class corresponding to the fully qualified name,
+     *         or an empty optional if the class cannot be found
+     */
+    public static Optional<Path> retrieveFilePathFromFullyQualifiedName(String fqn, Path repoSourcePath) {
+        Path fqnPath = FilesUtils.getFQNPath(fqn);
+        Path referencePath = repoSourcePath;
+        List<Path> candidatePrefixPaths = new ArrayList<>();
+        candidatePrefixPaths.add(repoSourcePath);
+        candidatePrefixPaths.addAll(JavaUtils.getPathToJavaLibClassFromFqn(fqnPath, true));
+        boolean hasLibFolder = FilesUtils.hasChildDirectory(referencePath, NamingConvention.LIB_FOLDER.getConventionName());
+        while(!hasLibFolder && !(referencePath.getParent() == null)) {
+            referencePath = referencePath.getParent();
+            hasLibFolder = FilesUtils.hasChildDirectory(referencePath, NamingConvention.LIB_FOLDER.getConventionName());
+        }
+        if (hasLibFolder) {
+            candidatePrefixPaths = FilesUtils.listDirectories(
+                    referencePath.resolve(NamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())
+            );
+        }
+        candidatePrefixPaths.add(repoSourcePath);
+        for(Path candidatePrefixPath : candidatePrefixPaths) {
+            Path classFilePath = candidatePrefixPath.resolve(fqnPath);
+            if (Files.exists(classFilePath)) {
+                try {
+                    CompilationUnit cu = JavaParserUtils.getCompilationUnit(classFilePath);
+                    if (cu.getPrimaryType().isPresent()) {
+                        return Optional.of(classFilePath);
+                    } else {
+                        return Optional.empty();
+                    }
+                } catch (IOException e) {
+                    logger.error("Error reading file: " + classFilePath);
+                    return Optional.empty();
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Retrieve the list of type declarations defined within the package name of the repository where the package should
+     * be located (source code or decompiled library), or an empty optional if the class cannot be found.
+     *
+     * @param packageName the package name of the classes to retrieve
+     * @param repoSourcePath the root path of the repository where the class should be located
+     * @return the type declaration of the class corresponding to the fully qualified name or an empty optional if the
+     *         class cannot be found
+     */
+    public static List<TypeDeclaration> retrieveTypeDeclarationsFromPackageName(String packageName, Path repoSourcePath) {
+        List<TypeDeclaration> typeDeclarations = new ArrayList<>();
+        Path packageNamePath = FilesUtils.getPackageNamePath(packageName);
+        Path referencePath = repoSourcePath;
+        List<Path> candidatePrefixPaths = new ArrayList<>();
+        candidatePrefixPaths.add(repoSourcePath);
+        candidatePrefixPaths.addAll(JavaUtils.getPathsToJavaLibClassesFromPackage(packageNamePath, true));
+        boolean hasLibFolder = FilesUtils.hasChildDirectory(referencePath, NamingConvention.LIB_FOLDER.getConventionName());
+        while(!hasLibFolder) {
+            referencePath = referencePath.getParent();
+            if (referencePath == null) {
+                break;
+            }
+            hasLibFolder = FilesUtils.hasChildDirectory(referencePath, NamingConvention.LIB_FOLDER.getConventionName());
+        }
+        if (hasLibFolder) {
+            candidatePrefixPaths = FilesUtils.listDirectories(
+                    referencePath.resolve(NamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())
+            );
+        }
+        candidatePrefixPaths.add(repoSourcePath);
+        for(Path candidatePrefixPath : candidatePrefixPaths) {
+            Path packagePath = candidatePrefixPath.resolve(packageNamePath);
+            if (Files.exists(packagePath) && Files.isDirectory(packagePath)) {
+                try {
+                    Files.walk(packagePath)
+                            .filter(Files::isRegularFile) // Only process files, not directories
+                            .filter(path -> path.toString().endsWith(".java")) // Match pattern
+                            .forEach(filePath -> {
+                                try {
+                                    CompilationUnit javaFileCu = JavaParserUtils.getCompilationUnit(filePath);
+                                    for (TypeDeclaration typeDeclaration : javaFileCu.getTypes()) {
+                                        // If the type declaration is a class or an interface, add it to the map of existing classes
+                                        if (typeDeclaration.isClassOrInterfaceDeclaration()) {
+                                            typeDeclarations.add(typeDeclaration);
+                                        }
+                                    }
+                                } catch (Exception e) {
+                                    logger.error("Failed to process compilation unit from file " + filePath + " when processing the package " + packageName);
+                                }
+                            });
+                } catch (IOException e) {
+                    logger.error("Failed to walk through java classes in the package " + packageName + " in the repository " + repoSourcePath);
+                } catch (IllegalStateException e) {
+                    logger.error("Package declaration not found in compilation unit from file " + packageName);
+                }
+                break;
+            }
+        }
+        return typeDeclarations;
+    }
+
+    /**
+     * Retrieve the list of file paths corresponding to the classes defined within the package name of the repository
+     * where the package should be located.
+     *
+     * @param packageName the package name of the classes to retrieve
+     * @param repoSourcePath the root path of the reference repository
+     * @return the file paths of the classes defined within the package name of the repository
+     */
+    public static List<Path> retrieveFilePathsFromPackageName(String packageName, Path repoSourcePath) {
+        List<Path> filePaths = new ArrayList<>();
+        Path packageNamePath = FilesUtils.getPackageNamePath(packageName);
+        Path referencePath = repoSourcePath;
+        List<Path> candidatePrefixPaths = new ArrayList<>();
+        candidatePrefixPaths.add(repoSourcePath);
+        candidatePrefixPaths.addAll(JavaUtils.getPathsToJavaLibClassesFromPackage(packageNamePath, true));
+        boolean hasLibFolder = FilesUtils.hasChildDirectory(referencePath, NamingConvention.LIB_FOLDER.getConventionName());
+        while(!hasLibFolder) {
+            referencePath = referencePath.getParent();
+            if (referencePath == null) {
+                break;
+            }
+            hasLibFolder = FilesUtils.hasChildDirectory(referencePath, NamingConvention.LIB_FOLDER.getConventionName());
+        }
+        if (hasLibFolder) {
+            candidatePrefixPaths = FilesUtils.listDirectories(
+                    referencePath.resolve(NamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())
+            );
+        }
+        candidatePrefixPaths.add(repoSourcePath);
+        for(Path candidatePrefixPath : candidatePrefixPaths) {
+            Path packagePath = candidatePrefixPath.resolve(packageNamePath);
+            if (Files.exists(packagePath) && Files.isDirectory(packagePath)) {
+                try {
+                    Files.walk(packagePath)
+                            .filter(Files::isRegularFile) // Only process files, not directories
+                            .filter(path -> path.toString().endsWith(".java")) // Match pattern
+                            .forEach(filePath -> {
+                                try {
+                                    CompilationUnit javaFileCu = JavaParserUtils.getCompilationUnit(filePath);
+                                    for (TypeDeclaration typeDeclaration : javaFileCu.getTypes()) {
+                                        // If the type declaration is a class or an interface, add it to the map of existing classes
+                                        if (typeDeclaration.isClassOrInterfaceDeclaration()) {
+                                            filePaths.add(filePath);
+                                        }
+                                    }
+                                } catch (Exception e) {
+                                    logger.error("Failed to process compilation unit from file " + filePath + " when processing the package " + packageName);
+                                }
+                            });
+                } catch (IOException e) {
+                    logger.error("Failed to walk through java classes in the package " + packageName + " in the repository " + repoSourcePath);
+                } catch (IllegalStateException e) {
+                    logger.error("Package declaration not found in compilation unit from file " + packageName);
+                }
+                break;
+            }
+        }
+        return filePaths;
     }
 }

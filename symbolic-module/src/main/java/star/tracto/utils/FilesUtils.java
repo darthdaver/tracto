@@ -84,6 +84,19 @@ public class FilesUtils {
     }
 
     /**
+     * Converts a package name into a relative file Path. For
+     * example,
+     *     {@code com.org.example}    -&gt;
+     *     {@code com/org/example}
+     *
+     * @param packageName a package name
+     * @return the relative path to the corresponding package name
+     */
+    public static Path getPackageNamePath(String packageName) {
+        return Paths.get(packageName.replaceAll("[.]", "/"));
+    }
+
+    /**
      * Get the absolute path of the SymbolicModule project root.
      */
     public static Path getProjectRootAbsolutePath() {

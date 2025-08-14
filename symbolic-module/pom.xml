@@ -117,6 +117,11 @@
             <artifactId>antlr4-runtime</artifactId>
             <version>4.13.2</version>
         </dependency>
+        <dependency>
+            <groupId>com.vmware.antlr4-c3</groupId>
+            <artifactId>antlr4-c3</artifactId>
+            <version>1.1</version>
+        </dependency>
         <!-- Field Descriptor Utils -->
         <dependency>
             <groupId>org.plumelib</groupId>

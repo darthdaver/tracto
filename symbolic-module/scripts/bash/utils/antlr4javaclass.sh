@@ -13,7 +13,8 @@ OUTPUT_DIR="${SRC_DIR}/main/java/star/tracto/lsp/antlr4/antlr4Class"
 rm -rf "${OUTPUT_DIR}"/*
 
 # Run ANTLR4 command
-antlr4 -Dlanguage=Java "$GRAMMAR_DIR/JavaLexer.g4" "$GRAMMAR_DIR/JavaParser.g4" -o "$OUTPUT_DIR"
+antlr -Dlanguage=Java "$GRAMMAR_DIR/JavaLexer.g4" "$GRAMMAR_DIR/JavaParser.g4" -o "$OUTPUT_DIR"
+cp "$GRAMMAR_DIR/JavaParserBase.java" "$OUTPUT_DIR/JavaParserBase.java"
 
 # Add package line to each of the 4 generated files
 for file in "$OUTPUT_DIR"/*.java; do

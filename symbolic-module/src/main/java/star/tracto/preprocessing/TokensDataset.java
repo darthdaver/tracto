@@ -3,6 +3,7 @@ package star.tracto.preprocessing;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.javatuples.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import star.tracto.SymbolicModule;
@@ -19,6 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 // antlr4 -Dlanguage=Java ./grammars/JavaLexer.g4 ./grammars/JavaParser.g4
 
@@ -52,6 +54,7 @@ public class TokensDataset {
         ObjectMapper mapper = new ObjectMapper();
         JavaType innerType = mapper.getTypeFactory().constructParametricType(TestClazzDatapoints.class, OracleDatapoint.class);
         JavaType listType = mapper.getTypeFactory().constructCollectionType(List.class, innerType);
+        HashMap<String,HashMap<String, HashMap<String, List<String>>>> errorsStatistics = new HashMap<>();
         // Walk through the directory and process files recursively
         Files.walk(inputDatasetPath)
                 .filter(Files::isRegularFile) // Only process files, not directories
@@ -61,7 +64,9 @@ public class TokensDataset {
                     List<TestClazzDatapoints<OracleDatapoint>> testClazzOraclesDatapoints = FilesUtils.readJSONList(filePath, listType);
                     for (TestClazzDatapoints testClazzDatapoint : testClazzOraclesDatapoints) {
                         try {
-                            TestClazzDatapoints testClazzDatapoints = TokensUtils.generateTokenSteps(oraclesDatasetConfig, repoRootPath, testClazzDatapoint);
+                            Pair<TestClazzDatapoints, HashMap<String, HashMap<String, List<String>>>> result = TokensUtils.generateTokenSteps(oraclesDatasetConfig, repoRootPath, testClazzDatapoint);
+                            TestClazzDatapoints testClazzDatapoints = result.getValue0();
+                            errorsStatistics.put(testClazzDatapoints.testClass().filePath(), result.getValue1());
                             testClassesPartialOracleDatapoints.add(testClazzDatapoints);
                         } catch (IllegalStateException e) {
                             logger.error(e.getMessage().toString());
@@ -75,7 +80,9 @@ public class TokensDataset {
                     String dataPointJSON = null;
                     try {
                         dataPointJSON = objectMapper.writeValueAsString(testClassesPartialOracleDatapoints);
+                        String errorsStatisticsJSON = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(errorsStatistics);
                         FilesUtils.writeJSONFile(outputDatasetPath.resolve(filePath.getFileName().toString()), dataPointJSON);
+                        FilesUtils.writeJSONFile(outputStatisticsPath.resolve(filePath.getFileName().toString()), errorsStatisticsJSON);
                     } catch (JsonProcessingException e) {
                         throw new RuntimeException(e);
                     }

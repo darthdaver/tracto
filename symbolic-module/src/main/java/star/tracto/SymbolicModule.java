@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import star.tracto.data.enums.NamingConvention;
 import star.tracto.preprocessing.OraclesDataset;
 import star.tracto.preprocessing.TokensDataset;
+import star.tracto.utils.JavaUtils;
 
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
@@ -23,12 +24,15 @@ public class SymbolicModule {
         String projectIdentifier = args[1];
         Path repoRootPath = Path.of(args[2]);
         Path outputPath = Path.of(args[3]);
-        String classpath = initializeJavaClassPath(Path.of(args[4]));
-        Path configPath = Path.of(args[5]);
+        Path basePath = Path.of(args[4]);
+        int javaVersion = Integer.parseInt(args[5]);
+        JavaUtils.setJavaLibPath(basePath, javaVersion);
+        String classpath = JavaUtils.initializeJavaClassPath();
+        Path configPath = Path.of(args[6]);
         // Project identifier
         try {
             if (datasetType.equals("oracles-dataset")) {
-                Path repoTrackPath = Path.of(args[6]);
+                Path repoTrackPath = Path.of(args[7]);
                 OraclesDataset.generate(repoRootPath, repoTrackPath, configPath, outputPath, projectIdentifier, classpath);
             } else if (datasetType.equals("tokens-dataset")) {
                 TokensDataset.generate(repoRootPath, outputPath, configPath, projectIdentifier, classpath);
@@ -54,26 +58,5 @@ public class SymbolicModule {
             System.err.println("Error while searching for folders: " + e.getMessage());
         }
         return matchingPaths;
-    }
-
-    private static String initializeJavaClassPath(Path basePath) {
-        String classpath = "";
-        ObjectMapper objectMapper = new ObjectMapper();
-        try {
-            Map<String, List<String>> javaVersions = objectMapper.readValue(
-                    basePath.resolve(NamingConvention.JAVA_CLASSPATHS_JSON.getConventionName()).toFile(),
-                    objectMapper.getTypeFactory().constructMapType(Map.class, String.class, List.class)
-            );
-            for (String javaVersion : javaVersions.keySet()) {
-                Path javaVersionPath = basePath.resolve("lib/java" + javaVersion);
-                for (String javaLib : javaVersions.get(javaVersion)) {
-                    Path javaLibPath = javaVersionPath.resolve(javaLib);
-                    classpath += classpath.isEmpty() ? javaLibPath : ":" + javaLibPath;
-                }
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        return classpath;
     }
 }
