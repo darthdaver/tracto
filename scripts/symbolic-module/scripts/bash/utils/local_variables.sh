@@ -1,0 +1,12 @@
+# Directories
+OUTPUT_MINER_DIR="${TEST_MINER_DIR}/output/miner"
+SRC_RESOURCES_DIR="${SYMBOLIC_DIR}/src/main/resources"
+BASH_UTILS_DIR="${SYMBOLIC_DIR}/bash/utils"
+OUTPUT_DIR="${SYMBOLIC_DIR}/output"
+PY_UTILS_DIR="${SYMBOLIC_DIR}/utils"
+# Libraries
+LIB_DIR="${SYMBOLIC_DIR}/lib"
+# Jars
+SYMBOLIC_JAR="${SYMBOLIC_DIR}/target/tracto-jar-with-dependencies.jar"
+# Links
+LIB_JDKS_LINK="https://drive.switch.ch/index.php/s/TLGLFHnw6ilbdWl/download"
