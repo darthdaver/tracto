@@ -1,0 +1,12 @@
+.idea/
+.DS_Store
+.env
+.venv
+*.log
+output*/
+src/main/resources/tmp/
+src/main/resources/log4j2.properties
+target/
+tmp/
+# Excel files:
+~$*

@@ -1,0 +1,61 @@
+{
+  "assertAllMethodCall": {
+    "matchedTokens": [ "assertAll", "(" ],
+    "nextCandidateRules": [
+      {
+        "ruleName": "executable",
+        "nextCandidateRules": [
+          {
+            "ruleName": "lambdaExpression",
+            "nextCandidateRules": [
+              {
+                "ruleName": "lambdaParameters",
+                "nextCandidateRules": [
+                  {
+                    "ruleName": "lambdaParameter",
+                    "nextCandidateRules": [
+                      {
+                        "ruleName": "identifier",
+                        "candidateTokens": [ "IDENTIFIER", "module", "open", ... ]
+                      }
+                    ]
+                  }
+                ],
+                "directCandidateTokens": [ "(" ]
+              }
+            ],
+            "directCandidateTokens": []
+          },
+          {
+            "ruleName": "expression",
+            "nextCandidateRules": [
+              {
+                "ruleName": "primary",
+                "nextCandidateRules": [
+                  {
+                    "ruleName": "identifier",
+                    "candidateTokens": [ "IDENTIFIER", "module", "open", ... ]
+                  }
+                ],
+                "directCandidateTokens": []
+              },
+              {
+                "ruleName": "methodCall",
+                "nextCandidateRules": [
+                  {
+                    "ruleName": "identifier",
+                    "candidateTokens": [ "IDENTIFIER", "module", "open", ... ]
+                  },
+
+                ],
+                "directCandidateTokens": []
+              }
+            ],
+            "directCandidateTokens": []
+          }
+        ],
+        "directCandidateTokens": [ ]
+      }
+    ]
+  }
+}

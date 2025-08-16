@@ -37,7 +37,7 @@ Install Ollama by following the instructions in the [Ollama](https://ollama.com/
 Start the Ollama server in background by running the following command:
 
 ```shell
-  nohup ollama serve > log-ollama-serve.out 2>&1 & echo $! >> pid-ollama-serve.txt
+nohup ollama serve > log-ollama-serve.out 2>&1 & echo $! >> pid-ollama-serve.txt
 ```
 
 (The script will start the Ollama server in the background and save the logs in `log-ollama-serve.out` and the process id in `pid-ollama-serve.txt`. If you want to run the process in the current terminal without saving the log, run `ollama serve &` instead).
@@ -45,17 +45,28 @@ Start the Ollama server in background by running the following command:
 Pull the models used in the ablation study:
 
 ```shell
-  bash ./scripts/bash/utils/ollama_pull_models.sh
+bash ./scripts/bash/utils/ollama_pull_models.sh
 ```
 
 Replicate the results of RQ1 by running the following command from the current directory (`tracto/_rq1`):
 
 ```shell
-  bash ./scripts/bash/inference/inference-pretrained-ollama.sh > log-ollama-client.out 2>&1 & echo $! >> pid-ollama-client.txt
+nohup bash ./scripts/bash/inference/inference-pretrained-ollama.sh [query-type] > log-ollama-inference.out 2>&1 & echo $! >> pid-ollama-inference.txt
 ```
 
+where:
+* `[query-type]` is the query type to replicate the results of RQ1. The possible values are: 
+  * `assertion` - if the model have to predict only the assertion.
+  * `statement` - if the model have to discern if the masked element is the next statement or an assertion (and generate it, in that case).
+
 (The script will start the inference process in the background and save the logs in `log-ollama-client.out` and the process id in `pid-ollama-client.txt`. 
-If you want to run the process in the current terminal without saving the logs, run `bash ./scripts/bash/inference/inference-pretrained-ollama.sh` instead).
+If you want to run the process in the current terminal without saving the logs, run `bash ./scripts/bash/inference/inference-pretrained-ollama.sh [query-type]` instead).
+
+To replicate the moderation of the results with the llms involved in the inference study, run the following command:
+
+```shell
+nohup bash ./scripts/bash/analysis/moderator.sh > log-ollama-client-moderator.out 2>&1 & echo $! >> pid-ollama-client-moderator.txt
+```
 
 ### HuggingFace
 
