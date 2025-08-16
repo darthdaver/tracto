@@ -3,13 +3,11 @@
 # Get current directory
 current_dir=$(realpath "$(dirname "${BASH_SOURCE[@]}")")
 # Setup global variables
-source "${current_dir}/global_variables.sh"
-source "${BASH_UTILS_DIR}/init_sdkman.sh"
+source "${current_dir}/../../../../utils/bash/global_variables.sh"
+source "${UTILS_DIR}/bash/init_sdkman.sh"
 
 # Add Maven bin directory to PATH temporarily
 export PATH="$MAVEN_BIN:$PATH"
-export PATH="$GRADLE_BIN:$PATH"
-export PATH="$ANT_BIN:$PATH"
 
 main_folder="$1"
 maven_default_repo="https://repo1.maven.org/maven2"
@@ -17,16 +15,6 @@ maven_default_repo="https://repo1.maven.org/maven2"
 # Function to check if a folder is a Maven project
 check_maven() {
     [[ -f "pom.xml" ]] && return 0 || return 1
-}
-
-# Function to check if a folder is a Gradle project
-check_gradle() {
-    [[ -f "build.gradle" || -f "settings.gradle" ]] && return 0 || return 1
-}
-
-# Function to check if a folder is an Ant project
-check_ant() {
-    [[ -f "build.xml" ]] && return 0 || return 1
 }
 
 echo "Resolving dependencies for: $main_folder"
@@ -158,15 +146,6 @@ if [[ -d "$main_folder" ]]; then
           fi
       done
       exit 0
-    elif check_gradle; then
-        echo "Gradle project skipped"
-        exit 1
-    elif check_ant; then
-        echo "Ant project skipped."
-        exit 1
-    else
-        echo "This folder is not a recognized Maven, Gradle, or Ant project."
-        exit 1
     fi
 else
     echo "Usage: $0 <directory>"

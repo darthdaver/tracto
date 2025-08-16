@@ -36,7 +36,7 @@ public class SymbolicModule {
                 Optional<Path> repoTrackPath = args.length > 7 ? Optional.of(Path.of(args[7])) : Optional.empty();
                 OraclesDataset.generate(repoRootPath, repoTrackPath, configPath, outputPath, projectIdentifier, classpath);
             } else if (datasetType.equals("tokens")) {
-                String mode = args.length > 8 ? args[8] : "training";
+                String mode = args.length > 7 ? args[7] : "training";
                 TokensDataset.generate(repoRootPath, outputPath, mode, configPath, projectIdentifier, classpath);
             }
         } catch (IOException e) {

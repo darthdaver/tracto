@@ -9,7 +9,6 @@ RQ1_DIR="${ROOT_DIR}/_rq1"
 INPUT_DIR="${ROOT_DIR}/input"
 GITHUB_REPOS_DIR="${INPUT_DIR}/github-repos"
 RESOURCES_DIR="${ROOT_DIR}/resources"
-BASH_RESOURCES_DIR="${UTILS_DIR}/bash/resources"
 SDKMAN_DIR="${UTILS_DIR}/resources/sdkman"
 
 # Sdkman Java versions
