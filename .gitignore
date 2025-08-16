@@ -6,3 +6,7 @@
 **/__pycache__/
 **/input/
 **/output/
+/symbolic-module/src/main/java/star/tracto/lsp/antlr4/antlr4Class/JavaLexer.interp
+/symbolic-module/src/main/java/star/tracto/lsp/antlr4/antlr4Class/JavaLexer.tokens
+/symbolic-module/src/main/java/star/tracto/lsp/antlr4/antlr4Class/JavaParser.interp
+/symbolic-module/src/main/java/star/tracto/lsp/antlr4/antlr4Class/JavaParser.tokens
