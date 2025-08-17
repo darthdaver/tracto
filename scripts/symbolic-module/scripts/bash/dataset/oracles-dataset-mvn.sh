@@ -104,9 +104,12 @@ while IFS=, read -r repo_id repo_name; do
           fi
         fi
       fi
+
+      cd "$SYMBOLIC_DIR"
+      # Generate Oracle dataset
+      sdk use java "$JAVA21"
+      java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" 24 "${SRC_RESOURCES_DIR}/oracles-dataset_config.json"
+    else
+      echo "Project ${repo_name} is not a Maven project, skipping."
     fi
-    cd "$SYMBOLIC_DIR"
-    # Generate Oracle dataset
-    sdk use java "$JAVA21"
-    java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" 24 "${SRC_RESOURCES_DIR}/oracles-dataset_config.json"
 done < "$GITHUB_REPOS_LIST_FILE"
