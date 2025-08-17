@@ -153,7 +153,9 @@ public class JavaParserUtils {
             }
         }
         symbolSolver = new JavaSymbolSolver(typeSolver);
-        ParserConfiguration parserConfiguration = new ParserConfiguration().setSymbolResolver(symbolSolver);
+        ParserConfiguration parserConfiguration = new ParserConfiguration()
+                .setSymbolResolver(symbolSolver)
+                .setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_17); // or JAVA_17
         javaParser = new JavaParser(parserConfiguration);
         StaticJavaParser.setConfiguration(parserConfiguration);
         return javaParser;

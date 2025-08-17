@@ -1597,7 +1597,7 @@ public class TestUtils {
                     Expression exprStmt = statement.asExpressionStmt().getExpression();
                     if (exprStmt.isMethodCallExpr() && !(JUnitAssertionType.isJUnitAssertion(exprStmt.asMethodCallExpr().getNameAsString()))) {
                         try {
-                            Optional<MethodDeclaration> auxiliaryMethodDeclaration = integrateAuxiliaryMethodIntoBlockStmt(testClass, currentBlockStmt, exprStmt.asMethodCallExpr(), auxiliaryMethods, existingVariables);
+                            Optional<MethodDeclaration> auxiliaryMethodDeclaration = exprStmt.asMethodCallExpr().getScope().isEmpty() ? integrateAuxiliaryMethodIntoBlockStmt(testClass, currentBlockStmt, exprStmt.asMethodCallExpr(), auxiliaryMethods, existingVariables) : Optional.empty();
                             if (auxiliaryMethodDeclaration.isPresent()) {
                                 integratedAuxiliaryMethods.add(auxiliaryMethodDeclaration.get());
                             } else {
@@ -1606,6 +1606,7 @@ public class TestUtils {
                         } catch (Exception e) {
                             // Log the error occurred while parsing the statements of the test case
                             logger.error(e.getMessage());
+                            currentBlockStmt.addStatement(statement);
                             thrownedException = true;
                         }
                     } else if (exprStmt.isLambdaExpr()) {
@@ -1643,6 +1644,17 @@ public class TestUtils {
                                     existingVariables
                             );
                         }
+                    } else if (exprStmt.isVariableDeclarationExpr()) {
+//                        List<MethodCallExpr> methodCalls = exprStmt.asVariableDeclarationExpr().findAll(MethodCallExpr.class);
+//                        if (methodCalls.size() > 0) {
+//                            Optional<MethodDeclaration> auxiliaryMethodDeclaration = exprStmt.asMethodCallExpr().getScope().isEmpty() ? integrateAuxiliaryMethodIntoBlockStmt(testClass, currentBlockStmt, exprStmt.asMethodCallExpr(), auxiliaryMethods, existingVariables) : Optional.empty();
+//                            if (auxiliaryMethodDeclaration.isPresent()) {
+//                                integratedAuxiliaryMethods.add(auxiliaryMethodDeclaration.get());
+//                            } else {
+//                                currentBlockStmt.addStatement(statement);
+//                            }
+//                        }
+                        currentBlockStmt.addStatement(statement);
                     } else {
                         currentBlockStmt.addStatement(statement);
                     }
