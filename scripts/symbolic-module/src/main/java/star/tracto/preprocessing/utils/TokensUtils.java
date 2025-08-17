@@ -103,7 +103,6 @@ public class TokensUtils {
      * @param repoRootPath the path to the repository root
      */
     public static Pair<TestClazzDatapoints,HashMap<String, HashMap<String, List<String>>>> generateTokenSteps (
-            OraclesDatasetConfig config,
             Path repoRootPath,
             TestClazzDatapoints<OracleDatapoint> testClazzDatapoints
     ) throws IllegalStateException {

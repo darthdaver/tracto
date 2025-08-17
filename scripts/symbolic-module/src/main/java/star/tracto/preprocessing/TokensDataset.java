@@ -29,13 +29,12 @@ public class TokensDataset {
     /* The logger for the class. */
     private static final Logger logger = LoggerFactory.getLogger(TokensUtils.class);
 
-    public static void generate(Path repoRootPath, Path outputPath, String mode, Path configPath, String projectIdentifier, String classpath) throws IOException {
+    public static void generate(Path repoRootPath, Path outputPath, String mode, String projectIdentifier, String classpath) throws IOException {
         // Update classpath with the libraries paths
         List<Path> librariesPaths = SymbolicModule.findLibrariesPaths(repoRootPath);
         for (Path libraryPath : librariesPaths) {
             classpath += ":" + libraryPath.toString();
         }
-        OraclesDatasetConfig oraclesDatasetConfig = FilesUtils.readJSON(configPath, OraclesDatasetConfig.class);
         // Define list of oracles datapoints
         List<TestClazzDatapoints<PartialOracleDatapoint>> testClassesPartialOracleDatapoints = new ArrayList<>();
         // Individuate the input oracles dataset path referencing the project identifier
@@ -64,7 +63,7 @@ public class TokensDataset {
                     List<TestClazzDatapoints<OracleDatapoint>> testClazzOraclesDatapoints = FilesUtils.readJSONList(filePath, listType);
                     for (TestClazzDatapoints testClazzDatapoint : testClazzOraclesDatapoints) {
                         try {
-                            Pair<TestClazzDatapoints, HashMap<String, HashMap<String, List<String>>>> result = TokensUtils.generateTokenSteps(oraclesDatasetConfig, repoRootPath, testClazzDatapoint);
+                            Pair<TestClazzDatapoints, HashMap<String, HashMap<String, List<String>>>> result = TokensUtils.generateTokenSteps(repoRootPath, testClazzDatapoint);
                             TestClazzDatapoints testClazzDatapoints = result.getValue0();
                             errorsStatistics.put(testClazzDatapoints.testClass().filePath(), result.getValue1());
                             testClassesPartialOracleDatapoints.add(testClazzDatapoints);

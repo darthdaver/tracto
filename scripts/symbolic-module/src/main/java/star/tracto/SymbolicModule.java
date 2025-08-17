@@ -29,15 +29,15 @@ public class SymbolicModule {
         int javaVersion = Integer.parseInt(args[5]);
         JavaUtils.setJavaLibPath(basePath, javaVersion);
         String classpath = JavaUtils.initializeJavaClassPath();
-        Path configPath = Path.of(args[6]);
         // Project identifier
         try {
             if (datasetType.equals("oracles")) {
+                Path configPath = Path.of(args[6]);
                 Optional<Path> repoTrackPath = args.length > 7 ? Optional.of(Path.of(args[7])) : Optional.empty();
                 OraclesDataset.generate(repoRootPath, repoTrackPath, configPath, outputPath, projectIdentifier, classpath);
             } else if (datasetType.equals("tokens")) {
-                String mode = args.length > 7 ? args[7] : "training";
-                TokensDataset.generate(repoRootPath, outputPath, mode, configPath, projectIdentifier, classpath);
+                String mode = args.length > 6 ? args[6] : "training";
+                TokensDataset.generate(repoRootPath, outputPath, mode, projectIdentifier, classpath);
             }
         } catch (IOException e) {
             e.printStackTrace();

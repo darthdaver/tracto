@@ -28,8 +28,8 @@ export PATH="$ANT_BIN:$PATH"
 GITHUB_REPOS_LIST_FILE=${1:-$GITHUB_REPOS_LIST_FILE}
 resolve_deps=${2:-"false"}
 
-if [ ! -e "${TRACTO_JAR}" ]; then
-  cd "${ROOT_DIR}"
+if [ ! -e "${SYMBOLIC_JAR}" ]; then
+  cd "${SYMBOLIC_DIR}"
   sdk use java "$JAVA21"
   mvn clean package -DskipTests
 fi
@@ -101,5 +101,5 @@ while IFS=, read -r repo_id repo_name; do
     cd "$SYMBOLIC_DIR"
     # Generate Oracle dataset
     sdk use java "$JAVA21"
-    java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" 24 "${SRC_RESOURCES_DIR}/oracles-dataset_config.json"
+    java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" 24 "${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json"
 done < "$GITHUB_REPOS_LIST_FILE"

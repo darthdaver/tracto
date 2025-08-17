@@ -23,8 +23,8 @@ while IFS= read -r -d $'\0' dir; do
     raw_oracles_dataset_repo_ids+=("$(basename "$dir")")
 done < <(find "${RAW_ORACLES_DATASET_TRAINING_DIR}" -mindepth 1 -maxdepth 1 -type d -print0)
 
-if [ ! -e "${TRACTO_JAR}" ]; then
-  cd "${ROOT_DIR}"
+if [ ! -e "${SYMBOLIC_JAR}" ]; then
+  cd "${SYMBOLIC_DIR}"
   sdk use java "$JAVA21"
   mvn clean package -DskipTests
 fi
@@ -66,6 +66,6 @@ while IFS=, read -r repo_id repo_name; do
       cd "$SYMBOLIC_DIR"
       # Generate Tokens dataset for project
       sdk use java "$JAVA21"
-      java -jar "${SYMBOLIC_JAR}" "tokens" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" 24 "${SRC_RESOURCES_DIR}/oracles-dataset_config.json"
+      java -jar "${SYMBOLIC_JAR}" "tokens" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" 24
     fi
 done < "$GITHUB_REPOS_LIST_FILE"
