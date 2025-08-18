@@ -217,6 +217,8 @@ public class TestUtils {
             // Get junit version used in the test class
             JUnitVersion junitVersion = TestUtils.getJunitVersion(cu.getImports());
 
+            HashMap<String, VariableDeclarator> classVariables = JavaParserUtils.collectExistingVariables(new HashMap<>(), testClass.getFields(), List.of());
+
             if (junitVersion == JUnitVersion.JUNIT4) {
                 cu.addImport("static org.junit.Assert.*");
             } else {
@@ -280,6 +282,10 @@ public class TestUtils {
                 if (!(auxiliaryMethods.isEmpty() || !config.integrateAuxiliaryMethods())) {
                     normalizedTestCaseBody = new BlockStmt();
                     normalizedTestCase.setBody(normalizedTestCaseBody);
+                    HashMap<String, VariableDeclarator> testCaseExistingVariables = new HashMap<>();
+                    for (String classVarName : classVariables.keySet()) {
+                        testCaseExistingVariables.put(classVarName, classVariables.get(classVarName));
+                    }
                     // Parse the statements block and normalize the test case
                     boolean thrownedException = parseNormalizeTestStatementsBlock(
                             testClass,
@@ -288,7 +294,7 @@ public class TestUtils {
                             normalizedTestCaseBody,
                             auxiliaryMethods,
                             integratedAuxiliaryMethods,
-                            new ArrayList<>()
+                            JavaParserUtils.collectExistingVariables(testCaseExistingVariables, originalTestCase.getBody().get())
                     );
 
                     if (thrownedException) {
@@ -349,7 +355,7 @@ public class TestUtils {
                 testStatsList.add(testStatsBuilder.build());
                 normalizedTestCases.add(normalizedTestCase);
             }
-            testClass.setName(testClass.getNameAsString() + NamingConvention.NORMALIZED_TEST_CLASS.getConventionName());
+            //testClass.setName(testClass.getNameAsString() + NamingConvention.NORMALIZED_TEST_CLASS.getConventionName());
             for (MethodDeclaration originalTestCase : originalTestCases) {
                 testClass.remove(originalTestCase);
             }
@@ -384,13 +390,53 @@ public class TestUtils {
                 testClass.addMember(normalizedTestCase);
             }
 
+            NodeList<TypeDeclaration<?>> cuTypes = cu.getTypes();
+            NodeList<TypeDeclaration<?>> typesToPreserve = new NodeList<>();
+            typesToPreserve.add(testClass);
+            for(TypeDeclaration typeDeclaration : cuTypes) {
+                if (typeDeclaration.isPrivate()) {
+                    typesToPreserve.add(typeDeclaration);
+                }
+            }
+            cu.setTypes(typesToPreserve);
+            CompilationUnit refactoredCu = refactorCompilationUnitModified(cu, testClass, NamingConvention.NORMALIZED_TEST_CLASS);
             // Save the split test class to the output paths (regular and test repository)
-            FilesUtils.writeJavaFile(regularOutputPath, cu);
-            FilesUtils.writeJavaFile(testRepoOutputPath, cu);
+            FilesUtils.writeJavaFile(regularOutputPath, refactoredCu);
+            FilesUtils.writeJavaFile(testRepoOutputPath, refactoredCu);
         } catch (IOException e) {
             logger.error("Error reading file: " + testFilePath);
         }
         return new Pair<>(testRepoOutputPath, testStatsList);
+    }
+
+    /**
+     * Refactorize the compilation unit modified with the correct replacement of any occurrence of the original test class name.
+     * It replaces any occurrence of the original test class name with the new test class name in the compilation unit.
+     *
+     * @param cu the compilation unit modified
+     * @param testClass the primary type of the compilation unit modified
+     * @param namingConvention the naming convention to apply to the test class
+     * @throws IOException if an I/O error occurs
+     * @return the compilation unit modified with the correct replacement of any occurrence of the original test class name
+     */
+    private static CompilationUnit refactorCompilationUnitModified(CompilationUnit cu, TypeDeclaration testClass, NamingConvention namingConvention) throws IOException {
+        String cuContent = cu.toString();
+        // Regex pattern with capturing groups
+        String regex = "(?<![\\dA-Za-z\\.])(" + testClass.getNameAsString() + ")(?=[\\s.,:;{}()]+)";
+        // Replacement string
+        String replacement = testClass.getNameAsString();
+        if (namingConvention == NamingConvention.TEST_SPLIT_CLASS) {
+            replacement = replacement.replace(NamingConvention.NORMALIZED_TEST_CLASS.getConventionName(), "") + namingConvention.getConventionName();
+        } else {
+            replacement += namingConvention.getConventionName();
+        }
+
+
+        // Replace all occurrences
+        String refactoredContent = cuContent.replaceAll(regex, replacement);
+        // Create a new CompilationUnit with the normalized content
+        CompilationUnit refactoredCu = JavaParserUtils.getCompilationUnit(refactoredContent);
+        return refactoredCu;
     }
 
     /**
@@ -617,19 +663,23 @@ public class TestUtils {
                     MethodDeclaration testCaseMold = originalTestCase.clone();
                     testCaseMold.setBody(new BlockStmt());
                     // Parse the statements of the original test case and split it into multiple test cases
-                    Pair<MethodDeclaration, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
-                            config,
-                            junitVersion,
-                            originalTestCaseStatements,
-                            testCaseMold,
-                            0,
-                            auxiliaryMethods,
-                            BlockStatementsType.METHOD_BODY,
-                            originalTestCase.getThrownExceptions(),
-                            0
-                    );
-                    // Add the split test cases generated from the original test case to the list
-                    splitTestCases.addAll(result.getValue1());
+                    try {
+                        Pair<MethodDeclaration, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
+                                config,
+                                junitVersion,
+                                originalTestCaseStatements,
+                                testCaseMold,
+                                0,
+                                auxiliaryMethods,
+                                BlockStatementsType.METHOD_BODY,
+                                originalTestCase.getThrownExceptions(),
+                                0
+                        );
+                        // Add the split test cases generated from the original test case to the list
+                        splitTestCases.addAll(result.getValue1());
+                    } catch (Exception e) {
+                        logger.error("Error parsing test case statements: " + originalTestCase.getNameAsString(), e);
+                    }
                 } catch (IllegalStateException e) {
                     // Log the error occurred while parsing the statements of the test case
                     logger.error(e.getMessage());
@@ -658,16 +708,18 @@ public class TestUtils {
                 }
             }
             // Set the methods of the test case to the split test methods
-            testClass.setName(testClass.getNameAsString().replace(NamingConvention.NORMALIZED_TEST_CLASS.getConventionName(), NamingConvention.TEST_SPLIT_CLASS.getConventionName()));
+            //testClass.setName(testClass.getNameAsString().replace(NamingConvention.NORMALIZED_TEST_CLASS.getConventionName(), NamingConvention.TEST_SPLIT_CLASS.getConventionName()));
             for (MethodDeclaration originalTestCase : originalTestCases) {
                 testClass.remove(originalTestCase);
             }
             for (MethodDeclaration splitTestCase : splitTestCases) {
                 testClass.addMember(splitTestCase);
             }
+
+            CompilationUnit refactoredCu = refactorCompilationUnitModified(cu, testClass, NamingConvention.TEST_SPLIT_CLASS);
             // Save the split test class to the output paths (regular and test repository)
-            FilesUtils.writeJavaFile(regularOutputPath, cu);
-            FilesUtils.writeJavaFile(testRepoOutputPath, cu);
+            FilesUtils.writeJavaFile(regularOutputPath, refactoredCu);
+            FilesUtils.writeJavaFile(testRepoOutputPath, refactoredCu);
         } catch (IOException e) {
             logger.error("Error reading file: " + testFilePath);
         }
@@ -1553,7 +1605,7 @@ public class TestUtils {
             BlockStmt currentBlockStmt,
             HashMap<String, MethodDeclaration> auxiliaryMethods,
             List<MethodDeclaration> integratedAuxiliaryMethods,
-            List<String> existingVariables
+            HashMap<String, VariableDeclarator> existingVariables
     ) throws IllegalStateException {
         boolean thrownedException = false;
         // Iterate over the statements of the original test case
@@ -1785,15 +1837,15 @@ public class TestUtils {
                             VariableDeclarationExpr varDecl = expr.asVariableDeclarationExpr();
                             for (VariableDeclarator var : varDecl.getVariables()) {
                                 String varName = var.getNameAsString();
-                                if (!existingVariables.contains(varName)) {
-                                    existingVariables.add(varName);
+                                if (!existingVariables.containsKey(varName)) {
+                                    existingVariables.put(varName, var);
                                 } else {
                                     int i = 0;
-                                    while (existingVariables.contains(varName + "_" + i)) {
+                                    while (existingVariables.containsKey(varName + "_" + i)) {
                                         i++;
                                     }
                                     var.setName(varName + "_" + i);
-                                    existingVariables.add(varName + "_" + i);
+                                    existingVariables.put(varName + "_" + i, var);
                                     varMapping.put(varName, varName + "_" + i);
                                 }
                             }
@@ -1931,7 +1983,7 @@ public class TestUtils {
         });
     }
 
-    private static Optional<MethodDeclaration> integrateAuxiliaryMethodIntoBlockStmt(TypeDeclaration testClass, BlockStmt currentBlockStmt, MethodCallExpr auxiliaryMethodInvoked, HashMap<String, MethodDeclaration> auxiliaryMethods, List<String> existingVariables) {
+    private static Optional<MethodDeclaration> integrateAuxiliaryMethodIntoBlockStmt(TypeDeclaration testClass, BlockStmt currentBlockStmt, MethodCallExpr auxiliaryMethodInvoked, HashMap<String, MethodDeclaration> auxiliaryMethods, HashMap<String,VariableDeclarator> existingVariables) {
         String methodSignature = "";
 
         try {
@@ -1990,26 +2042,45 @@ public class TestUtils {
                 varArgsArray.setElementType(((Parameter) ((NodeList) parameters).getLast().get()).getType());
                 ArrayInitializerExpr varArgsInititalizer = new ArrayInitializerExpr();
                 NodeList<Expression> varArgs = new NodeList<>();
-                for (int i = 0; i < arguments.size(); i++) {
-                    if (i >= (parameters.size() - 1)) {
-                        varArgs.add(arguments.get(i));
-                    }
-                }
-                varArgsInititalizer.setValues(varArgs);
-                varArgsArray.setInitializer(varArgsInititalizer);
 
+                Optional<VariableDeclarator> varArgsDeclarator = Optional.empty();
                 String varArgsName = parameters.get(parameters.size() - 1).getNameAsString() + "STAR";
-                if (existingVariables.contains(varArgsName)) {
+                if (existingVariables.containsKey(varArgsName)) {
                     int i = 0;
-                    while (existingVariables.contains(varArgsName + "_" + i)) {
+                    while (existingVariables.containsKey(varArgsName + "_" + i)) {
                         i++;
                     }
                     varArgsName = varArgsName + "_" + i;
                 }
-                existingVariables.add(varArgsName);
+                boolean found = false;
+
+                if (arguments.size() == parameters.size()) {
+                    Expression lastArgument = arguments.get(arguments.size() - 1);
+                    // TODO: Check all the possible types of the last argument (for example methodCallExpr)
+                    if (lastArgument.isNameExpr() && existingVariables.containsKey(lastArgument.toString())) {
+                        found = true;
+                        varArgsDeclarator = Optional.of(new VariableDeclarator(existingVariables.get(lastArgument.asNameExpr().getNameAsString()).getType(), varArgsName, lastArgument.asNameExpr()));
+                    }
+                }
+
+                if (!found) {
+                    for (int i = 0; i < arguments.size(); i++) {
+                        if (i >= (parameters.size() - 1)) {
+                            varArgs.add(arguments.get(i));
+                        }
+                    }
+                    varArgsInititalizer.setValues(varArgs);
+                    varArgsArray.setInitializer(varArgsInititalizer);
+                    varArgsDeclarator = Optional.of(new VariableDeclarator(new ArrayType(varArgsArray.getElementType()), varArgsName, varArgsArray));
+                }
+
+                if (!varArgsDeclarator.isPresent()) {
+                    throw new IllegalStateException("Unexpected var arg declarator not instantiated when managing var args!");
+                }
+
                 AssignExpr assignExpr = new AssignExpr();
-                assignExpr.setTarget(new VariableDeclarationExpr(new ArrayType(varArgsArray.getElementType()), varArgsName));
-                assignExpr.setValue(varArgsArray);
+                assignExpr.setTarget(new VariableDeclarationExpr(varArgsDeclarator.get().getType(),varArgsDeclarator.get().getNameAsString()));
+                assignExpr.setValue(varArgsDeclarator.get().getInitializer().get());
                 currentBlockStmt.addStatement(assignExpr);
                 paramMapping.put(parameters.get(parameters.size() - 1).getNameAsString(), new NameExpr(varArgsName));
             } else {
@@ -2041,15 +2112,15 @@ public class TestUtils {
             List<VariableDeclarationExpr> auxVarDeclarationExprs = varDeclarationExprCollector.visit(auxBody);
             auxVarDeclarationExprs.forEach(auxVarDecl -> {
                 auxVarDecl.getVariables().forEach(auxVar -> {
-                    if (existingVariables.contains(auxVar.getNameAsString())) {
+                    if (existingVariables.containsKey(auxVar.getNameAsString())) {
                         int i = 0;
-                        while (existingVariables.contains(auxVar.getNameAsString() + "_" + i)) {
+                        while (existingVariables.containsKey(auxVar.getNameAsString() + "_" + i)) {
                             i++;
                         }
                         varMapping.put(auxVar.getNameAsString(), auxVar.getNameAsString() + "_" + i);
-                        existingVariables.add(auxVar.getNameAsString() + "_" + i);
+                        existingVariables.put(auxVar.getNameAsString() + "_" + i, auxVar);
                     } else {
-                        existingVariables.add(auxVar.getNameAsString());
+                        existingVariables.put(auxVar.getNameAsString(), auxVar);
                     }
                 });
             });
@@ -2133,7 +2204,22 @@ public class TestUtils {
                     body.addStatement(statement);
                     return;
                 case LAMBDA:
-                    lastStatement.findAll(LambdaExpr.class).get(0).asLambdaExpr().getBody().asBlockStmt().addStatement(statement);
+                    List<LambdaExpr> lambdaExprs = lastStatement.findAll(LambdaExpr.class);
+                    if (lambdaExprs.size() == 0 ) {
+                        Optional<Node> currentNode = Optional.of(lastStatement);
+                        while(currentNode.isPresent()) {
+                            currentNode = currentNode.get().getParentNode();
+                            if (currentNode.isPresent() && currentNode.get() instanceof LambdaExpr) {
+                                ((LambdaExpr) currentNode.get()).asLambdaExpr().getBody().asBlockStmt().addStatement(statement);
+                                break;
+                            }
+                        }
+                        if (currentNode.isEmpty()) {
+                            throw new IllegalStateException("No lambda expression found in the block of statements.");
+                        }
+                    } else {
+                        lastStatement.findAll(LambdaExpr.class).get(0).asLambdaExpr().getBody().asBlockStmt().addStatement(statement);
+                    }
                     return;
                 case IF:
                     body = lastStatement.asIfStmt().getThenStmt().asBlockStmt();

@@ -177,6 +177,21 @@ public class JavaParserUtils {
     }
 
     /**
+     * Gets a compilation unit from a code string.
+     *
+     * @param code a string containing Java code
+     * @return the corresponding JavaParser compilation unit. Returns
+     * {@code Optional.empty()} if an error occurs while attempting to parse
+     * the file.
+     */
+    public static CompilationUnit getCompilationUnit(String code) throws IOException {
+        if (javaParser == null) {
+            throw new IllegalStateException("JavaParser must be set with a repository root path, before calling this method.");
+        }
+        return javaParser.parse(code).getResult().orElseThrow();
+    }
+
+    /**
      * Generate a full signature of a variable declaration, given the list of its modifiers.
      * A signature follows the format:
      *     "[modifiers] [type] [variableName] [=] [variableValue];"

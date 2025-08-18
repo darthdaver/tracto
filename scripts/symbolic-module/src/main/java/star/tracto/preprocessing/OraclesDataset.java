@@ -110,7 +110,7 @@ public class OraclesDataset {
         testFilePaths.removeAll(perfectMatchNotFounds);
         // Iterate over the original test class files and normalize them
         for (Path testClassPath : testFilePaths) {
-            //if (testClassPath.toString().contains("RawRowMapperTest")) {
+            // if (testClassPath.toString().contains("/TableauCutGeneratorTest")) {
             try {
                 logger.info("Normalizing test class: {}", testClassPath.toString().replace(repoRootPath.toString(), ""));
                 Optional<List<RepositoryTrack.TestCase>> testCaseFilterList = Optional.empty();
@@ -136,7 +136,7 @@ public class OraclesDataset {
             } catch (Exception e) {
                 logger.error(e.getMessage());
             }
-            //}
+            // }
         }
         // Update java parser considering the new split files generated within the repository
         JavaParserUtils.setRepoJavaParser(repoRootPath, classpath);
@@ -147,7 +147,7 @@ public class OraclesDataset {
         for (Pair<Path,Path> normalizedTestClassPair : normalizedTestFilePaths) {
             Path normalizedTestClassPath = normalizedTestClassPair.getValue0();
             Path originalTestClassPath = normalizedTestClassPair.getValue1();
-            // if (normalizedTestClassPath.toString().contains("RawRowMapperTest")) {
+            // if (normalizedTestClassPath.toString().contains("/TableauCutGeneratorTest")) {
             try {
                 logger.info("Splitting test class: {}", normalizedTestClassPath.toString().replace(repoRootPath.toString(), ""));
                 Path splitTestClassPath = TestUtils.splitTest(
@@ -160,7 +160,7 @@ public class OraclesDataset {
             } catch (Exception e) {
                 logger.error(e.getMessage());
             }
-            //}
+            // }
         }
         // Update java parser considering the new split files generated within the repository
         JavaParserUtils.setRepoJavaParser(repoRootPath, classpath);
@@ -175,7 +175,7 @@ public class OraclesDataset {
             logger.info("Processing split test class {} to generate oracles datapoints", splitTestClassPath.toString().replace(repoRootPath.toString(), ""));
             if (sourceFilePath.isPresent()) {
                 // Debugging
-                // if (splitTestClassPath.toString().replace(repoRootPath.toString(), "").contains("RawRowMapperTest")) {
+                // if (splitTestClassPath.toString().replace(repoRootPath.toString(), "").contains("/TableauCutGeneratorTest")) {
                 //     try {
                 //         Pair<TestClazzDatapoints<OracleDatapoint>, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(oraclesDatasetConfig, splitTestClassPath, sourceFilePath.get(), repoRootPath);
                 //         TestClazzDatapoints<OracleDatapoint> splitTestClasstestClassesOracleDatapoints = processedSplitTestClassResult.getValue0();
