@@ -12,11 +12,11 @@
   },
   "scope": "training",
   "tokens": ["project_tokens", "java_tokens", "generic_tokens"],
-  "tokenizer" : "Qwen/Qwen2.5-32B-Instruct,32768",
+  "tokenizer" : "Qwen/Qwen2.5-32B-Instruct",
   "mask_token" : "<mask_id>",
   "sections" : ["test_prefix", "test_class", "focal_class"],
   "types" : ["methods", "fields"],
   "strategy": "cascade",
   "type": "tokens",
-  "max_length" : 128000
+  "max_length" : 262144
 }

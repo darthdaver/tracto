@@ -11,6 +11,18 @@ current_dir=$(realpath "$(dirname "${BASH_SOURCE[@]}")")
 source "${current_dir}/../../utils/bash/global_variables.sh"
 source "${current_dir}/utils/local_variables.sh"
 
+dataset_type=${1:-"oracles"}
+target_dir=${2:-"training"}
+
+OUTPUT_DATASET_DIR=""
+
+if [ "${dataset_type}" == "oracles" ]; then
+    OUTPUT_DATASET_DIR="${OUTPUT_ORACLES_DATASET}-${target_dir}"
+elif [ "${dataset_type}" == "tokens" ]; then
+    echo "Generating LLM oracles input"
+    OUTPUT_DATASET_DIR="${OUTPUT_TOKENS_DATASET}-${target_dir}"
+fi
+
 for config_path in "${PROMPT_DIR}/resources/config"/*/; do
   config_num=$(basename "${config_path}")
   echo "Generating prompt with configuration ${config_num}"

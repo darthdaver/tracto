@@ -13,6 +13,7 @@ import com.github.javaparser.resolution.types.ResolvedArrayType;
 import com.github.javaparser.resolution.types.ResolvedType;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserMethodDeclaration;
 import org.javatuples.Pair;
+import org.javatuples.Triplet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import star.tracto.data.enums.*;
@@ -75,6 +76,14 @@ public class TokensUtils {
             this.enumIdentifiers = enumIdentifiers;
         }
 
+        public TokenIdentifiersCollector() {
+            this.classPathIdentifiers = new HashMap<>();
+            this.fieldIdentifiers = new HashMap<>();
+            this.methodIdentifiers = new HashMap<>();
+            this.constructorIdentifiers = new HashMap<>();
+            this.enumIdentifiers = new HashMap<>();
+        }
+
         public void setClassIdentifiersMap(HashMap<String, List<Path>> classIdentifiers) {
             this.classPathIdentifiers = classIdentifiers;
         }
@@ -93,6 +102,73 @@ public class TokensUtils {
 
         public void setEnumIdentifiersMap(HashMap<String, List<EnumConstantDeclaration>> enumIdentifiers) {
             this.enumIdentifiers = enumIdentifiers;
+        }
+    }
+
+    /**
+     * A support class to collect the concrete element (CompilationUnit for class, MethodUsage for method or
+     * constructor, and Type for field) references for the current token.
+     *
+     */
+    private static class TokenReferencesCollector {
+        List<TypeDeclaration> clazzes;
+        List<Type> fieldTypes;
+        List<MethodUsage> methods;
+        List<ResolvedConstructorDeclaration> constructors;
+        List<EnumConstantDeclaration> enums;
+
+        /*
+         * Constructor to initialize the token identifiers collector.
+         * @param classPathIdentifiers A map of class identifiers, where the key is the identifier name and the value
+         *                         is a list of TypeDeclarations representing the homonyms classes
+         * @param fieldIdentifiers A map of field identifiers, where the key is the identifier name and the value
+         *                         is a list of VariableDeclarator representing the homonyms fields
+         * @param methodIdentifiers A map of method identifiers, where the key is the identifier name and the value
+         *                          is a list of MethodUsage representing the homonyms methods
+         * @param constructorIdentifiers A map of constructor identifiers, where the key is the identifier name and
+         *                               the value is a list of ResolvedConstructorDeclaration representing the
+         *                               homonyms constructors
+         */
+        public TokenReferencesCollector(
+                List<TypeDeclaration> clazzes,
+                List<Type> fieldTypes,
+                List<MethodUsage> methods,
+                List<ResolvedConstructorDeclaration> constructors,
+                List<EnumConstantDeclaration> enums
+        ) {
+            this.clazzes = clazzes;
+            this.fieldTypes = fieldTypes;
+            this.methods = methods;
+            this.constructors = constructors;
+            this.enums = enums;
+        }
+
+        public TokenReferencesCollector() {
+            this.clazzes = new ArrayList<>();
+            this.fieldTypes = new ArrayList<>();
+            this.methods = new ArrayList<>();
+            this.constructors = new ArrayList<>();
+            this.enums = new ArrayList<>();
+        }
+
+        public void setClazzes(List<TypeDeclaration> clazzes) {
+            this.clazzes = clazzes;
+        }
+
+        public void setFields(List<Type> fieldTypes) {
+            this.fieldTypes = fieldTypes;
+        }
+
+        public void setMethods(List<MethodUsage> methods) {
+            this.methods = methods;
+        }
+
+        public void setConstructors(List<ResolvedConstructorDeclaration> constructors) {
+            this.constructors = constructors;
+        }
+
+        public void setEnums(List<EnumConstantDeclaration> enums) {
+            this.enums = enums;
         }
     }
 
@@ -156,27 +232,23 @@ public class TokensUtils {
                 // Iterate over the test methods to find the one matching the test prefix identifier
                 for (MethodDeclaration testCase : testCases) {
                     if (testCase.getNameAsString().equals(testPrefix.identifier())) {
-                        List<Pair<TokenIdentifiersCollector, TokenIdentifierCategory>> tokenIdentifiersStack = new ArrayList<>();
-                        rootTokenIdentifiersCollector = new TokenIdentifiersCollector(
-                                new HashMap<>(),
-                                new HashMap<>(),
-                                new HashMap<>(),
-                                new HashMap<>(),
-                                new HashMap<>()
-                        );
+                        List<Pair<TokenIdentifiersCollector, TokenReferencesCollector>> tokenIdentifiersStack = new ArrayList<>();
+                        rootTokenIdentifiersCollector = new TokenIdentifiersCollector();
                         // Get the target assertion from the test prefix
                         String originalTargetAssertion = datapoint.target();
                         String targetAssertion = originalTargetAssertion.replace(" ", "");
-                        // Setup error map for the test class
-                        clazzDatapointsErrors.putIfAbsent(testCase.getNameAsString(), new HashMap<>());
-                        // Setup error map for the test case
-                        clazzDatapointsErrors.get(testCase.getNameAsString()).putIfAbsent(targetAssertion, new ArrayList<>());
-                        clazzDatapointsErrors.get(testCase.getNameAsString()).putIfAbsent("targetFound", new ArrayList<>());
-                        clazzDatapointsErrors.get(testCase.getNameAsString()).putIfAbsent("targetMissing", new ArrayList<>());
-                        setUpRootTokenIdentifiers(rootTokenIdentifiersCollector, clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion), repoSourcePath, repoTestPath, testFilePath, focalFilePath, tcCu, fcCu, testCase);
-                        TokenIdentifiersCollector currentTokenIdentifiersCollector = cloneRootTokenIdentifiers();
-                        tokenIdentifiersStack.add(new Pair<>(currentTokenIdentifiersCollector, TokenIdentifierCategory.ROOT_IDENTIFIER));
-                        List<TokenStep> tokenSteps = new ArrayList<>();
+                        try {
+                            // Setup error map for the test class
+                            clazzDatapointsErrors.putIfAbsent(testCase.getNameAsString(), new HashMap<>());
+                            // Setup error map for the test case
+                            clazzDatapointsErrors.get(testCase.getNameAsString()).putIfAbsent(targetAssertion, new ArrayList<>());
+                            clazzDatapointsErrors.get(testCase.getNameAsString()).putIfAbsent("targetFound", new ArrayList<>());
+                            clazzDatapointsErrors.get(testCase.getNameAsString()).putIfAbsent("targetMissing", new ArrayList<>());
+                            setUpRootTokenIdentifiers(rootTokenIdentifiersCollector, clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion), repoSourcePath, repoTestPath, testFilePath, focalFilePath, tcCu, fcCu, testCase);
+                            TokenIdentifiersCollector currentTokenIdentifiersCollector = cloneRootTokenIdentifiers();
+                            TokenReferencesCollector currentTokenReferences = new TokenReferencesCollector();
+                            tokenIdentifiersStack.add(new Pair<>(currentTokenIdentifiersCollector, currentTokenReferences));
+                            List<TokenStep> tokenSteps = new ArrayList<>();
 //                        Statement tgtStatement;
 //                        if (config.splitStrategy() == SplitStrategyType.ASSERTION) {
 //                            // Get the assertion statement in the test case
@@ -190,86 +262,100 @@ public class TokensUtils {
 //                            List<Statement> statements = testCase.findAll(Statement.class);
 //                            tgtStatement = statements.get(statements.size() - 1);
 //                        }
-                        List<String> tokens = Antlr4Utils.tokenizeSnippet(targetAssertion);
-                        String partialSnippet = "";
-                        for (int i = 0; i < tokens.size(); i++) {
-                            // Get the current token to process
-                            String token = tokens.get(i);
+                            List<String> tokens = Antlr4Utils.tokenizeSnippet(targetAssertion);
 
-                            // Define a new token step builder for the current token step
-                            TokenStepBuilder tokenStepBuilder = new TokenStepBuilder();
-                            tokenStepBuilder.setPartialSnippet(partialSnippet);
-                            if (partialSnippet.isEmpty()) {
-                                tokenStepBuilder.setNextPossibleJavaTokens(Arrays.stream(JUnitAssertionType.values()).map(a -> a.getAssertionMethodName()).collect(Collectors.toList()));
-                                tokenStepBuilder.setNextPossibleProjectTokens(new ArrayList<>());
-                                tokenStepBuilder.setNextPossibleGenericTokens(new ArrayList<>());
-                                tokenStepBuilder.setSyntaxCorrect(false);
-                                tokenStepBuilder.setTarget(tokens.get(0));
-                                tokenSteps.add(tokenStepBuilder.build());
-                                partialSnippet += token;
+                            try {
+                                JUnitAssertionType.fromString(tokens.get(0));
+                            } catch (IllegalArgumentException e) {
+                                String message = "Assertion do not start with JUnit api (do not implemented yet): " + targetAssertion + " - " + e.getMessage();
+                                logger.error(message);
+                                clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion).add(message);
                                 continue;
                             }
 
-                            // Define the list of next possible tokens, divided by type
-                            List<String> adjustedNextJavaTokens = new ArrayList<>();
-                            List<String> adjustedNextConcreteTokens = new ArrayList<>();
-                            List<String> adjustedNextGenericTokens = new ArrayList<>();
-                            List<String> nextANTLRTokens = Antlr4Utils.parseSnippet(JUnitAssertionType.fromString(tokens.get(0)), partialSnippet);
+                            String partialSnippet = "";
+                            for (int i = 0; i < tokens.size(); i++) {
+                                // Get the current token to process
+                                String token = tokens.get(i);
 
-                            if (nextANTLRTokens.isEmpty() && !token.equals(';')) {
-                                // raise exception
-                                IllegalStateException exception = new IllegalStateException("Unexpected empty token candidates after partial snippet: " + partialSnippet + " and token: " + token);
-                                clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion).add(exception.getMessage());
-                                throw exception;
-                            }
-
-                            for (String nextANTLRToken : nextANTLRTokens) {
-                                // A token can be: a Java token, a literal, an identifier
-                                if (literalsSet.contains(nextANTLRToken)) {
-                                    adjustedNextGenericTokens.add(nextANTLRToken);
-                                } else if (nextANTLRToken.equals("IDENTIFIER")) {
-                                    if (!Antlr4Utils.getAntlrToken(tokens.get(i-1)).equals(AntlrToken.IDENTIFIER)) {
-                                        adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.classPathIdentifiers.keySet());
-                                        adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.methodIdentifiers.keySet());
-                                        adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.constructorIdentifiers.keySet());
-                                        adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.fieldIdentifiers.keySet());
-                                        adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.enumIdentifiers.keySet());
-                                    }
-                                } else {
-                                    // For non-literal, non-IDENTIFIER tokens (e.g., keywords),
-                                    // we can filter them based on expectedType if needed.
-                                    // For now, we add them and filter afterward.
-                                    adjustedNextJavaTokens.add(nextANTLRToken);
+                                // Define a new token step builder for the current token step
+                                TokenStepBuilder tokenStepBuilder = new TokenStepBuilder();
+                                tokenStepBuilder.setPartialSnippet(partialSnippet);
+                                if (partialSnippet.isEmpty()) {
+                                    tokenStepBuilder.setNextPossibleJavaTokens(Arrays.stream(JUnitAssertionType.values()).map(a -> a.getAssertionMethodName()).collect(Collectors.toList()));
+                                    tokenStepBuilder.setNextPossibleProjectTokens(new ArrayList<>());
+                                    tokenStepBuilder.setNextPossibleGenericTokens(new ArrayList<>());
+                                    tokenStepBuilder.setSyntaxCorrect(false);
+                                    tokenStepBuilder.setTarget("ASSERT:" + tokens.get(0));
+                                    tokenSteps.add(tokenStepBuilder.build());
+                                    partialSnippet += token;
+                                    continue;
                                 }
-                            }
 
-                            if (!adjustedNextConcreteTokens.contains(token) && !adjustedNextJavaTokens.contains(token) && !adjustedNextGenericTokens.contains(token)) {
-                                if (!literalsSet.contains(Antlr4Utils.getAntlrToken(token).toString())) {
-                                    String message = "Unexpected token: " + token + " not found in the collected list of candidate tokens: " + partialSnippet;
-                                    logger.error(message);
-                                    clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion).add(message);
-                                    clazzDatapointsErrors.get(testCase.getNameAsString()).get("targetMissing").add(token);
+                                // Define the list of next possible tokens, divided by type
+                                List<String> adjustedNextJavaTokens = new ArrayList<>();
+                                List<String> adjustedNextConcreteTokens = new ArrayList<>();
+                                List<String> adjustedNextGenericTokens = new ArrayList<>();
+                                List<String> nextANTLRTokens = Antlr4Utils.parseSnippet(JUnitAssertionType.fromString(tokens.get(0)), partialSnippet);
+
+                                if (nextANTLRTokens.isEmpty() && !token.equals(';')) {
+                                    // raise exception
+                                    IllegalStateException exception = new IllegalStateException("Unexpected empty token candidates after partial snippet: " + partialSnippet + " and token: " + token);
+                                    clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion).add(exception.getMessage());
+                                    throw exception;
+                                }
+
+                                for (String nextANTLRToken : nextANTLRTokens) {
+                                    // A token can be: a Java token, a literal, an identifier
+                                    if (literalsSet.contains(nextANTLRToken)) {
+                                        adjustedNextGenericTokens.add(nextANTLRToken);
+                                    } else if (nextANTLRToken.equals("IDENTIFIER")) {
+                                        if (!Antlr4Utils.getAntlrToken(tokens.get(i-1)).equals(AntlrToken.IDENTIFIER)) {
+                                            adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.classPathIdentifiers.keySet());
+                                            adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.methodIdentifiers.keySet());
+                                            adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.constructorIdentifiers.keySet());
+                                            adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.fieldIdentifiers.keySet());
+                                            adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.enumIdentifiers.keySet());
+                                        }
+                                    } else {
+                                        // For non-literal, non-IDENTIFIER tokens (e.g., keywords),
+                                        // we can filter them based on expectedType if needed.
+                                        // For now, we add them and filter afterward.
+                                        adjustedNextJavaTokens.add(nextANTLRToken);
+                                    }
+                                }
+
+                                if (!adjustedNextConcreteTokens.contains(token) && !adjustedNextJavaTokens.contains(token) && !adjustedNextGenericTokens.contains(token)) {
+                                    if (!literalsSet.contains(Antlr4Utils.getAntlrToken(token).toString())) {
+                                        String message = "Unexpected token: " + token + " not found in the collected list of candidate tokens: " + partialSnippet;
+                                        logger.error(message);
+                                        clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion).add(message);
+                                        clazzDatapointsErrors.get(testCase.getNameAsString()).get("targetMissing").add(token);
+                                    } else {
+                                        clazzDatapointsErrors.get(testCase.getNameAsString()).get("targetFound").add(Antlr4Utils.getAntlrToken(token) + ":" + token);
+                                    }
                                 } else {
                                     clazzDatapointsErrors.get(testCase.getNameAsString()).get("targetFound").add(Antlr4Utils.getAntlrToken(token) + ":" + token);
                                 }
-                            } else {
-                                clazzDatapointsErrors.get(testCase.getNameAsString()).get("targetFound").add(Antlr4Utils.getAntlrToken(token) + ":" + token);
-                            }
 
-                            tokenStepBuilder.setNextPossibleGenericTokens(adjustedNextGenericTokens);
-                            tokenStepBuilder.setNextPossibleProjectTokens(adjustedNextConcreteTokens);
-                            tokenStepBuilder.setNextPossibleJavaTokens(adjustedNextJavaTokens);
-                            tokenStepBuilder.setSyntaxCorrect(false);
-                            tokenStepBuilder.setTarget(Antlr4Utils.getAntlrToken(token) + ":" + token);
-                            tokenSteps.add(tokenStepBuilder.build());
-                            // Update the partial snippet
-                            partialSnippet += token;
-                            currentTokenIdentifiersCollector = updateTokenIdentifiers(tokenIdentifiersStack, token, testFilePath, testClass, testCase.getNameAsString(), clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion));
+                                tokenStepBuilder.setNextPossibleGenericTokens(adjustedNextGenericTokens);
+                                tokenStepBuilder.setNextPossibleProjectTokens(adjustedNextConcreteTokens);
+                                tokenStepBuilder.setNextPossibleJavaTokens(adjustedNextJavaTokens);
+                                tokenStepBuilder.setSyntaxCorrect(false);
+                                tokenStepBuilder.setTarget(Antlr4Utils.getAntlrToken(token) + ":" + token);
+                                tokenSteps.add(tokenStepBuilder.build());
+                                // Update the partial snippet
+                                partialSnippet += token;
+                                currentTokenIdentifiersCollector = updateTokenIdentifiers(tokenIdentifiersStack, token, testClass, testCase.getNameAsString(), clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion));
+                            }
+                            partialOracleDatapointBuilder.setTestPrefix(testPrefix);
+                            partialOracleDatapointBuilder.setTarget(targetAssertion);
+                            partialOracleDatapointBuilder.setDatapoints(tokenSteps);
+                            partialOraclesDatapoints.add(partialOracleDatapointBuilder.build());
+                        } catch (Exception e) {
+                            logger.error(e.getStackTrace().toString());
+                            clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion).add(e.getStackTrace().toString());
                         }
-                        partialOracleDatapointBuilder.setTestPrefix(testPrefix);
-                        partialOracleDatapointBuilder.setTarget(targetAssertion);
-                        partialOracleDatapointBuilder.setDatapoints(tokenSteps);
-                        partialOraclesDatapoints.add(partialOracleDatapointBuilder.build());
                         break;
                     }
                 }
@@ -365,25 +451,24 @@ public class TokensUtils {
     }
 
     public static TokenIdentifiersCollector updateTokenIdentifiers(
-            List<Pair<TokenIdentifiersCollector, TokenIdentifierCategory>> tokenIdentifiersStack,
+            List<Pair<TokenIdentifiersCollector, TokenReferencesCollector>> tokenIdentifiersStack,
             String token,
-            Path testFilePath,
             TypeDeclaration tc,
             String testCaseName,
             List<String> clazzDatapointsErrors
     ) {
         AntlrTokenAction tokenAction = AntlrTokenMapper.getTokenAction(token);
         AntlrToken tokenType = Antlr4Utils.getAntlrToken(token);
-        Pair<TokenIdentifiersCollector, TokenIdentifierCategory> currentTokenIdentifiersAndCategory = tokenIdentifiersStack.get(tokenIdentifiersStack.size() - 1);
+        Pair<TokenIdentifiersCollector, TokenReferencesCollector> currentTokenIdentifiersAndCategory = tokenIdentifiersStack.get(tokenIdentifiersStack.size() - 1);
         TokenIdentifiersCollector tokenIdentifiersCollector = currentTokenIdentifiersAndCategory.getValue0();
-        TokenIdentifierCategory tokenIdentifierCategory = currentTokenIdentifiersAndCategory.getValue1();
+        TokenReferencesCollector tokenReferences = currentTokenIdentifiersAndCategory.getValue1();
         switch (tokenAction) {
             case ADD_ROOT:
-                tokenIdentifiersStack.add(new Pair<>(cloneRootTokenIdentifiers(), TokenIdentifierCategory.ROOT_IDENTIFIER));
+                tokenIdentifiersStack.add(new Pair<>(cloneRootTokenIdentifiers(), new TokenReferencesCollector()));
                 break;
             case SET_TO_ROOT:
                 tokenIdentifiersStack.remove(currentTokenIdentifiersAndCategory);
-                tokenIdentifiersStack.add(new Pair<>(cloneRootTokenIdentifiers(), TokenIdentifierCategory.ROOT_IDENTIFIER));
+                tokenIdentifiersStack.add(new Pair<>(cloneRootTokenIdentifiers(), new TokenReferencesCollector()));
                 break;
             case KEEP_CURRENT:
                 break;
@@ -446,10 +531,11 @@ public class TokensUtils {
                     case STRING_LITERAL:
                     case TEXT_BLOCK:
                     case NULL_LITERAL:
-                        tokenIdentifiersCollector.setConstructorIdentifiersMap(new HashMap<>());
+                        tokenIdentifiersCollector.setClassIdentifiersMap(new HashMap<>());
+                        tokenIdentifiersCollector.setFieldIdentifiersMap(new HashMap<>());
                         tokenIdentifiersCollector.setMethodIdentifiersMap(new HashMap<>());
                         tokenIdentifiersCollector.setConstructorIdentifiersMap(new HashMap<>());
-                        tokenIdentifiersCollector.setFieldIdentifiersMap(new HashMap<>());
+                        tokenIdentifiersCollector.setEnumIdentifiersMap(new HashMap<>());
                         break;
                     case IMPLEMENTS:
                     case INSTANCEOF:

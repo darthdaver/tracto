@@ -3,7 +3,7 @@ import re
 import logging
 from transformers import AutoTokenizer
 
-from src.utils.Logger import Logger
+from src.Logger import Logger
 
 logger = Logger("EWash", "ewash")
 
