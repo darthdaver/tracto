@@ -22,5 +22,22 @@ public record TokenStep(
         List<String> nextPossibleJavaTokens,
         List<String> nextPossibleGenericTokens,
         boolean isSyntaxCorrect,
-        String target
-) {}
+        String target,
+        List<ContextualInfo> contextualInfos
+) {
+    public record ContextualInfo(
+            List<Clazz> clazzes,
+            List<Callable> invokedMethods,
+            List<Callable> invokedConstructors,
+            List<FieldContextualInfo> fields,
+            List<String> enumConstants
+    ) {}
+
+    public record FieldContextualInfo(
+            String identifier,
+            String fullSignature,
+            String declarator,
+            List<String> modifiers,
+            Clazz clazz
+    ) {}
+}

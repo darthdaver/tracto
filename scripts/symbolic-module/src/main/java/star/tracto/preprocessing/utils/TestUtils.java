@@ -2744,6 +2744,17 @@ public class TestUtils {
      * @return the list of {@link Field}, providing information about each field defined in the compilation unit
      */
     private static List<Field> processFieldsFromTypeDeclaration(TypeDeclaration typeDeclaration) {
+        return processFieldsFromTypeDeclaration(typeDeclaration, false);
+    }
+
+    /**
+     * Extract the information about the fields defined in the type declaration (class) passed as input.
+     * @param typeDeclaration the type declaration (class) to analyze
+     * @param contextualInfo if {@code true}, the method will collect a limited information about the fields, the only
+     *                       necessary for the prompt used to train the model or at inference time.
+     * @return the list of {@link Field}, providing information about each field defined in the compilation unit
+     */
+    private static List<Field> processFieldsFromTypeDeclaration(TypeDeclaration typeDeclaration, boolean contextualInfo) {
         List<Field> fields = new ArrayList<>();
         FieldBuilder fieldBuilder = new FieldBuilder();
 
@@ -2767,7 +2778,7 @@ public class TestUtils {
                 fieldBuilder.setModifiers(modifiers);
                 // Analyze the type of the variable
                 com.github.javaparser.ast.type.Type varType = variable.getType();
-                Type type = processType(typeDeclaration, varType, 0);
+                Type type = !contextualInfo ? processType(typeDeclaration, varType, 0) : null;
                 fieldBuilder.setType(type);
                 fields.add(fieldBuilder.build());
                 fieldBuilder.reset();
@@ -3224,6 +3235,39 @@ public class TestUtils {
     }
 
     /**
+     * Process class for test orales contextual info in the form of {@link TypeDeclaration} and generate the corresponding
+     * {@link Clazz} object.
+     *
+     * @param typeDeclaration the type declaration to process
+     * @return the {@link TestClazz} object generated from the type declaration
+     */
+    public static Clazz processTypeDeclarationForContextualInfo(TypeDeclaration typeDeclaration) {
+        ClazzBuilder focalClazzBuilder = new ClazzBuilder();
+        // Set test class identifier (name)
+        focalClazzBuilder.setIdentifier(typeDeclaration.getNameAsString());
+        // Set test class package
+        focalClazzBuilder.setPackageIdentifier(JavaParserUtils.getPackageNameFromTypeDeclaration(typeDeclaration).orElse(""));
+        // Retrieve the superclasses extended and the interfaces implemented by the test class
+        List<String> superClasses = new ArrayList<>();
+        List<String> interfaces = new ArrayList<>();
+        // Set test class superclasses and interfaces
+        focalClazzBuilder.setSuperClasses(superClasses);
+        focalClazzBuilder.setInterfaces(interfaces);
+        // Set file path of the test class
+        focalClazzBuilder.setFilePath("");
+        // Set test class fields
+        focalClazzBuilder.setFields(processFieldsFromTypeDeclaration(typeDeclaration, true));
+        // Set the list of all the constructors and methods defined in the given focal class
+        List<ConstructorDeclaration> constructors = typeDeclaration.getConstructors();
+        // TODO: Manage invoked methods recursion in the improved version of the dataset. In the current
+        //       version the invoked methods are set to null.
+        focalClazzBuilder.setConstructors(constructors.stream().map(m -> processCallable(typeDeclaration, m, null, true)).collect(Collectors.toList()));
+        List<MethodDeclaration> methods = typeDeclaration.getMethods();
+        focalClazzBuilder.setMethods(methods.stream().map(m -> processCallable(typeDeclaration, m, null, true)).collect(Collectors.toList()));
+        return focalClazzBuilder.build();
+    }
+
+    /**
      * Process a type declaration to retrieve the list of related type declarations (extended and implemented classes), iteratively.
      *
      * @param referenceTypeDeclaration the reference type declaration to analyze
@@ -3598,7 +3642,22 @@ public class TestUtils {
      * @param invokedMethods the list of invoked methods within the method or constructor declaration. It can be null.
      * @return the {@link Callable} object generated from the method declaration
      */
-    private static Callable processCallable(TypeDeclaration typeDeclaration, CallableDeclaration callableDeclaration, List<Callable> invokedMethods) {
+    public static Callable processCallable(TypeDeclaration typeDeclaration, CallableDeclaration callableDeclaration, List<Callable> invokedMethods) {
+        return processCallable(typeDeclaration, callableDeclaration, invokedMethods, false);
+    }
+
+    /**
+     * Process the method declaration and generate the corresponding {@link Callable} object.
+     *
+     * @param typeDeclaration the type declaration (class) to which the method belongs
+     * @param callableDeclaration the method or constructor declaration to process
+     * @param invokedMethods the list of invoked methods within the method or constructor declaration. It can be null.
+     * @param contextualInfo a boolean flag to indicate if the method is processed as contextual information for the tokens
+     *                       dataset prompt (in this case limited information are provided. The only necessary for the
+     *                       prompt to the model)
+     * @return the {@link Callable} object generated from the method declaration
+     */
+    public static Callable processCallable(TypeDeclaration typeDeclaration, CallableDeclaration callableDeclaration, List<Callable> invokedMethods, boolean contextualInfo) {
         // Instantiate a method builder to build a MethodTracto object from the method declaration
         CallableBuilder callableBuilder = new CallableBuilder();
         // Set the attributes of the method
@@ -3612,22 +3671,127 @@ public class TestUtils {
         callableBuilder.setBody(JavaParserUtils.getCallableSourceCode(callableDeclaration).replaceAll("(?<![a-zA-Z0-9])Assert\\.", "").replaceAll("(?<![a-zA-Z0-9])Assertions\\.", ""));
         // TODO: Manage invoked methods recursion in the improved version of the dataset
         callableBuilder.setInvokedMethods(invokedMethods); // avoid recursion in the first version of the dataset
-        if (callableDeclaration instanceof MethodDeclaration) {
+        if (callableDeclaration instanceof MethodDeclaration && !contextualInfo) {
             callableBuilder.setReturnType(processType(typeDeclaration, ((MethodDeclaration) callableDeclaration).getType(),0));
         } else {
             callableBuilder.setReturnType(null);
         }
         // Process the parameters of the method
-        List<Callable.Parameter> parameters = new ArrayList<>();
-        for (Object obj : callableDeclaration.getParameters()) {
-            Parameter parameter = (Parameter) obj;
-            String parameterName = parameter.getNameAsString();
-            Type parameterType = processType(typeDeclaration, parameter.getType(), 0);
-            parameters.add(new Callable.Parameter(parameterName, parameterType));
+        List<Callable.Parameter> parameters = !contextualInfo ? new ArrayList<>() : null;
+
+        if (!contextualInfo) {
+            for (Object obj : callableDeclaration.getParameters()) {
+                Parameter parameter = (Parameter) obj;
+                String parameterName = parameter.getNameAsString();
+                Type parameterType = processType(typeDeclaration, parameter.getType(), 0);
+                parameters.add(new Callable.Parameter(parameterName, parameterType));
+            }
         }
         callableBuilder.setParameters(parameters);
         // Build the method and return it
         return callableBuilder.build();
+    }
+
+    /**
+     * Process the method usage and generate the corresponding {@link Callable} object without information related
+     * to type declaration, return type and invoked methods.
+     *
+     * @param methodUsage the method usage to process
+     * @return the {@link Callable} object generated from the method declaration
+     */
+    public static Callable processCallable(MethodUsage methodUsage) {
+        // Instantiate a method builder to build a MethodTracto object from the method declaration
+        CallableBuilder callableBuilder = new CallableBuilder();
+        Optional<Node> declarationNode = methodUsage.getDeclaration().toAst();
+        if (declarationNode.isPresent() && declarationNode.get() instanceof MethodDeclaration) {
+            MethodDeclaration callableDeclaration = (MethodDeclaration) declarationNode.get();
+            // Set the attributes of the method
+            callableBuilder.setIdentifier(callableDeclaration.getNameAsString());
+            callableBuilder.setAnnotations(JavaParserUtils.getAnnotationsAsStrings(callableDeclaration.getAnnotations()));
+            callableBuilder.setModifiers(JavaParserUtils.getModifiersAsStrings(callableDeclaration.getModifiers()));
+            callableBuilder.setSignature(JavaParserUtils.getCallableSignature(callableDeclaration));
+            callableBuilder.setThrownExceptions(JavaParserUtils.getExceptionsAsString(callableDeclaration.getThrownExceptions()));
+            callableBuilder.setJavadoc(JavaParserUtils.getCallableJavadoc(callableDeclaration));
+            // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
+            callableBuilder.setBody(JavaParserUtils.getCallableSourceCode(callableDeclaration).replaceAll("(?<![a-zA-Z0-9])Assert\\.", "").replaceAll("(?<![a-zA-Z0-9])Assertions\\.", ""));
+            // TODO: Manage invoked methods recursion in the improved version of the dataset
+            callableBuilder.setInvokedMethods(new ArrayList<>()); // avoid recursion in the first version of the dataset
+            if (callableDeclaration instanceof MethodDeclaration) {
+                callableBuilder.setReturnType(null);
+            }
+            // Process the parameters of the method
+            callableBuilder.setParameters(new ArrayList<>());
+            // Build the method and return it
+            return callableBuilder.build();
+        } else {
+            // Set the attributes of the method
+            callableBuilder.setIdentifier(methodUsage.getName());
+            callableBuilder.setAnnotations(JavaParserUtils.getAnnotationsAsStrings(new ArrayList<>()));
+            callableBuilder.setModifiers(JavaParserUtils.getModifiersAsStrings(new ArrayList<>()));
+            callableBuilder.setSignature(JavaParserUtils.getMethodSignature(methodUsage));
+            callableBuilder.setThrownExceptions(JavaParserUtils.getExceptions(methodUsage));
+            callableBuilder.setJavadoc(JavaParserUtils.getJavadocByPattern(methodUsage.toString()));
+            Optional<String> body = JavaParserUtils.getBodyFromMethodUsage(methodUsage);
+            // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
+            callableBuilder.setBody(body.isPresent() ? body.get() : "");
+            // TODO: Manage invoked methods recursion in the improved version of the dataset
+            callableBuilder.setInvokedMethods(new ArrayList<>());
+            // Process the parameters of the method
+            callableBuilder.setParameters(new ArrayList<>());
+            // Build the method and return it
+            return callableBuilder.build();
+        }
+    }
+
+    /**
+     * Process the resolved constructor declaration and generate the corresponding {@link Callable} object without
+     * information related to type declaration, return type and invoked methods.
+     *
+     * @param resolvedConstructorDeclaration the resolved constructor declaration to process
+     * @return the {@link Callable} object generated from the resolved constructor declaration
+     */
+    public static Callable processCallable(ResolvedConstructorDeclaration resolvedConstructorDeclaration) {
+        // Instantiate a method builder to build a MethodTracto object from the method declaration
+        CallableBuilder callableBuilder = new CallableBuilder();
+        Optional<Node> declarationNode = resolvedConstructorDeclaration.toAst();
+        if (declarationNode.isPresent() && declarationNode.get() instanceof ConstructorDeclaration) {
+            ConstructorDeclaration callableDeclaration = (ConstructorDeclaration) declarationNode.get();
+            // Set the attributes of the method
+            callableBuilder.setIdentifier(callableDeclaration.getNameAsString());
+            callableBuilder.setAnnotations(JavaParserUtils.getAnnotationsAsStrings(callableDeclaration.getAnnotations()));
+            callableBuilder.setModifiers(JavaParserUtils.getModifiersAsStrings(callableDeclaration.getModifiers()));
+            callableBuilder.setSignature(JavaParserUtils.getCallableSignature(callableDeclaration));
+            callableBuilder.setThrownExceptions(JavaParserUtils.getExceptionsAsString(callableDeclaration.getThrownExceptions()));
+            callableBuilder.setJavadoc(JavaParserUtils.getCallableJavadoc(callableDeclaration));
+            // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
+            callableBuilder.setBody(JavaParserUtils.getCallableSourceCode(callableDeclaration).replaceAll("(?<![a-zA-Z0-9])Assert\\.", "").replaceAll("(?<![a-zA-Z0-9])Assertions\\.", ""));
+            // TODO: Manage invoked methods recursion in the improved version of the dataset
+            callableBuilder.setInvokedMethods(new ArrayList<>()); // avoid recursion in the first version of the dataset
+            callableBuilder.setReturnType(null);
+            // Process the parameters of the method
+            callableBuilder.setParameters(new ArrayList<>());
+            // Build the method and return it
+            return callableBuilder.build();
+        } else {
+            // Set the attributes of the method
+            callableBuilder.setIdentifier(resolvedConstructorDeclaration.getName());
+            callableBuilder.setAnnotations(JavaParserUtils.getAnnotationsAsStrings(new ArrayList<>()));
+            callableBuilder.setModifiers(JavaParserUtils.getModifiersAsStrings(new ArrayList<>()));
+            callableBuilder.setSignature(resolvedConstructorDeclaration.getSignature());
+            callableBuilder.setThrownExceptions(new ArrayList<>());
+            callableBuilder.setJavadoc(JavaParserUtils.getJavadocByPattern(resolvedConstructorDeclaration.toString()));
+            Optional<String> body = JavaParserUtils.getBodyFromResolvedConstructorDeclaration(resolvedConstructorDeclaration);
+            // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
+            callableBuilder.setBody(body.isPresent() ? body.get() : "");
+            // TODO: Manage invoked methods recursion in the improved version of the dataset
+            callableBuilder.setInvokedMethods(new ArrayList<>());
+            callableBuilder.setReturnType(null);
+            // Process the parameters of the method
+            callableBuilder.setParameters(new ArrayList<>());
+            // Build the method and return it
+            return callableBuilder.build();
+        }
+
     }
 
     /**

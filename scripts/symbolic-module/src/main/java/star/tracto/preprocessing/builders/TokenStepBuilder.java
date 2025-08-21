@@ -12,6 +12,7 @@ public class TokenStepBuilder {
     private List<String> nextPossibleGenericTokens;
     private boolean isSyntaxCorrect;
     private String target;
+    private List<TokenStep.ContextualInfo> contextualInfos;
 
     public TokenStep build() {
         return new TokenStep(
@@ -20,7 +21,8 @@ public class TokenStepBuilder {
                 this.nextPossibleJavaTokens,
                 this.nextPossibleGenericTokens,
                 this.isSyntaxCorrect,
-                this.target
+                this.target,
+                this.contextualInfos
         );
     }
 
@@ -79,11 +81,11 @@ public class TokenStepBuilder {
     }
 
     /**
-     * Get the partialSnippet.
+     * Set the contextual information.
      *
-     * @param
+     * @param contextualInfos the contextual information
      */
-    public String getPartialSnippet() {
-        return partialSnippet;
+    public void setContextualInfos(List<TokenStep.ContextualInfo> contextualInfos) {
+        this.contextualInfos = contextualInfos;
     }
 }

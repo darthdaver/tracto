@@ -13,10 +13,7 @@ import com.github.javaparser.ast.type.ReferenceType;
 import com.github.javaparser.ast.type.TypeParameter;
 import com.github.javaparser.resolution.MethodUsage;
 import com.github.javaparser.resolution.UnsolvedSymbolException;
-import com.github.javaparser.resolution.declarations.ResolvedMethodDeclaration;
-import com.github.javaparser.resolution.declarations.ResolvedParameterDeclaration;
-import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
-import com.github.javaparser.resolution.declarations.ResolvedTypeParameterDeclaration;
+import com.github.javaparser.resolution.declarations.*;
 import com.github.javaparser.resolution.types.ResolvedReferenceType;
 import com.github.javaparser.resolution.types.ResolvedType;
 import com.github.javaparser.symbolsolver.JavaSymbolSolver;
@@ -455,6 +452,22 @@ public class JavaParserUtils {
     }
 
     /**
+     * Gets the Javadoc comment of a method from it's string representation, using a regex.
+     *
+     * @return the matched Javadoc comment surrounded by
+     * "&#47;&#42;&#42; ... &#42;&#42;&#47;" for compatibility with the XText
+     * grammar (empty string if not found)
+     */
+    public static String getJavadocByPattern(String input) {
+        Matcher matcher = javadocPattern.matcher(input);
+        if (matcher.find()) {
+            String content = matcher.group(1);
+            return "/**" + content + "*/";
+        }
+        return "";
+    }
+
+    /**
      * Gets all formal parameters in the method definition. This method
      * returns the type of each parameter, followed by an artificial name. For
      * example,
@@ -548,6 +561,56 @@ public class JavaParserUtils {
                 .asExpressionStmt().getExpression()
                 .asVariableDeclarationExpr().getVariables().get(0)
                 .resolve().getType();
+    }
+
+    /**
+     * Returns a list of type declarations defined within a compilation unit and with a given type name.
+     * This method searches for the type declaration(s) with the given name in the compilation unit, including inner classes.
+     *
+     * @param cu the compilation unit
+     * @param typeName the name of the type declaration(s) to find within the compilation unit
+     * @return a list containing the found type declarations, or an empty list if no type declarations with the given name
+     * are found.
+     */
+    public static List<TypeDeclaration> getTypeDeclarationsFromCompilationUnitAndName(CompilationUnit cu, String typeName) {
+        List<TypeDeclaration> typeDeclarations = new ArrayList<>();
+        for (TypeDeclaration typeDeclaration: cu.getTypes()) {
+            if (typeDeclaration.getNameAsString().equals(typeName)) {
+                 typeDeclarations.add(typeDeclaration);
+                 continue;
+            }
+
+            Optional<TypeDeclaration> targetTypeDeclaration =  Optional.empty();
+
+            List<TypeDeclaration> innerTypeDeclarations = (List<TypeDeclaration>) typeDeclaration.getMembers().stream()
+                    .filter(m -> ((BodyDeclaration) m).isTypeDeclaration())
+                    .collect(Collectors.toList());
+
+            while (!targetTypeDeclaration.isEmpty() && innerTypeDeclarations.size() > 0) {
+                List<TypeDeclaration> newInnerTypeDeclarations = new ArrayList<>();
+                for (TypeDeclaration innerTypeDeclaration: innerTypeDeclarations) {
+                    if (innerTypeDeclaration.getNameAsString().equals(typeName)) {
+                        targetTypeDeclaration = Optional.of(innerTypeDeclaration);
+                        break;
+                    } else {
+                        newInnerTypeDeclarations.addAll((
+                                List<TypeDeclaration>) innerTypeDeclaration.getMembers().stream()
+                                .filter(m -> ((BodyDeclaration) m).isTypeDeclaration())
+                                .collect(Collectors.toList())
+                        );
+                    }
+                }
+                if (targetTypeDeclaration.isEmpty()) {
+                    innerTypeDeclarations = newInnerTypeDeclarations;
+                } else {
+                    innerTypeDeclarations = new ArrayList<>();
+                }
+            }
+            if (targetTypeDeclaration.isPresent()) {;
+                typeDeclarations.add(targetTypeDeclaration.get());
+            }
+        }
+        return typeDeclarations;
     }
 
     /**
@@ -1178,6 +1241,45 @@ public class JavaParserUtils {
     }
 
     /**
+     * Extract the body of a method from a {@link MethodUsage} object.
+     * The body is extracted from the string representation of the method usage, starting from the signature of the method.
+     * @param methodUsage the method usage from which to extract the body
+     * @return an Optional containing the body of the method, if found. Otherwise, an empty Optional.
+     */
+    public static Optional<String> getBodyFromMethodUsage(MethodUsage methodUsage) {
+        Optional<String> body = Optional.empty();
+        int signatureIdx = methodUsage.toString().indexOf(methodUsage.getSignature());
+        int bodyIdx = methodUsage.toString().substring(signatureIdx + methodUsage.getSignature().length()).indexOf("{");
+        if (bodyIdx != -1) {
+            // Extract the body of the method from the signature index
+            String bodyString = methodUsage.toString().substring(signatureIdx + methodUsage.getSignature().length() + bodyIdx);
+            return Optional.of(bodyString);
+        } else {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Extract the body of a method from a {@link ResolvedConstructorDeclaration} object.
+     * The body is extracted from the string representation of the resolved constructor declaration, starting from the
+     * signature of the constructor.
+     * @param resolvedConstructorDeclaration the resolved constructor declaration from which to extract the body
+     * @return an Optional containing the body of the constructor, if found. Otherwise, an empty Optional.
+     */
+    public static Optional<String> getBodyFromResolvedConstructorDeclaration(ResolvedConstructorDeclaration resolvedConstructorDeclaration) {
+        Optional<String> body = Optional.empty();
+        int signatureIdx = resolvedConstructorDeclaration.toString().indexOf(resolvedConstructorDeclaration.getSignature());
+        int bodyIdx = resolvedConstructorDeclaration.toString().substring(signatureIdx + resolvedConstructorDeclaration.getSignature().length()).indexOf("{");
+        if (bodyIdx != -1) {
+            // Extract the body of the method from the signature index
+            String bodyString = resolvedConstructorDeclaration.toString().substring(signatureIdx + resolvedConstructorDeclaration.getSignature().length() + bodyIdx);
+            return Optional.of(bodyString);
+        } else {
+            return Optional.empty();
+        }
+    }
+
+    /**
      * Search the {@link MethodUsage} corresponding to a given method call expression, by comparing the method call expression
      * with the list of methods in the class file where the method call expression is supposed to be defined (analyzing the
      * signature and the number and types of the parameters).
@@ -1506,21 +1608,19 @@ public class JavaParserUtils {
                                 }
                                 // If the type declaration is a class or an interface, add it to the map of existing classes
                                 if (typeDeclaration.isClassOrInterfaceDeclaration()) {
-                                    ClassOrInterfaceDeclaration classOrInterfaceDecl = typeDeclaration.asClassOrInterfaceDeclaration();
-                                    if (classOrInterfaceDecl.isInterface()) {
+                                    if (typeDeclaration.asClassOrInterfaceDeclaration().isInterface()) {
                                         // Skip interfaces that cannot be instantiated or used in test assertions
                                         continue;
                                     }
-                                    ClassOrInterfaceDeclaration classOrInterfaceDeclaration = typeDeclaration.asClassOrInterfaceDeclaration();
-                                    if (!existingClasses.containsKey(classOrInterfaceDeclaration.getNameAsString())) {
-                                        existingClasses.put(classOrInterfaceDeclaration.getNameAsString(), new ArrayList<>());
-                                    }
-                                    boolean isAlreadyPresent = existingClasses.get(classOrInterfaceDeclaration.getNameAsString()).stream()
-                                            .anyMatch(t -> t.equals(filePath));
-                                    if (!isAlreadyPresent) {
-                                        // Add the type declaration to the list of existing classes
-                                        existingClasses.get(classOrInterfaceDeclaration.getNameAsString()).add(filePath);
-                                    }
+                                }
+                                if (!existingClasses.containsKey(typeDeclaration.getNameAsString())) {
+                                    existingClasses.put(typeDeclaration.getNameAsString(), new ArrayList<>());
+                                }
+                                boolean isAlreadyPresent = existingClasses.get(typeDeclaration.getNameAsString()).stream()
+                                        .anyMatch(t -> t.equals(filePath));
+                                if (!isAlreadyPresent) {
+                                    // Add the type declaration to the list of existing classes
+                                    existingClasses.get(typeDeclaration.getNameAsString()).add(filePath);
                                 }
                             }
                         } catch (Exception e) {
