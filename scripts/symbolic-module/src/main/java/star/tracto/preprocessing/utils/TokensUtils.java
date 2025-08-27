@@ -2,22 +2,20 @@ package star.tracto.preprocessing.utils;
 
 import com.github.javaparser.ast.*;
 import com.github.javaparser.ast.body.*;
-import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
+import com.github.javaparser.ast.type.TypeParameter;
 import com.github.javaparser.resolution.MethodUsage;
-import com.github.javaparser.resolution.UnsolvedSymbolException;
 import com.github.javaparser.resolution.declarations.ResolvedConstructorDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedMethodDeclaration;
+import com.github.javaparser.resolution.declarations.ResolvedTypeParameterDeclaration;
 import com.github.javaparser.resolution.types.ResolvedArrayType;
 import com.github.javaparser.resolution.types.ResolvedType;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserMethodDeclaration;
 import org.javatuples.Pair;
-import org.javatuples.Triplet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import star.tracto.data.enums.*;
-import star.tracto.data.records.OraclesDatasetConfig;
 import star.tracto.lsp.antlr4.Antlr4Utils;
 import star.tracto.preprocessing.builders.PartialOracleDatapointBuilder;
 import star.tracto.preprocessing.builders.TestClazzDatapointsBuilder;
@@ -26,9 +24,7 @@ import star.tracto.preprocessing.components.*;
 import star.tracto.utils.FilesUtils;
 import star.tracto.utils.javaParser.JavaParserUtils;
 
-import javax.swing.text.html.Option;
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -39,6 +35,7 @@ public class TokensUtils {
     /* The logger for the class. */
     private static final Logger logger = LoggerFactory.getLogger(TokensUtils.class);
     private static TokenIdentifiersCollector rootTokenIdentifiersCollector;
+    private static TokenReferencesCollector rootTokenReferencesCollector;
 
     /**
      * A support class to collect various types of candidate token identifiers categorized by their type when processing
@@ -46,14 +43,14 @@ public class TokensUtils {
      *
      */
     private static class TokenIdentifiersCollector {
-        public HashMap<String, List<Path>> classPathIdentifiers;
+        HashMap<String, List<Path>> classPathIdentifiers;
         HashMap<String, List<Pair<VariableDeclarator,Type>>> fieldIdentifiers;
         HashMap<String, List<MethodUsage>> methodIdentifiers;
         HashMap<String, List<ResolvedConstructorDeclaration>> constructorIdentifiers;
         HashMap<String, List<EnumConstantDeclaration>> enumIdentifiers;
 
         /*
-         * Constructor to initialize the token identifiers collector.
+         * Constructor to initialize the token identifiers' collector.
          * @param classPathIdentifiers A map of class identifiers, where the key is the identifier name and the value
          *                         is a list of TypeDeclarations representing the homonyms classes
          * @param fieldIdentifiers A map of field identifiers, where the key is the identifier name and the value
@@ -63,6 +60,9 @@ public class TokensUtils {
          * @param constructorIdentifiers A map of constructor identifiers, where the key is the identifier name and
          *                               the value is a list of ResolvedConstructorDeclaration representing the
          *                               homonyms constructors
+         * @param enumIdentifiers A map of enum constant identifiers, where the key is the identifier name and
+         *                        the value is a list of EnumConstantDeclaration representing the
+         *                        homonyms enum constants
          */
         public TokenIdentifiersCollector(
                 HashMap<String, List<Path>> classPathIdentifiers,
@@ -113,31 +113,26 @@ public class TokensUtils {
      *
      */
     private static class TokenReferencesCollector {
-        List<Pair<TypeDeclaration,Path>> clazzes;
-        List<Pair<VariableDeclarator,Type>> fields;
-        List<MethodUsage> methods;
-        List<ResolvedConstructorDeclaration> constructors;
-        List<EnumConstantDeclaration> enums;
+        ContextualInfoType contextualInfoType;
+        HashMap<String, List<ResolvedType>> typeParametersReferences;
+        HashMap<String, List<Path>> clazzes;
+        HashMap<String, List<Pair<VariableDeclarator,Type>>> fields;
+        HashMap<String, List<MethodUsage>> methods;
+        HashMap<String, List<ResolvedConstructorDeclaration>> constructors;
+        HashMap<String, List<EnumConstantDeclaration>> enums;
 
-        /*
-         * Constructor to initialize the token identifiers collector.
-         * @param classPathIdentifiers A map of class identifiers, where the key is the identifier name and the value
-         *                         is a list of TypeDeclarations representing the homonyms classes
-         * @param fieldIdentifiers A map of field identifiers, where the key is the identifier name and the value
-         *                         is a list of VariableDeclarator representing the homonyms fields
-         * @param methodIdentifiers A map of method identifiers, where the key is the identifier name and the value
-         *                          is a list of MethodUsage representing the homonyms methods
-         * @param constructorIdentifiers A map of constructor identifiers, where the key is the identifier name and
-         *                               the value is a list of ResolvedConstructorDeclaration representing the
-         *                               homonyms constructors
-         */
+
         public TokenReferencesCollector(
-                List<Pair<TypeDeclaration, Path>> clazzes,
-                List<Pair<VariableDeclarator,Type>> fields,
-                List<MethodUsage> methods,
-                List<ResolvedConstructorDeclaration> constructors,
-                List<EnumConstantDeclaration> enums
+                ContextualInfoType contextualInfoType,
+                HashMap<String, List<ResolvedType>> typeParametersReferences,
+                HashMap<String, List<Path>> clazzes,
+                HashMap<String, List<Pair<VariableDeclarator,Type>>> fields,
+                HashMap<String, List<MethodUsage>> methods,
+                HashMap<String, List<ResolvedConstructorDeclaration>> constructors,
+                HashMap<String, List<EnumConstantDeclaration>> enums
         ) {
+            this.contextualInfoType = contextualInfoType;
+            this.typeParametersReferences = typeParametersReferences;
             this.clazzes = clazzes;
             this.fields = fields;
             this.methods = methods;
@@ -146,30 +141,40 @@ public class TokensUtils {
         }
 
         public TokenReferencesCollector() {
-            this.clazzes = new ArrayList<>();
-            this.fields = new ArrayList<>();
-            this.methods = new ArrayList<>();
-            this.constructors = new ArrayList<>();
-            this.enums = new ArrayList<>();
+            this.contextualInfoType = ContextualInfoType.INIT;
+            this.typeParametersReferences = new HashMap<>();
+            this.clazzes = new HashMap<>();
+            this.fields = new HashMap<>();
+            this.methods = new HashMap<>();
+            this.constructors = new HashMap<>();
+            this.enums = new HashMap<>();
         }
 
-        public void setClazzes(List<Pair<TypeDeclaration,Path>> clazzes) {
+        public void setContextualInfoType(ContextualInfoType contextualInfoType) {
+            this.contextualInfoType = contextualInfoType;
+        }
+
+        public void settypePrameterReferences(HashMap<String,List<ResolvedType>> typeParametersReferences) {
+            this.typeParametersReferences = typeParametersReferences;
+        }
+
+        public void setClazzes(HashMap<String,List<Path>> clazzes) {
             this.clazzes = clazzes;
         }
 
-        public void setFields(List<Pair<VariableDeclarator,Type>> fieldTypes) {
+        public void setFields(HashMap<String,List<Pair<VariableDeclarator,Type>>> fieldTypes) {
             this.fields = fieldTypes;
         }
 
-        public void setMethods(List<MethodUsage> methods) {
+        public void setMethods(HashMap<String,List<MethodUsage>> methods) {
             this.methods = methods;
         }
 
-        public void setConstructors(List<ResolvedConstructorDeclaration> constructors) {
+        public void setConstructors(HashMap<String,List<ResolvedConstructorDeclaration>> constructors) {
             this.constructors = constructors;
         }
 
-        public void setEnums(List<EnumConstantDeclaration> enums) {
+        public void setEnums(HashMap<String,List<EnumConstantDeclaration>> enums) {
             this.enums = enums;
         }
     }
@@ -236,6 +241,7 @@ public class TokensUtils {
                     if (testCase.getNameAsString().equals(testPrefix.identifier())) {
                         List<Pair<TokenIdentifiersCollector, TokenReferencesCollector>> tokenIdentifiersStack = new ArrayList<>();
                         rootTokenIdentifiersCollector = new TokenIdentifiersCollector();
+                        rootTokenReferencesCollector = new TokenReferencesCollector();
                         // Get the target assertion from the test prefix
                         String originalTargetAssertion = datapoint.target();
                         String targetAssertion = originalTargetAssertion.replace(" ", "");
@@ -247,26 +253,17 @@ public class TokensUtils {
                             clazzDatapointsErrors.get(testCase.getNameAsString()).putIfAbsent(targetAssertion, new ArrayList<>());
                             clazzDatapointsErrors.get(testCase.getNameAsString()).putIfAbsent("targetFound", new ArrayList<>());
                             clazzDatapointsErrors.get(testCase.getNameAsString()).putIfAbsent("targetMissing", new ArrayList<>());
+                            // Setup the root token identifiers amd references collector
                             setUpRootTokenIdentifiers(rootTokenIdentifiersCollector, clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion), repoSourcePath, repoTestPath, testFilePath, focalFilePath, tcCu, fcCu, testCase);
+                            setupRootTokenReferences(rootTokenReferencesCollector, rootTokenIdentifiersCollector);
                             TokenIdentifiersCollector currentTokenIdentifiersCollector = cloneRootTokenIdentifiers();
-                            TokenReferencesCollector currentTokenReferences = new TokenReferencesCollector();
+                            TokenReferencesCollector currentTokenReferences = new TokenReferencesCollector(); //cloneRootTokenReferences();
                             tokenIdentifiersStack.add(new Pair<>(currentTokenIdentifiersCollector, currentTokenReferences));
+                            // Initialize the list of token steps
                             List<TokenStep> tokenSteps = new ArrayList<>();
-//                        Statement tgtStatement;
-//                        if (config.splitStrategy() == SplitStrategyType.ASSERTION) {
-//                            // Get the assertion statement in the test case
-//                            Optional<Statement> lastAssertion = JavaParserUtils.getLastAssertionInMethodDeclaration(testCase);
-//                            if (lastAssertion.isEmpty()) {
-//                                logger.error("No assertion found in test case: " + testCase.getNameAsString());
-//                                continue;
-//                            }
-//                            tgtStatement = lastAssertion.get();
-//                        } else {
-//                            List<Statement> statements = testCase.findAll(Statement.class);
-//                            tgtStatement = statements.get(statements.size() - 1);
-//                        }
+                            // Split the target assertion into tokens
                             List<String> tokens = Antlr4Utils.tokenizeSnippet(targetAssertion);
-
+                            // Check that the first token is a valid JUnit assertion method
                             try {
                                 JUnitAssertionType.fromString(tokens.get(0));
                             } catch (IllegalArgumentException e) {
@@ -275,15 +272,16 @@ public class TokensUtils {
                                 clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion).add(message);
                                 continue;
                             }
-
+                            // Start with an empty partial snippet
                             String partialSnippet = "";
+                            // Iterate over the tokens to build the token steps
                             for (int i = 0; i < tokens.size(); i++) {
                                 // Get the current token to process
                                 String token = tokens.get(i);
-
                                 // Define a new token step builder for the current token step
                                 TokenStepBuilder tokenStepBuilder = new TokenStepBuilder();
                                 tokenStepBuilder.setPartialSnippet(partialSnippet);
+                                // In the first step, we know that the next possible tokens are only JUnit assertion methods
                                 if (partialSnippet.isEmpty()) {
                                     tokenStepBuilder.setNextPossibleJavaTokens(Arrays.stream(JUnitAssertionType.values()).map(a -> a.getAssertionMethodName()).collect(Collectors.toList()));
                                     tokenStepBuilder.setNextPossibleProjectTokens(new ArrayList<>());
@@ -295,22 +293,22 @@ public class TokensUtils {
                                     partialSnippet += token;
                                     continue;
                                 }
-
                                 // Define the list of next possible tokens, divided by type
                                 List<String> adjustedNextJavaTokens = new ArrayList<>();
                                 List<String> adjustedNextConcreteTokens = new ArrayList<>();
                                 List<String> adjustedNextGenericTokens = new ArrayList<>();
+                                // Collect the list of possible raw next tokens using ANTLR4 (they need to be processed afterward)
                                 List<String> nextANTLRTokens = Antlr4Utils.parseSnippet(JUnitAssertionType.fromString(tokens.get(0)), partialSnippet);
-
-                                if (nextANTLRTokens.isEmpty() && !token.equals(';')) {
-                                    // raise exception
+                                // If ANTLR4 returns an empty list of candidates and the token is not a semicolon
+                                // (terminal symbol in Java statements), raise an exception because the expression
+                                // do not follow the Java syntax imposed by the grammar
+                                if (nextANTLRTokens.isEmpty() && !token.equals(";")) {
                                     IllegalStateException exception = new IllegalStateException("Unexpected empty token candidates after partial snippet: " + partialSnippet + " and token: " + token);
                                     clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion).add(exception.getMessage());
                                     throw exception;
                                 }
-
+                                // Process the list of raw ANTLR next tokens
                                 for (String nextANTLRToken : nextANTLRTokens) {
-                                    // A token can be: a Java token, a literal, an identifier
                                     if (literalsSet.contains(nextANTLRToken)) {
                                         adjustedNextGenericTokens.add(nextANTLRToken);
                                     } else if (nextANTLRToken.equals("IDENTIFIER")) {
@@ -322,26 +320,30 @@ public class TokensUtils {
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.enumIdentifiers.keySet());
                                         }
                                     } else {
-                                        // For non-literal, non-IDENTIFIER tokens (e.g., keywords),
-                                        // we can filter them based on expectedType if needed.
-                                        // For now, we add them and filter afterward.
                                         adjustedNextJavaTokens.add(nextANTLRToken);
                                     }
                                 }
-
+                                // If the target token is not in the list of next possible tokens, warn about the
+                                // Impossibility to provide the target token among the candidates (it can happen for
+                                // example when the token is an identifier from an external library impossible to
+                                // process by JavaParser)
                                 if (!adjustedNextConcreteTokens.contains(token) && !adjustedNextJavaTokens.contains(token) && !adjustedNextGenericTokens.contains(token)) {
+                                    // If the token type is not a literal warn about the impossibility to provide the
+                                    // token among the candidates
                                     if (!literalsSet.contains(Antlr4Utils.getAntlrToken(token).toString())) {
                                         String message = "Unexpected token: " + token + " not found in the collected list of candidate tokens: " + partialSnippet;
                                         logger.error(message);
                                         clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion).add(message);
                                         clazzDatapointsErrors.get(testCase.getNameAsString()).get("targetMissing").add(token);
                                     } else {
+                                        // If the token is a literal, is the model responsible for generating the specific token
                                         clazzDatapointsErrors.get(testCase.getNameAsString()).get("targetFound").add(Antlr4Utils.getAntlrToken(token) + ":" + token);
                                     }
                                 } else {
+                                    // Token found among the candidates
                                     clazzDatapointsErrors.get(testCase.getNameAsString()).get("targetFound").add(Antlr4Utils.getAntlrToken(token) + ":" + token);
                                 }
-
+                                // Build the token step
                                 tokenStepBuilder.setNextPossibleGenericTokens(adjustedNextGenericTokens);
                                 tokenStepBuilder.setNextPossibleProjectTokens(adjustedNextConcreteTokens);
                                 tokenStepBuilder.setNextPossibleJavaTokens(adjustedNextJavaTokens);
@@ -351,10 +353,12 @@ public class TokensUtils {
                                 tokenSteps.add(tokenStepBuilder.build());
                                 // Update the partial snippet
                                 partialSnippet += token;
-                                Pair<TokenIdentifiersCollector, TokenReferencesCollector> updatedCollectors = updateTokenIdentifiers(tokenIdentifiersStack, token, testClass, testCase.getNameAsString(), clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion));
+                                // Update the token identifiers and references collectors
+                                Pair<TokenIdentifiersCollector, TokenReferencesCollector> updatedCollectors = updateTokenIdentifiersAndReferences(tokenIdentifiersStack, token, tokens.get(i-1), testClass, testCase.getNameAsString(), clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion));
                                 currentTokenIdentifiersCollector = updatedCollectors.getValue0();
                                 currentTokenReferences = updatedCollectors.getValue1();
                             }
+                            // Build the partial oracle datapoint
                             partialOracleDatapointBuilder.setTestPrefix(testPrefix);
                             partialOracleDatapointBuilder.setTarget(targetAssertion);
                             partialOracleDatapointBuilder.setDatapoints(tokenSteps);
@@ -386,6 +390,19 @@ public class TokensUtils {
         return clonedTokenIdentifierCollector;
     }
 
+    public static TokenReferencesCollector cloneRootTokenReferences () {
+        TokenReferencesCollector clonedTokenReferencesCollector = new TokenReferencesCollector(
+                rootTokenReferencesCollector.contextualInfoType,
+                new HashMap<>(rootTokenReferencesCollector.typeParametersReferences),
+                new HashMap<>(rootTokenReferencesCollector.clazzes),
+                new HashMap<>(rootTokenReferencesCollector.fields),
+                new HashMap<>(rootTokenReferencesCollector.methods),
+                new HashMap<>(rootTokenReferencesCollector.constructors),
+                new HashMap<>(rootTokenReferencesCollector.enums)
+        );
+        return clonedTokenReferencesCollector;
+    }
+
     /**
      * Resets the token identifiers map for the given compilation units (test class and focal class) and the test prefix
      * method declaration.
@@ -410,27 +427,29 @@ public class TokensUtils {
             CompilationUnit fcCu,
             MethodDeclaration tp
     ) {
+        // Get the primary type of the test class to collect fields and methods defined within it
         TypeDeclaration tc = tcCu.getPrimaryType().get();
-        HashMap<String, List<Pair<VariableDeclarator,Type>>> variableTypeIdentifiers = new HashMap<>();
+        // Collect the fields defined within the test class and the test prefix (immediately accessible)
+        HashMap<String, List<Pair<VariableDeclarator,Type>>> fieldTypeIdentifiers = new HashMap<>();
         try {
-            updateHashMapOfVariableTypeIdentifiers(variableTypeIdentifiers, tc.getFields(), List.of(
+            updateHashMapOfFieldTypeIdentifiers(fieldTypeIdentifiers, tc.getFields(), List.of(
                     List.of(new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))),
                     List.of(new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(true))),
                     List.of(new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(true)))
             ));
-            updateHashMapOfVariableTypeIdentifiers(variableTypeIdentifiers, tp);
+            updateHashMapOfFieldTypeIdentifiers(fieldTypeIdentifiers, tp);
         } catch (Exception e) {
             String message = "Error collecting root variables type identifiers for test case: " + tp.getNameAsString() + " - " + e.getMessage();
             logger.error(message);
             clazzDatapointsErrors.add(e.getMessage());
         }
-        HashMap<String, List<Path>> javaAPIIdentifiers = new HashMap<>();
+        // Collect the list of classes imported within the test class and the focal class, and the ones defined within
+        // the same package of the test class or the focal class (immediately accessible)
         HashMap<String, List<Path>> typeDeclarationPathIdentifiers = new HashMap<>();
         List<List<Pair<Modifier.Keyword, Boolean>>> typeDeclModifiersRules = List.of(List.of(
                 new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(false)),
                 new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(false))
         ));
-        //updateHashMapOfJavaAPITypeDeclarationPathIdentifiers(javaAPIIdentifiers, basePath, typeDeclModifiersRules);
         try {
             List<String> errorMessages = new ArrayList<>();
             updateHashMapOfTypeDeclarationPathIdentifiers(typeDeclarationPathIdentifiers, List.of(repoTestPath, repoSourcePath), tcFilePath, typeDeclModifiersRules, errorMessages);
@@ -441,6 +460,7 @@ public class TokensUtils {
             logger.error(message);
             clazzDatapointsErrors.add(e.getMessage());
         }
+        // Collect the list of methods defined within the test class (immediately accessible)
         HashMap<String, List<MethodUsage>> methodUsageIdentifiers = new HashMap<>();
         try {
             updateHashMapOfMethodUsageIdentifiers(methodUsageIdentifiers, tc, new ArrayList<>(), List.of(new Pair("Test", Boolean.valueOf(false))));
@@ -449,13 +469,120 @@ public class TokensUtils {
             logger.error(message);
             clazzDatapointsErrors.add(e.getMessage());
         }
-        HashMap<String, List<ResolvedConstructorDeclaration>> resolvedConstructorsIdentifiers = new HashMap<>();
-        //updateHashMapOfResolvedConstructorDeclarationIdentifiers(resolvedConstructorsIdentifiers, tc);
-        // Reset the token identifiers map
+        // Setup the token identifiers map
         tokenIdentifiersCollector.setClassIdentifiersMap(typeDeclarationPathIdentifiers);
-        tokenIdentifiersCollector.setFieldIdentifiersMap(variableTypeIdentifiers);
+        tokenIdentifiersCollector.setFieldIdentifiersMap(fieldTypeIdentifiers);
         tokenIdentifiersCollector.setMethodIdentifiersMap(methodUsageIdentifiers);
-        tokenIdentifiersCollector.setConstructorIdentifiersMap(resolvedConstructorsIdentifiers);
+    }
+
+    public static void setupRootTokenReferences (
+            TokenReferencesCollector tokenReferencesCollector,
+            TokenIdentifiersCollector tokenIdentifiersCollector
+    ) {
+        tokenReferencesCollector.setClazzes(tokenIdentifiersCollector.classPathIdentifiers);
+        HashMap<String,List<MethodUsage>> methods = new HashMap<>();
+        updateHashMapOfMethodUsageReferencesFromIdentifiers(methods,tokenIdentifiersCollector.methodIdentifiers);
+        tokenReferencesCollector.setMethods(methods);
+        HashMap<String,List<Pair<VariableDeclarator,Type>>> fields = new HashMap<>();
+        updateHashMapOfFieldTypeReferencesFromIdentifiers(fields,tokenIdentifiersCollector.fieldIdentifiers);
+        tokenReferencesCollector.setFields(fields);
+        for (Map.Entry<String,List<Pair<VariableDeclarator,Type>>> entry: fields.entrySet()) {
+            collectTypeParametersReferencesFromFieldIdentifiers(entry.getValue(), tokenReferencesCollector);
+        }
+    }
+
+    private static void updateHashMapOfFieldTypeReferencesFromIdentifiers(
+            HashMap<String, List<Pair<VariableDeclarator,Type>>> fieldTypeReferences,
+            HashMap<String, List<Pair<VariableDeclarator,Type>>> fieldTypeIdentifiers
+    ) {
+        for (Map.Entry<String,List<Pair<VariableDeclarator,Type>>> entry: fieldTypeIdentifiers.entrySet()) {
+            String fieldName = entry.getKey();
+            for (Pair<VariableDeclarator,Type> fieldEntry: entry.getValue()) {
+                VariableDeclarator variable = fieldEntry.getValue0();
+                Type fieldType = fieldEntry.getValue1();
+                String fieldKey = fieldType.asReferenceType().resolve().asReferenceType().getQualifiedName() + "." + fieldName;
+                if (!fieldTypeReferences.containsKey(fieldKey)) {
+                    fieldTypeReferences.put(fieldKey, new ArrayList<>());
+                }
+                boolean isAlreadyPresent = fieldTypeReferences.get(fieldKey).stream().anyMatch(t -> t.equals(fieldType));
+                if (!isAlreadyPresent) {
+                    fieldTypeReferences.get(fieldKey).add(new Pair<>(variable,fieldType));
+                }
+            }
+        }
+    }
+
+    private static void updateHashMapOfMethodUsageReferencesFromIdentifiers(
+            HashMap<String, List<MethodUsage>> methodUsageReferences,
+            HashMap<String, List<MethodUsage>> methodUsageIdentifiers
+    ) {
+        for (Map.Entry<String,List<MethodUsage>> entry: methodUsageIdentifiers.entrySet()) {
+            String methodName = entry.getKey();
+            for (MethodUsage methodUsage: entry.getValue()) {
+                String declaringTypeQualifiedName = methodUsage.declaringType().getQualifiedName();
+                String methodKey = declaringTypeQualifiedName + "." + methodName;
+                if (!methodUsageReferences.containsKey(methodKey)) {
+                    methodUsageReferences.put(methodKey, new ArrayList<>());
+                }
+                boolean isAlreadyPresent = methodUsageReferences.get(methodKey).stream().anyMatch(t -> t.equals(methodUsage));
+                if (!isAlreadyPresent) {
+                    methodUsageReferences.get(methodKey).add(methodUsage);
+                }
+            }
+        }
+    }
+
+    private static void updateHashMapOfEnumConstantReferencesFromIdentifiers(
+            HashMap<String, List<EnumConstantDeclaration>> enumConstantReferences,
+            HashMap<String, List<EnumConstantDeclaration>> enumConstantIdentifiers
+    ) {
+        for (Map.Entry<String,List<EnumConstantDeclaration>> entry: enumConstantIdentifiers.entrySet()) {
+            for (EnumConstantDeclaration enumConstant: entry.getValue()) {
+                String enumKey = entry.getKey();
+                Optional<Node> parentNode = enumConstant.getParentNode();
+                Optional<EnumConstantDeclaration> enumDeclaration = Optional.empty();
+                while(parentNode.isPresent() && !enumDeclaration.isPresent()) {
+                    if (parentNode.get() instanceof EnumDeclaration) {
+                        enumDeclaration = Optional.of((EnumConstantDeclaration) parentNode.get());
+                        break;
+                    }
+                    parentNode = parentNode.get().getParentNode();
+                }
+                if (enumDeclaration.isPresent()) {
+                    enumKey = enumDeclaration.get().getNameAsString() + "." + enumKey;
+                    if (enumDeclaration.get().asTypeDeclaration().getFullyQualifiedName().isPresent()) {
+                        enumKey = enumDeclaration.get().asTypeDeclaration().getFullyQualifiedName().get() + "." + entry.getKey();
+                    }
+                }
+                if (!enumConstantReferences.containsKey(enumKey)) {
+                    enumConstantReferences.put(enumKey, new ArrayList<>());
+                }
+                boolean isAlreadyPresent = enumConstantReferences.get(enumKey).stream().anyMatch(t -> t.equals(enumConstant));
+                if (!isAlreadyPresent) {
+                    enumConstantReferences.get(enumKey).add(enumConstant);
+                }
+            }
+        }
+    }
+
+    private static void updateHashMapOfResolvedConstructorReferencesFromIdentifiers(
+            HashMap<String, List<ResolvedConstructorDeclaration>> constructorReferences,
+            HashMap<String, List<ResolvedConstructorDeclaration>> constructorIdentifiers
+    ) {
+        for (Map.Entry<String,List<ResolvedConstructorDeclaration>> entry: constructorIdentifiers.entrySet()) {
+            String constructorName = entry.getKey();
+            for (ResolvedConstructorDeclaration constructorDeclaration: entry.getValue()) {
+                String declaringTypeQualifiedName = constructorDeclaration.getQualifiedName();
+                String constructorKey = declaringTypeQualifiedName + "." + constructorName;
+                if (!constructorReferences.containsKey(constructorKey)) {
+                    constructorReferences.put(constructorKey, new ArrayList<>());
+                }
+                boolean isAlreadyPresent = constructorReferences.get(constructorKey).stream().anyMatch(t -> t.equals(constructorDeclaration));
+                if (!isAlreadyPresent) {
+                    constructorReferences.get(constructorKey).add(constructorDeclaration);
+                }
+            }
+        }
     }
 
     public static TokenStep.ContextualInfo generateTokenStepContextualInfo(TokenReferencesCollector tokenReferences) {
@@ -465,63 +592,84 @@ public class TokensUtils {
         List<TokenStep.FieldContextualInfo> fields = new ArrayList<>();
         List<String> enumConstants = new ArrayList<>();
 
-        for (Pair<TypeDeclaration,Path> classReference : tokenReferences.clazzes) {
-            clazzes.add(TestUtils.processTypeDeclarationForContextualInfo(classReference.getValue0()));
-        }
-
-        for (MethodUsage method : tokenReferences.methods) {
-            methods.add(TestUtils.processCallable(method));
-        }
-
-        for (ResolvedConstructorDeclaration constructor : tokenReferences.constructors) {
-            constructors.add(TestUtils.processCallable(constructor));
-        }
-
-        for (Pair<VariableDeclarator,Type> field : tokenReferences.fields) {
-            VariableDeclarator variableDeclarator = field.getValue0();
-            Type fieldType = field.getValue1();
-            if (fieldType.isArrayType()) {
-                fieldType = fieldType.asArrayType().getComponentType();
-            }
-            if (fieldType.isReferenceType()) {
+        for (Map.Entry<String,List<Path>> entry: tokenReferences.clazzes.entrySet()) {
+            String identifier = entry.getKey();
+            List<Path> classPaths = entry.getValue();
+            for (final Path classPath: classPaths) {
                 try {
-                    Optional<Node> fieldTypeDeclaration = fieldType.asReferenceType().resolve().asReferenceType().getTypeDeclaration().get().toAst();
-                    if (fieldTypeDeclaration.isPresent() && fieldTypeDeclaration.get() instanceof TypeDeclaration) {
-                        TypeDeclaration typeDeclaration = (TypeDeclaration) fieldTypeDeclaration.get();
-
-                        Optional<Node> fieldNode = variableDeclarator.getParentNode();
-                        Optional<FieldDeclaration> fieldDeclaration = Optional.empty();
-
-                        while (fieldNode.isPresent() && !(fieldNode.get() instanceof  FieldDeclaration)) {
-                            fieldNode = fieldNode.get().getParentNode();
-                        }
-
-                        if (fieldNode.isPresent() && fieldNode.get() instanceof FieldDeclaration) {
-                            fieldDeclaration = Optional.of((FieldDeclaration) fieldNode.get());
-                        }
-                        List<String> fieldModifiers = fieldDeclaration.isPresent() ? JavaParserUtils.getModifiersAsStrings(fieldDeclaration.get().getModifiers()) : new ArrayList<>();
-                        //Path classFilePath = typeDeclaration.getFullyQualifiedName().isPresent() ? repoSourcePath.resolve(FilesUtils.getFQNPath((String) typeDeclaration.getFullyQualifiedName().get())) : Path.of("");
-                        TokenStep.FieldContextualInfo fieldContextualInfo = new TokenStep.FieldContextualInfo(
-                                variableDeclarator.getNameAsString(),
-                                JavaParserUtils.getSignatureFromVariableDeclarator(fieldModifiers, variableDeclarator),
-                                variableDeclarator.toString(),
-                                fieldModifiers,
-                                TestUtils.processTypeDeclarationForContextualInfo(typeDeclaration)
-                        );
-                        fields.add(fieldContextualInfo);
+                    CompilationUnit cu = JavaParserUtils.getCompilationUnit(classPath);
+                    List<TypeDeclaration> matchedTypeDeclarations = JavaParserUtils.getTypeDeclarationsFromCompilationUnitAndName(cu, identifier);
+                    for (TypeDeclaration typeDeclaration: matchedTypeDeclarations) {
+                        clazzes.add(TestUtils.processTypeDeclarationForContextualInfo(typeDeclaration));
                     }
-                } catch (Exception e) {
-                    //String message = "Error processing field type declaration for field: " + variableDeclarator.getNameAsString() + " - " + e.getMessage();
-                    //logger.error(message);
+                } catch (IOException e) {
+                    logger.error("Error reading compilation unit from file: " + classPath);
                 }
             }
         }
 
-        for (EnumConstantDeclaration enumConstant : tokenReferences.enums) {
-            enumConstants.add(enumConstant.getNameAsString());
+        for (List<MethodUsage> methodsUsage : tokenReferences.methods.values()) {
+            for (MethodUsage method : methodsUsage) {
+                methods.add(TestUtils.processCallable(method));
+            }
+        }
+
+        for (List<ResolvedConstructorDeclaration> constructorDeclarations : tokenReferences.constructors.values()) {
+            for (ResolvedConstructorDeclaration constructor : constructorDeclarations) {
+                constructors.add(TestUtils.processCallable(constructor));
+            }
+        }
+
+        for (List<Pair<VariableDeclarator,Type>> fieldPairs : tokenReferences.fields.values()) {
+            for (Pair<VariableDeclarator,Type> field : fieldPairs) {
+                VariableDeclarator variableDeclarator = field.getValue0();
+                Type fieldType = field.getValue1();
+                if (fieldType.isArrayType()) {
+                    fieldType = fieldType.asArrayType().getComponentType();
+                }
+                if (fieldType.isReferenceType()) {
+                    try {
+                        Optional<Node> fieldTypeDeclaration = fieldType.asReferenceType().resolve().asReferenceType().getTypeDeclaration().get().toAst();
+                        if (fieldTypeDeclaration.isPresent() && fieldTypeDeclaration.get() instanceof TypeDeclaration) {
+                            TypeDeclaration typeDeclaration = (TypeDeclaration) fieldTypeDeclaration.get();
+
+                            Optional<Node> fieldNode = variableDeclarator.getParentNode();
+                            Optional<FieldDeclaration> fieldDeclaration = Optional.empty();
+
+                            while (fieldNode.isPresent() && !(fieldNode.get() instanceof  FieldDeclaration)) {
+                                fieldNode = fieldNode.get().getParentNode();
+                            }
+
+                            if (fieldNode.isPresent() && fieldNode.get() instanceof FieldDeclaration) {
+                                fieldDeclaration = Optional.of((FieldDeclaration) fieldNode.get());
+                            }
+                            List<String> fieldModifiers = fieldDeclaration.isPresent() ? JavaParserUtils.getModifiersAsStrings(fieldDeclaration.get().getModifiers()) : new ArrayList<>();
+                            //Path classFilePath = typeDeclaration.getFullyQualifiedName().isPresent() ? repoSourcePath.resolve(FilesUtils.getFQNPath((String) typeDeclaration.getFullyQualifiedName().get())) : Path.of("");
+                            TokenStep.FieldContextualInfo fieldContextualInfo = new TokenStep.FieldContextualInfo(
+                                    variableDeclarator.getNameAsString(),
+                                    JavaParserUtils.getSignatureFromVariableDeclarator(fieldModifiers, variableDeclarator),
+                                    variableDeclarator.toString(),
+                                    fieldModifiers,
+                                    TestUtils.processTypeDeclarationForContextualInfo(typeDeclaration)
+                            );
+                            fields.add(fieldContextualInfo);
+                        }
+                    } catch (Exception e) {
+                        //String message = "Error processing field type declaration for field: " + variableDeclarator.getNameAsString() + " - " + e.getMessage();
+                        //logger.error(message);
+                    }
+                }
+            }
+        }
+
+        for (List<EnumConstantDeclaration> enumConstantDeclarations : tokenReferences.enums.values()) {
+            for (EnumConstantDeclaration enumConstant : enumConstantDeclarations) {
+                enumConstants.add(enumConstant.getNameAsString());
+            }
         }
 
         return new TokenStep.ContextualInfo(
+                tokenReferences.contextualInfoType,
                 clazzes,
                 methods,
                 constructors,
@@ -530,30 +678,60 @@ public class TokensUtils {
         );
     }
 
-    public static Pair<TokenIdentifiersCollector, TokenReferencesCollector> updateTokenIdentifiers(
+    public static Pair<TokenIdentifiersCollector, TokenReferencesCollector> updateTokenIdentifiersAndReferences(
             List<Pair<TokenIdentifiersCollector, TokenReferencesCollector>> tokenIdentifiersStack,
             final String token,
+            final String previousToken,
             TypeDeclaration tc,
             String testCaseName,
             List<String> clazzDatapointsErrors
     ) {
+        // Get the action associated with the current token
         AntlrTokenAction tokenAction = AntlrTokenMapper.getTokenAction(token);
+        // Get the type of the current token and the previous token
         AntlrToken tokenType = Antlr4Utils.getAntlrToken(token);
-        Pair<TokenIdentifiersCollector, TokenReferencesCollector> currentTokenIdentifiersAndCategory = tokenIdentifiersStack.get(tokenIdentifiersStack.size() - 1);
-        TokenIdentifiersCollector tokenIdentifiersCollector = currentTokenIdentifiersAndCategory.getValue0();
-        TokenReferencesCollector tokenReferences = currentTokenIdentifiersAndCategory.getValue1();
+        AntlrToken previousTokenType = Antlr4Utils.getAntlrToken(previousToken);
+        // Retrieve the current token identifiers and references collectors from the top of the stack
+        Pair<TokenIdentifiersCollector, TokenReferencesCollector> currentTokenIdentifiersAndReferences = tokenIdentifiersStack.get(tokenIdentifiersStack.size() - 1);
+        TokenIdentifiersCollector tokenIdentifiersCollector = currentTokenIdentifiersAndReferences.getValue0();
+        TokenReferencesCollector tokenReferences = currentTokenIdentifiersAndReferences.getValue1();
+        // Define the hash maps to collect the updated identifiers and references
+        HashMap<String, List<Path>> classIdentifiers = new HashMap<>();
+        HashMap<String, List<Pair<VariableDeclarator,Type>>> fieldIdentifiers = new HashMap<>();
+        HashMap<String, List<MethodUsage>> methodIdentifiers = new HashMap<>();
+        HashMap<String, List<ResolvedConstructorDeclaration>> constructorIdentifiers = new HashMap<>();
+        HashMap<String, List<EnumConstantDeclaration>> enumIdentifiers = new HashMap<>();
+        HashMap<String, List<Path>> classReferences = new HashMap<>();
+        HashMap<String, List<ResolvedType>> typeParameterReferences = new HashMap<>();
+        HashMap<String,List<Pair<VariableDeclarator,Type>>> fieldReferences = new HashMap<>();
+        HashMap<String, List<MethodUsage>> methodReferences = new HashMap<>();
+        HashMap<String, List<ResolvedConstructorDeclaration>> constructorReferences = new HashMap<>();
+        HashMap<String, List<EnumConstantDeclaration>> enumReferences = new HashMap<>();
+        // Update the token identifiers and references collectors based on the action associated with the current token
         switch (tokenAction) {
             case ADD_ROOT:
-                tokenIdentifiersStack.add(new Pair<>(cloneRootTokenIdentifiers(), new TokenReferencesCollector()));
+                if (tokenType == AntlrToken.LPAREN && previousTokenType == AntlrToken.IDENTIFIER) {
+                    boolean methodsMatch = tokenReferences.methods.values().stream().anyMatch(l -> l.stream().anyMatch(m -> m.getName().equals(previousToken)));
+                    boolean fieldsMatch = tokenReferences.fields.values().stream().anyMatch(l -> l.stream().anyMatch(f -> f.getValue0().getNameAsString().equals(previousToken)));
+                    boolean constructorsMatch = tokenReferences.constructors.values().stream().anyMatch(l -> l.stream().anyMatch(c -> c.getName().equals(previousToken)));
+
+                    if (methodsMatch) {
+
+                    }
+                }
+                tokenIdentifiersStack.add(new Pair<>(cloneRootTokenIdentifiers(), cloneRootTokenReferences()));
                 break;
             case SET_TO_ROOT:
-                tokenIdentifiersStack.remove(currentTokenIdentifiersAndCategory);
-                tokenIdentifiersStack.add(new Pair<>(cloneRootTokenIdentifiers(), new TokenReferencesCollector()));
+                // Reset the current token identifiers and references collectors to the root state
+                tokenIdentifiersStack.remove(currentTokenIdentifiersAndReferences);
+                tokenIdentifiersStack.add(new Pair<>(cloneRootTokenIdentifiers(), cloneRootTokenReferences()));
                 break;
             case KEEP_CURRENT:
+                // Do nothing, keep the current token identifiers and references collectors
                 break;
             case REMOVE_CURRENT:
-                tokenIdentifiersStack.remove(currentTokenIdentifiersAndCategory);
+                // Pop the current token identifiers and references collectors from the stack
+                tokenIdentifiersStack.remove(currentTokenIdentifiersAndReferences);
                 break;
             case UPDATE_CURRENT:
                 switch (tokenType){
@@ -611,6 +789,8 @@ public class TokensUtils {
                     case STRING_LITERAL:
                     case TEXT_BLOCK:
                     case NULL_LITERAL:
+                        // In case of unusual unexpected tokens within the oracle expression, remove all the references
+                        // cause no classes, methods, fields or constructors can be suggested in this state
                         tokenIdentifiersCollector.setClassIdentifiersMap(new HashMap<>());
                         tokenIdentifiersCollector.setFieldIdentifiersMap(new HashMap<>());
                         tokenIdentifiersCollector.setMethodIdentifiersMap(new HashMap<>());
@@ -631,23 +811,26 @@ public class TokensUtils {
                     case SYNCHRONIZED:
                     case TRANSIENT:
                     case VOLATILE:
+                        // These tokens can only be associated with declarations, so no classes, methods, fields or constructors
+                        // should be suggested in this state
                         tokenIdentifiersCollector.setMethodIdentifiersMap(new HashMap<>());
                         tokenIdentifiersCollector.setConstructorIdentifiersMap(new HashMap<>());
                         tokenIdentifiersCollector.setFieldIdentifiersMap(new HashMap<>());
+                        tokenIdentifiersCollector.setEnumIdentifiersMap(new HashMap<>());
+                        tokenReferences.setContextualInfoType(ContextualInfoType.DEFINITION);
+                        tokenReferences.setMethods(new HashMap<>());
+                        tokenReferences.setFields(new HashMap<>());
+                        tokenReferences.setEnums(new HashMap<>());
                         break;
                     case THIS:
-                        HashMap<String, List<Pair<VariableDeclarator,Type>>> variableTypeIdentifiers = new HashMap<>();
-                        HashMap<String, List<MethodUsage>> methodUsageIdentifiers = new HashMap<>();
-                        HashMap<String, List<ResolvedConstructorDeclaration>> resolvedConstructorsIdentifiers = new HashMap<>();
-                        HashMap<String, List<EnumConstantDeclaration>> enumIdentifiers = new HashMap<>();
                         try {
-                            updateHashMapOfVariableTypeIdentifiers(variableTypeIdentifiers, tc.getFields(), List.of(
+                            updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, tc.getFields(), List.of(
                                     List.of(new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))),
                                     List.of(new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(true))),
                                     List.of(new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(true)))
                             ));
-                            updateHashMapOfMethodUsageIdentifiers(methodUsageIdentifiers, tc, new ArrayList<>(), List.of(new Pair("Test", Boolean.valueOf(false))));
-                            updateHashMapOfResolvedConstructorDeclarationIdentifiers(resolvedConstructorsIdentifiers, tc);
+                            updateHashMapOfMethodUsageIdentifiers(methodIdentifiers, tc, new ArrayList<>(), List.of(new Pair("Test", Boolean.valueOf(false))));
+                            updateHashMapOfResolvedConstructorDeclarationIdentifiers(constructorIdentifiers, tc);
                             updateHashMapOfEnumConstantDeclarationIdentifiers(enumIdentifiers, tc);
                         } catch (Exception e) {
                             String message = "Error collecting variable type identifiers for test case: " + testCaseName + " - " + e.getMessage();
@@ -655,28 +838,43 @@ public class TokensUtils {
                             clazzDatapointsErrors.add(e.getMessage());
                         }
                         tokenIdentifiersCollector.setClassIdentifiersMap(new HashMap<>());
-                        tokenIdentifiersCollector.setMethodIdentifiersMap(methodUsageIdentifiers);
+                        tokenIdentifiersCollector.setMethodIdentifiersMap(methodIdentifiers);
                         tokenIdentifiersCollector.setConstructorIdentifiersMap(new HashMap<>());
-                        tokenIdentifiersCollector.setFieldIdentifiersMap(variableTypeIdentifiers);
-                        tokenReferences.setClazzes(new ArrayList<>());
-                        tokenReferences.setFields(variableTypeIdentifiers.values().stream().flatMap(List::stream).collect(Collectors.toList()));
-                        tokenReferences.setMethods(methodUsageIdentifiers.values().stream().flatMap(List::stream).collect(Collectors.toList()));
-                        tokenReferences.setConstructors(resolvedConstructorsIdentifiers.values().stream().flatMap(List::stream).collect(Collectors.toList()));
-                        tokenReferences.setEnums(enumIdentifiers.values().stream().flatMap(List::stream).collect(Collectors.toList()));
+                        tokenIdentifiersCollector.setFieldIdentifiersMap(fieldIdentifiers);
+                        tokenReferences.setContextualInfoType(ContextualInfoType.THIS);
+                        tokenReferences.setClazzes(new HashMap<>());
+
+                        updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, fieldIdentifiers);
+                        tokenReferences.setFields(fieldReferences);
+                        updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
+                        tokenReferences.setMethods(methodReferences);
+                        updateHashMapOfResolvedConstructorReferencesFromIdentifiers(constructorReferences, constructorIdentifiers);
+                        tokenReferences.setConstructors(constructorIdentifiers);
+                        updateHashMapOfEnumConstantReferencesFromIdentifiers(enumReferences, enumIdentifiers);
+                        tokenReferences.setEnums(enumReferences);
                         break;
                     case THROW:
                     case THROWS:
+                        // In case of "throw" or "throws", we are likely dealing with exceptions, so we need to filter the
+                        // collected class identifiers to keep only the ones that extend Exception or one of its subclasses
+                        // No methods, fields, constructors or enums should be suggested in this state
                         HashMap<String, List<Path>> typeDeclarationPathIdentifiers = new HashMap<>();
                         for (String key: tokenIdentifiersCollector.classPathIdentifiers.keySet()) {
                             List<Path> keyValues = tokenIdentifiersCollector.classPathIdentifiers.get(key);
+                            // Iterate over the list of paths to check if the class extends Exception or one of its subclasses
                             for (Path path: keyValues) {
                                 try {
+                                    // Get the compilation unit of the matched class
                                     CompilationUnit cu = JavaParserUtils.getCompilationUnit(path);
+                                    // Get the type declarations from the compilation unit that match the token
                                     for (TypeDeclaration typeDeclaration: cu.getTypes()) {
-                                        if (typeDeclaration.getNameAsString().equals(key)) {
+                                        String fullyQualifiedName = (String) typeDeclaration.getFullyQualifiedName().orElse(typeDeclaration.getNameAsString());
+                                        if (fullyQualifiedName.equals(key)) {
                                             if (typeDeclaration instanceof ClassOrInterfaceDeclaration) {
+                                                // Check if the class extends Exception or one of its subclasses
                                                 List<ClassOrInterfaceType> extendedTypes = ((ClassOrInterfaceDeclaration) typeDeclaration).getExtendedTypes();
                                                 if (extendedTypes.stream().anyMatch(t -> t.getNameAsString().endsWith("Exception"))) {
+                                                    // If the class extends Exception or one of its subclasses, add it to the filtered map
                                                     if (!typeDeclarationPathIdentifiers.containsKey(key)) {
                                                         typeDeclarationPathIdentifiers.put(key, new ArrayList<>());
                                                     }
@@ -694,32 +892,26 @@ public class TokensUtils {
                                 }
                             }
                         }
+                        // Set the filtered class identifiers map and clear all other maps
                         tokenIdentifiersCollector.setClassIdentifiersMap(typeDeclarationPathIdentifiers);
                         tokenIdentifiersCollector.setConstructorIdentifiersMap(new HashMap<>());
                         tokenIdentifiersCollector.setFieldIdentifiersMap(new HashMap<>());
-                        tokenReferences.setClazzes(typeDeclarationPathIdentifiers.values().stream()
-                                .flatMap(List::stream).map(
-                                p -> {
-                                    try {
-                                        CompilationUnit cu = JavaParserUtils.getCompilationUnit(p);
-                                        return JavaParserUtils.getTypeDeclarationsFromCompilationUnitAndName(cu, token).stream().map(t -> new Pair<>(t, p)).collect(Collectors.toList());
-                                    } catch (IOException e) {
-                                        logger.error("Error reading compilation unit from file: " + p);
-                                        return new ArrayList<Pair<TypeDeclaration,Path>>();
-                                    }
-                                }
-                        ).flatMap(List::stream).collect(Collectors.toList()));
-                        tokenReferences.setFields(new ArrayList<>());
-                        tokenReferences.setMethods(new ArrayList<>());
-                        tokenReferences.setConstructors(new ArrayList<>());
-                        tokenReferences.setEnums(new ArrayList<>());
+                        tokenReferences.setContextualInfoType(ContextualInfoType.THROW);
+                        // Set the filtered class references and clear all other references
+                        tokenReferences.setClazzes(typeDeclarationPathIdentifiers);
+                        tokenReferences.setFields(new HashMap<>());
+                        tokenReferences.setMethods(new HashMap<>());
+                        tokenReferences.setConstructors(new HashMap<>());
+                        tokenReferences.setEnums(new HashMap<>());
                         break;
                     case IDENTIFIER:
+                        // Check if the token matches any of the collected identifiers
                         boolean classesMatch = tokenIdentifiersCollector.classPathIdentifiers.containsKey(token);
                         boolean methodsMatch = tokenIdentifiersCollector.methodIdentifiers.containsKey(token);
                         boolean fieldsMatch = tokenIdentifiersCollector.fieldIdentifiers.containsKey(token);
                         boolean constructorsMatch = tokenIdentifiersCollector.constructorIdentifiers.containsKey(token);
-
+                        // If the token does not match any identifier, clear all maps to avoid suggesting irrelevant tokens
+                        // TODO: Manage tokens that could refer to lambda expressions or generics
                         if (!classesMatch && !methodsMatch && !fieldsMatch && !constructorsMatch) {
                             tokenIdentifiersCollector.setClassIdentifiersMap(new HashMap<>());
                             tokenIdentifiersCollector.setMethodIdentifiersMap(new HashMap<>());
@@ -727,53 +919,93 @@ public class TokensUtils {
                             tokenIdentifiersCollector.setFieldIdentifiersMap(new HashMap<>());
                             break;
                         }
-
-                        HashMap<String, List<Path>> updatedTypeDeclaratorIdentifiers = new HashMap<>();
-                        HashMap<String, List<Pair<VariableDeclarator,Type>>> updatedVarTypeIdentifiers = new HashMap<>();
-                        HashMap<String, List<MethodUsage>> updatedMethodUsageIdentifiers = new HashMap<>();
-                        HashMap<String, List<EnumConstantDeclaration>> updatedEnumConstantDeclarations = new HashMap<>();
-                        List<TypeDeclaration> matchedTypes = new ArrayList<>();
-                        List<MethodUsage> matchedMethods = new ArrayList<>();
-                        List<ResolvedConstructorDeclaration> matchedConstructors = new ArrayList<>();
-                        List<Pair<VariableDeclarator,Type>> matchedFields = new ArrayList<>();
-
+                        // If the token matches a class name, collect its members (fields and methods or constructors)
                         if (classesMatch) {
+                            // Get the list of class paths for the matched class name
                             List<Path> classPaths = tokenIdentifiersCollector.classPathIdentifiers.get(token);
-                            List<List<Pair<Modifier.Keyword,Boolean>>> modifiers = new ArrayList<>();
-                            modifiers.add(List.of(new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))));
-                            modifiers.add(List.of(new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(false))));
+                            // Get the compilation unit of the test class to get its package declaration
+                            // It's important to collect protected members from classes in the same package
                             CompilationUnit testCu = (CompilationUnit) tc.getParentNode().get();
 
                             for (final Path classPath: classPaths) {
                                 try {
+                                    // Get the compilation unit of the matched class
                                     CompilationUnit cu = JavaParserUtils.getCompilationUnit(classPath);
-                                    Optional<PackageDeclaration> packageDeclaration = cu.getPackageDeclaration();
-                                    if (packageDeclaration.isPresent()) {
-                                        String packageName = packageDeclaration.get().getNameAsString();
-                                        if (testCu.getPackageDeclaration().get().getNameAsString().equals(packageName)) {
-                                            modifiers.add(List.of(new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(true))));
-                                        }
-                                    }
-
+                                    // Get the type declarations from the compilation unit that match the token
                                     List<TypeDeclaration> matchedTypeDeclarations = JavaParserUtils.getTypeDeclarationsFromCompilationUnitAndName(cu, token);
-                                    tokenReferences.setClazzes(matchedTypeDeclarations.stream().map(t -> new Pair<>(t, classPath)).collect(Collectors.toList()));
-
+                                    // Get the package declaration of the matched class and the test class
+                                    Optional<PackageDeclaration> matchedPackageDeclaration = cu.getPackageDeclaration();
+                                    Optional<PackageDeclaration> testPackageDeclaration = testCu.getPackageDeclaration();
+                                    // For each matched type declaration, collect its inner types as possible next class identifiers
                                     for (TypeDeclaration targetTypeDeclaration: matchedTypeDeclarations) {
+                                        // Set up an initial list of modifiers rules for searching inner class members
+                                        List<List<Pair<Modifier.Keyword,Boolean>>> modifiers = new ArrayList<>();
+                                        modifiers.add(List.of(new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))));
+                                        modifiers.add(List.of(new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(false))));
+                                        // Check if the matched class is in the same package as the test class
+                                        if (matchedPackageDeclaration.isPresent() && testPackageDeclaration.isPresent()) {
+                                            String matchedPackageName = matchedPackageDeclaration.get().getNameAsString();
+                                            String testPackageName = testPackageDeclaration.get().getNameAsString();
+                                            // If the matched class is in the same package as the test class, add protected members to the search
+                                            if (testPackageName.equals(matchedPackageName)) {
+                                                modifiers.add(List.of(new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(true))));
+                                            }
+                                        }
+                                        // Add the inner types as possible next class identifiers
                                         targetTypeDeclaration.getMembers().stream()
                                                 .filter(m -> ((BodyDeclaration) m).isTypeDeclaration())
-                                                .forEach(t -> updatedTypeDeclaratorIdentifiers.put(((TypeDeclaration) t).getNameAsString(), List.of(classPath)));
-                                        HashMap<String, List<ResolvedConstructorDeclaration>> targetTypeDeclarationConstructorsIdentifiers = new HashMap<>();
-                                        updateHashMapOfResolvedConstructorDeclarationIdentifiers(targetTypeDeclarationConstructorsIdentifiers, targetTypeDeclaration);
-                                        matchedConstructors.addAll(targetTypeDeclarationConstructorsIdentifiers.values().stream().flatMap(List::stream).collect(Collectors.toList()));
-                                        tokenIdentifiersCollector.setClassIdentifiersMap(updatedTypeDeclaratorIdentifiers);
-                                        updateHashMapOfEnumConstantDeclarationIdentifiers(updatedEnumConstantDeclarations, targetTypeDeclaration);
-                                        updateHashMapOfMethodUsageIdentifiers(updatedMethodUsageIdentifiers, targetTypeDeclaration, modifiers, List.of(new Pair("Test", Boolean.valueOf(false))));
-                                        updateHashMapOfVariableTypeIdentifiers(updatedVarTypeIdentifiers, targetTypeDeclaration.getFields(), modifiers);
+                                                .forEach(t -> classIdentifiers.put(((TypeDeclaration) t).getNameAsString(), List.of(classPath)));
+                                        // Collect the references to the matched class
+                                        String fullyQualifiedName = (String) targetTypeDeclaration.getFullyQualifiedName().orElse(targetTypeDeclaration.getNameAsString());
+                                        if (!classReferences.containsKey(fullyQualifiedName)) {
+                                            classReferences.put(fullyQualifiedName, new ArrayList<>());
+                                        }
+                                        classReferences.get(fullyQualifiedName).add(classPath);
+                                    }
+                                    // If the previous token is "new", we are likely dealing with a constructor call
+                                    if (previousTokenType == AntlrToken.NEW) {
+                                        for (TypeDeclaration targetTypeDeclaration: matchedTypeDeclarations) {
+                                            // Collect the constructors from the matched type declaration according to the modifiers rules
+                                            updateHashMapOfResolvedConstructorDeclarationIdentifiers(constructorIdentifiers, targetTypeDeclaration);
+                                            updateHashMapOfResolvedConstructorReferencesFromIdentifiers(constructorReferences, constructorIdentifiers);
+                                        }
+                                        continue;
+                                    }
+                                    // If the previous token is not "new", we are likely dealing with a class reference
+                                    // Iterate over the matched type declarations and collect their members,
+                                    // according to the modifiers rules
+                                    for (TypeDeclaration targetTypeDeclaration: matchedTypeDeclarations) {
+                                        // Set up an initial list of modifiers rules for searching field and method members
+                                        List<List<Pair<Modifier.Keyword,Boolean>>> modifiers = new ArrayList<>();
+                                        modifiers.add(List.of(
+                                                new Pair(Modifier.Keyword.STATIC, Boolean.valueOf(true)),
+                                                new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))
+                                        ));
+                                        modifiers.add(List.of(new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(false))));
+                                        // Check if the matched class is in the same package as the test class
+                                        if (matchedPackageDeclaration.isPresent() && testPackageDeclaration.isPresent()) {
+                                            String matchedPackageName = matchedPackageDeclaration.get().getNameAsString();
+                                            String testPackageName = testPackageDeclaration.get().getNameAsString();
+                                            // If the matched class is in the same package as the test class, add protected members to the search
+                                            if (testPackageName.equals(matchedPackageName)) {
+                                                modifiers.add(List.of(
+                                                        new Pair(Modifier.Keyword.STATIC, Boolean.valueOf(true)),
+                                                        new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(true))
+                                                ));
+                                            }
+                                        }
+                                        // Add all possible enum constant declarations if the type is an enum
+                                        updateHashMapOfEnumConstantDeclarationIdentifiers(enumIdentifiers, targetTypeDeclaration);
+                                        // Collect method usages and field type identifiers from the matched type declaration
+                                        // Methods and fields must be static and public or protected (if in the same package)
+                                        updateHashMapOfMethodUsageIdentifiers(methodIdentifiers, targetTypeDeclaration, modifiers, List.of(new Pair("Test", Boolean.valueOf(false))));
+                                        updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, targetTypeDeclaration.getFields(), modifiers);
                                     }
                                 } catch (IOException e) {
                                     logger.error("Error reading compilation unit from file: " + classPath);
                                 }
                             }
+                            tokenReferences.setContextualInfoType(ContextualInfoType.CLASS_CALL);
                         }
 
                         List<ResolvedType> resolvedTypes = new ArrayList<>();
@@ -784,7 +1016,7 @@ public class TokensUtils {
                                 ResolvedType resolvedType = methodUsage.getDeclaration().getReturnType();
                                 resolvedTypes.add(resolvedType);
                             }
-                            matchedMethods.addAll(methodUsages);
+                            updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
                         }
 
                         if (fieldsMatch) {
@@ -794,11 +1026,12 @@ public class TokensUtils {
                                 try {
                                     ResolvedType resolvedType = varType.resolve();
                                     resolvedTypes.add(resolvedType);
+
                                 } catch (Exception e) {
                                     logger.error("Error resolving reference type: " + varType);
                                 }
                             }
-                            matchedFields.addAll(fields);
+                            updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, fieldIdentifiers);
                         }
 
                         for (ResolvedType resolvedType: resolvedTypes) {
@@ -814,11 +1047,18 @@ public class TokensUtils {
                                     resolvedType = resolvedArrayType.getComponentType();
                                 }
                             }
+                            if (resolvedType.isTypeVariable()) {
+                                String resolvedTypeKey = resolvedType.asTypeParameter().getContainerQualifiedName() + "<" + resolvedType.asTypeParameter().getName() + ">";
+                                if (tokenReferences.typeParametersReferences.containsKey(resolvedTypeKey)) {
+                                    resolvedType = tokenReferences.typeParametersReferences.get(resolvedTypeKey).get(0);
+                                }
+                            }
+
                             if (resolvedType.isReferenceType()) {
                                 try {
                                     try {
                                         collectMethodUsages(
-                                                updatedMethodUsageIdentifiers,
+                                                methodIdentifiers,
                                                 resolvedType.asReferenceType().getTypeDeclaration().get().getAllMethods(),
                                                 modifiers,
                                                 List.of(new Pair("Test", Boolean.valueOf(false)))
@@ -828,7 +1068,7 @@ public class TokensUtils {
                                         logger.error(message);
                                         clazzDatapointsErrors.add(message);
                                         collectResolvedMethodDeclaration(
-                                                updatedMethodUsageIdentifiers,
+                                                methodIdentifiers,
                                                 resolvedType.asReferenceType().getTypeDeclaration().get().getDeclaredMethods(),
                                                 modifiers,
                                                 List.of(new Pair("Test", Boolean.valueOf(false)))
@@ -836,7 +1076,7 @@ public class TokensUtils {
                                     }
 
                                     List<FieldDeclaration> fieldDeclarations =  resolvedType.asReferenceType().getTypeDeclaration().get().toAst().get().findAll(FieldDeclaration.class);
-                                    updateHashMapOfVariableTypeIdentifiers(updatedVarTypeIdentifiers, fieldDeclarations, modifiers);
+                                    updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, fieldDeclarations, modifiers);
                                 } catch (Exception e) {
                                     String message = "Error resolving reference type: " + resolvedType + " - " + e.getMessage();
                                     logger.error(message);
@@ -844,15 +1084,18 @@ public class TokensUtils {
                                 }
                             }
                         }
-                        tokenIdentifiersCollector.setClassIdentifiersMap(updatedTypeDeclaratorIdentifiers);
-                        tokenIdentifiersCollector.setMethodIdentifiersMap(updatedMethodUsageIdentifiers);
-                        tokenIdentifiersCollector.setFieldIdentifiersMap(updatedVarTypeIdentifiers);
+                        tokenIdentifiersCollector.setClassIdentifiersMap(classIdentifiers);
+                        tokenIdentifiersCollector.setMethodIdentifiersMap(methodIdentifiers);
+                        tokenIdentifiersCollector.setFieldIdentifiersMap(fieldIdentifiers);
                         tokenIdentifiersCollector.setConstructorIdentifiersMap(new HashMap<>());
-                        tokenIdentifiersCollector.setEnumIdentifiersMap(updatedEnumConstantDeclarations);
-                        tokenReferences.setMethods(matchedMethods);
-                        tokenReferences.setFields(matchedFields);
-                        tokenReferences.setConstructors(matchedConstructors);
-                        tokenReferences.setEnums(updatedEnumConstantDeclarations.values().stream().flatMap(List::stream).collect(Collectors.toList()));
+                        tokenIdentifiersCollector.setEnumIdentifiersMap(enumIdentifiers);
+                        tokenReferences.setContextualInfoType(ContextualInfoType.IDENTIFIER);
+                        tokenReferences.setClazzes(tokenIdentifiersCollector.classPathIdentifiers);
+                        tokenReferences.setMethods(methodReferences);
+                        tokenReferences.setFields(fieldReferences);
+                        tokenReferences.setConstructors(constructorReferences);
+                        updateHashMapOfEnumConstantReferencesFromIdentifiers(enumReferences, enumIdentifiers);
+                        tokenReferences.setEnums(enumReferences);
                 }
         }
         return tokenIdentifiersStack.get(tokenIdentifiersStack.size() - 1);
@@ -1140,6 +1383,30 @@ public class TokensUtils {
         }
     }
 
+    private static void collectTypeParametersReferencesFromFieldIdentifiers(
+            List<Pair<VariableDeclarator,Type>> fieldIdentifiers,
+            TokenReferencesCollector tokenReferencesCollector
+    ) {
+        HashMap<String, List<ResolvedType>> typeParametersReferences = tokenReferencesCollector.typeParametersReferences;
+        for (Pair<VariableDeclarator,Type> entry: fieldIdentifiers) {
+            Type type = entry.getValue1();
+            if (type.isClassOrInterfaceType()) {
+                List<com.github.javaparser.utils.Pair<ResolvedTypeParameterDeclaration, ResolvedType>> typeParametersMap = type.asClassOrInterfaceType().resolve().asReferenceType().getTypeParametersMap();
+                for (com.github.javaparser.utils.Pair<ResolvedTypeParameterDeclaration, ResolvedType> typeParameter: typeParametersMap) {
+                    String referenceKey = type.resolve().asReferenceType().getQualifiedName() + "<" + typeParameter.a.getName() + ">";
+                    ResolvedType typeParameterResolvedType = typeParameter.b;
+                    if (!typeParametersReferences.containsKey(referenceKey)) {
+                        typeParametersReferences.put(referenceKey, new ArrayList<>());
+                    }
+                    boolean isAlreadyPresent = typeParametersReferences.get(referenceKey).stream().anyMatch(v -> v.equals(typeParameterResolvedType));
+                    if (!isAlreadyPresent) {
+                        typeParametersReferences.get(referenceKey).add(typeParameterResolvedType);
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * Updates the map of resolved constructor declaration identifiers with the constructors from the given type declaration.
      * If a constructor name already exists in the map, it adds the new constructor to the list of existing ones.
@@ -1173,7 +1440,7 @@ public class TokensUtils {
      * @param fieldDeclarations The list of fields from which to extract the types of variable declarators
      * @param modifiersRules The modifiers to filter the variables (e.g., public, private)
      */
-    public static void updateHashMapOfVariableTypeIdentifiers(
+    public static void updateHashMapOfFieldTypeIdentifiers(
             HashMap<String, List<Pair<VariableDeclarator,Type>>> variableDeclaratorIdentifiers,
             List<FieldDeclaration> fieldDeclarations,
             List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules
@@ -1198,11 +1465,11 @@ public class TokensUtils {
      * Updates the map of variable declarator identifiers tokens with the variable declarators from the given method declaration.
      * If a variable name already exists in the map, it adds the new variable declarator to the list of existing ones.
      *
-     * @param variableTypeIdentifiers The map to update with variable declarators
+     * @param fieldTypeIdentifiers The map to update with variable declarators
      * @param methodDeclaration The method declaration from which to collect variable declarators
      */
-    public static void updateHashMapOfVariableTypeIdentifiers(
-            HashMap<String, List<Pair<VariableDeclarator,Type>>> variableTypeIdentifiers,
+    public static void updateHashMapOfFieldTypeIdentifiers(
+            HashMap<String, List<Pair<VariableDeclarator,Type>>> fieldTypeIdentifiers,
             MethodDeclaration methodDeclaration
     ) {
         HashMap<String, VariableDeclarator> tcVariablesMap = JavaParserUtils.collectExistingVariables(new HashMap<>(), methodDeclaration.getBody().get());
@@ -1211,10 +1478,10 @@ public class TokensUtils {
             String variableName = entry.getKey();
             VariableDeclarator variableDeclarator = entry.getValue();
             Type variableType = variableDeclarator.getType();
-            if (!variableTypeIdentifiers.containsKey(variableName)) {
-                variableTypeIdentifiers.put(variableName, new ArrayList<>());
+            if (!fieldTypeIdentifiers.containsKey(variableName)) {
+                fieldTypeIdentifiers.put(variableName, new ArrayList<>());
             }
-            variableTypeIdentifiers.get(variableName).add(new Pair<>(variableDeclarator,variableType));
+            fieldTypeIdentifiers.get(variableName).add(new Pair<>(variableDeclarator,variableType));
         }
     }
 }

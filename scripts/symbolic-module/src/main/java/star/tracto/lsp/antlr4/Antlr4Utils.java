@@ -14,6 +14,7 @@ import star.tracto.preprocessing.utils.TokensUtils;
 
 import javax.swing.text.html.Option;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -27,7 +28,17 @@ public class Antlr4Utils {
         CommonTokenStream tokenStream = new CommonTokenStream(lexer);
         JavaParser parser = new JavaParser(tokenStream);
         String tokenSymbolName = parser.getVocabulary().getSymbolicName(parser.getCurrentToken().getType());
-        return AntlrToken.valueOf(tokenSymbolName);
+
+        try {
+            return AntlrToken.valueOf(tokenSymbolName);
+        } catch (IllegalArgumentException e) {
+            // Not a JUnit assertion
+            if (Arrays.stream(JUnitAssertionType.values()).anyMatch(assertionType -> assertionType.name().equals(tokenSymbolName))) {
+                return AntlrToken.IDENTIFIER;
+            } else {
+                throw new IllegalArgumentException("No enum constant for symbol: " + tokenSymbolName);
+            }
+        }
     }
 
     public static List<String> parseSnippet(JUnitAssertionType assertionType, String snippet) {

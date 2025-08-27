@@ -1,5 +1,7 @@
 package star.tracto.preprocessing.components;
 
+import star.tracto.data.enums.ContextualInfoType;
+
 import java.util.List;
 
 /**
@@ -26,6 +28,7 @@ public record TokenStep(
         List<ContextualInfo> contextualInfos
 ) {
     public record ContextualInfo(
+            ContextualInfoType infoType,
             List<Clazz> clazzes,
             List<Callable> invokedMethods,
             List<Callable> invokedConstructors,
