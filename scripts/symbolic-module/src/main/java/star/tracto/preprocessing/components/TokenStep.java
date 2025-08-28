@@ -29,7 +29,8 @@ public record TokenStep(
 ) {
     public record ContextualInfo(
             ContextualInfoType infoType,
-            List<Clazz> clazzes,
+            List<Clazz> currentClasses,
+            List<Clazz> returnClasses,
             List<Callable> invokedMethods,
             List<Callable> invokedConstructors,
             List<FieldContextualInfo> fields,

@@ -13,6 +13,8 @@ public record TestClazz(
         List<String> interfaces,
         /* The relative path of the test class. Example: `src/main/[java/test]/[path_to_class]/TestClassName.java` */
         String filePath,
+        /* The relative path of the test prefix class. Example: `src/main/[java/test]/[path_to_class]/TestClassPrefixName.java` */
+        String prefixFilePath,
         /* The list of fields defined in the test class (public, protected, private). */
         List<Field> fields,
         /* The list of auxiliary methods defined in the test class (that are not test cases). */

@@ -425,7 +425,7 @@ public class TestUtils {
         String regex = "(?<![\\dA-Za-z\\.])(" + testClass.getNameAsString() + ")(?=[\\s.,:;{}()]+)";
         // Replacement string
         String replacement = testClass.getNameAsString();
-        if (namingConvention == NamingConvention.TEST_SPLIT_CLASS) {
+        if (namingConvention == NamingConvention.TEST_SPLIT_CLASS || namingConvention == NamingConvention.TEST_PREFIX_SPLIT_CLASS) {
             replacement = replacement.replace(NamingConvention.NORMALIZED_TEST_CLASS.getConventionName(), "") + namingConvention.getConventionName();
         } else {
             replacement += namingConvention.getConventionName();
@@ -527,7 +527,7 @@ public class TestUtils {
      * assertions
      * @return the path to the split test class file
      */
-    public static Path splitTest(
+    public static Pair<Path,Path> splitTest(
             OraclesDatasetConfig config,
             Path repoRootPath,
             Path testFilePath,
@@ -536,18 +536,24 @@ public class TestUtils {
         String testFileRelativePath = testFilePath.toString().replace(repoRootPath.getParent().toString(), "");
         // Regular output path for report analysis
         Path regularOutputPath = Paths.get(outputPath.toString(), "regular", testFileRelativePath.replace(NamingConvention.NORMALIZED_TEST_FILE.getConventionName(), NamingConvention.TEST_SPLIT_FILE.getConventionName()));
+        Path regularPrefixOutputPath = Paths.get(outputPath.toString(), "regular", testFileRelativePath.replace(NamingConvention.NORMALIZED_TEST_FILE.getConventionName(), NamingConvention.TEST_PREFIX_SPLIT_FILE.getConventionName()));
         // Error output path for error analysis
         Path errorOutputPath = Paths.get(outputPath.toString(), "error", "split", testFileRelativePath.replace(NamingConvention.NORMALIZED_TEST_FILE.getConventionName(), NamingConvention.TEST_SPLIT_FILE.getConventionName()));
         // Test repository output path for further processing
         Path testRepoOutputPath = Paths.get(testFilePath.toString().replace(NamingConvention.NORMALIZED_TEST_FILE.getConventionName(), NamingConvention.TEST_SPLIT_FILE.getConventionName()));
+        Path testPrefixRepoOutputPath = Paths.get(testFilePath.toString().replace(NamingConvention.NORMALIZED_TEST_FILE.getConventionName(), NamingConvention.TEST_PREFIX_SPLIT_FILE.getConventionName()));
         // Create a list to store the split test cases generated from the original test cases of the given test class
         List<MethodDeclaration> splitTestCases = new ArrayList<>();
+        // Create a list to store the split test cases prefixes generated from the original test cases of the given test class
+        List<MethodDeclaration> splitTestCasesPrefixes = new ArrayList<>();
         try {
             // Parse the test class
-            CompilationUnit cu = JavaParserUtils.getCompilationUnit(testFilePath);
-            TypeDeclaration testClass = cu.getPrimaryType().get();
+            CompilationUnit cuTestClass = JavaParserUtils.getCompilationUnit(testFilePath);
+            CompilationUnit cuTestPrefixClass = JavaParserUtils.getCompilationUnit(testFilePath);
+            TypeDeclaration testClass = cuTestClass.getPrimaryType().get();
+            TypeDeclaration testPrefixClass = cuTestPrefixClass.getPrimaryType().get();
             // Get Junit version
-            JUnitVersion junitVersion = TestUtils.getJunitVersion(cu.getImports());
+            JUnitVersion junitVersion = TestUtils.getJunitVersion(cuTestClass.getImports());
             // Get the list of all the methods defined within the test class
             // List<MethodDeclaration> testClassMethods = cu.findAll(MethodDeclaration.class);
             // testClassMethods = testClassMethods.stream()
@@ -561,8 +567,10 @@ public class TestUtils {
             //        .collect(Collectors.toList());
             // Distribute the methods of the class according to their meaning
             Triplet<List<MethodDeclaration>, HashMap<String, MethodDeclaration>, HashMap<String, MethodDeclaration>> testClassMethodsDistribution = distributeMethods(testClass.getMethods());
+            Triplet<List<MethodDeclaration>, HashMap<String, MethodDeclaration>, HashMap<String, MethodDeclaration>> testPrefixClassMethodsDistribution = distributeMethods(testPrefixClass.getMethods());
             // Get the list of all the original test cases within the given test class
             List<MethodDeclaration> originalTestCases = testClassMethodsDistribution.getValue0();
+            List<MethodDeclaration> originalTestPrefixCases = testPrefixClassMethodsDistribution.getValue0();
             // Get the list of all the setup and tear down methods within the given test class
             HashMap<String, MethodDeclaration> setUpTearDownMethods = testClassMethodsDistribution.getValue1();
             // Get the list of all the auxiliary methods within the given test class
@@ -590,6 +598,7 @@ public class TestUtils {
                 // If the test case is annotated with @Ignore, skip it
                 if (isIgnore) {
                     splitTestCases.add(originalTestCase);
+                    splitTestCasesPrefixes.add(originalTestCase);
                     continue;
                 }
 
@@ -597,6 +606,7 @@ public class TestUtils {
                     if (!originalTestCase.getType().isVoidType() || originalTestCase.getParameters().size() > 0) {
                         logger.warn("Test case annotated with @Override but not a void method or has parameters. Unable to process it: " + originalTestCase.getNameAsString());
                         splitTestCases.add(originalTestCase);
+                        splitTestCasesPrefixes.add(originalTestCase);
                         continue;
                     }
                     MethodDeclaration overrideSupportTestCase = originalTestCase.clone();
@@ -640,6 +650,7 @@ public class TestUtils {
                         logger.warn("Super statement found in the original test case, but unable to remove it: " + originalTestCase.getNameAsString());
                         originalTestCase.setBody(originalTestCaseBodyClone);
                         splitTestCases.add(originalTestCase);
+                        splitTestCasesPrefixes.add(originalTestCase);
                         continue;
                     }
                     if (overrideTestCaseBody.getStatements().isEmpty()) {
@@ -653,6 +664,7 @@ public class TestUtils {
                         overrideTestCaseBody.getStatements().add(0, stmt);
                     }
                     splitTestCases.add(overrideSupportTestCase);
+                    splitTestCasesPrefixes.add(overrideSupportTestCase);
                 }
 
                 // Get the list of statements within the original test case
@@ -664,7 +676,7 @@ public class TestUtils {
                     testCaseMold.setBody(new BlockStmt());
                     // Parse the statements of the original test case and split it into multiple test cases
                     try {
-                        Pair<MethodDeclaration, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
+                        Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
                                 config,
                                 junitVersion,
                                 originalTestCaseStatements,
@@ -677,6 +689,8 @@ public class TestUtils {
                         );
                         // Add the split test cases generated from the original test case to the list
                         splitTestCases.addAll(result.getValue1());
+                        // Add the split test cases prefixes generated from the original test case to the list
+                        splitTestCasesPrefixes.addAll(result.getValue2());
                     } catch (Exception e) {
                         logger.error("Error parsing test case statements: " + originalTestCase.getNameAsString(), e);
                     }
@@ -684,7 +698,7 @@ public class TestUtils {
                     // Log the error occurred while parsing the statements of the test case
                     logger.error(e.getMessage());
                     // Define the error test class compilation unit
-                    CompilationUnit errorCu = cu.clone();
+                    CompilationUnit errorCu = cuTestClass.clone();
                     // Define the error test class
                     TypeDeclaration errorTestClass = errorCu.getPrimaryType().get();
                     // Check if the error test class already exists. Otherwise, create a new one from the original test class
@@ -712,18 +726,26 @@ public class TestUtils {
             for (MethodDeclaration originalTestCase : originalTestCases) {
                 testClass.remove(originalTestCase);
             }
+            for (MethodDeclaration originalTestPrefixCase : originalTestPrefixCases) {
+                testPrefixClass.remove(originalTestPrefixCase);
+            }
             for (MethodDeclaration splitTestCase : splitTestCases) {
                 testClass.addMember(splitTestCase);
             }
-
-            CompilationUnit refactoredCu = refactorCompilationUnitModified(cu, testClass, NamingConvention.TEST_SPLIT_CLASS);
+            for (MethodDeclaration splitTestCasePrefix : splitTestCasesPrefixes) {
+                testPrefixClass.addMember(splitTestCasePrefix);
+            }
+            CompilationUnit refactoredTestClassPrefixesCu = refactorCompilationUnitModified(cuTestPrefixClass, testPrefixClass, NamingConvention.TEST_PREFIX_SPLIT_CLASS);
+            CompilationUnit refactoredTestClassCu = refactorCompilationUnitModified(cuTestClass, testClass, NamingConvention.TEST_SPLIT_CLASS);
             // Save the split test class to the output paths (regular and test repository)
-            FilesUtils.writeJavaFile(regularOutputPath, refactoredCu);
-            FilesUtils.writeJavaFile(testRepoOutputPath, refactoredCu);
+            FilesUtils.writeJavaFile(regularOutputPath, refactoredTestClassCu);
+            FilesUtils.writeJavaFile(testRepoOutputPath, refactoredTestClassCu);
+            FilesUtils.writeJavaFile(regularPrefixOutputPath, refactoredTestClassPrefixesCu);
+            FilesUtils.writeJavaFile(testPrefixRepoOutputPath, refactoredTestClassPrefixesCu);
         } catch (IOException e) {
             logger.error("Error reading file: " + testFilePath);
         }
-        return testRepoOutputPath;
+        return new Pair(testRepoOutputPath, testPrefixRepoOutputPath);
     }
 
     /**
@@ -752,7 +774,7 @@ public class TestUtils {
      * @return the pair of the last split test case generated and the list of split test cases
      * @throws IllegalStateException if an error occurs while parsing the statements of the block
      */
-    private static Pair<MethodDeclaration, List<MethodDeclaration>> parseSplitTestStatementsBlock(
+    private static Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> parseSplitTestStatementsBlock(
             OraclesDatasetConfig config,
             JUnitVersion junitVersion,
             List<Statement> statements,
@@ -765,6 +787,8 @@ public class TestUtils {
     ) throws IllegalStateException {
         // Create a list to store the split test cases generated from the given block of statements of the original test case
         List<MethodDeclaration> splitTestCases = new ArrayList<>();
+        // Create a list to store the split test prefixes generated from the given block of statements of the original test case
+        List<MethodDeclaration> splitTestPrefixes = new ArrayList<>();
         // Get the number of assertions in the test case
         int numberOfAssertions = getNumberOfAssertions(statements);
         // Initialize the index of the split test cases (incremental index to name the split test cases)
@@ -773,6 +797,7 @@ public class TestUtils {
         String testCasePrefixName = testCaseMold.getNameAsString();
         // Initialize the first split test case (clone the test and assign the name to the split test case)
         MethodDeclaration splitTestCase = initializeSplitTestCase(testCaseMold, testCasePrefixName, exceptionsToThrow, idx);
+        MethodDeclaration splitTestCasePrefix = splitTestCase.clone();
         // Get the body of the initialized split test case
         BlockStmt splitTestCaseBody = splitTestCase.getBody().get();
         // Iterate over the statements of the original test case
@@ -781,6 +806,7 @@ public class TestUtils {
             boolean isAssertion = false;
             // Check if the statement is a potential assertion
             if (statement.isAssertStmt()) {
+                splitTestCasePrefix = splitTestCase.clone();
                 // Add the statement to the current split test case body
                 addStatement(statement, splitTestCaseBody, blockStatementsType);
                 // Flag the statement as an assertion
@@ -796,7 +822,7 @@ public class TestUtils {
                 //    splitTestCase = newSplitTestCase;
                 //}
                 // Parse the statements of the do body and split it into multiple test cases
-                Pair<MethodDeclaration, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
+                Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
                         config,
                         junitVersion,
                         statement.asBlockStmt().getStatements(),
@@ -809,10 +835,14 @@ public class TestUtils {
                 );
                 // Update the split test case with the last generated from the block statement
                 splitTestCase = result.getValue0();
+                // Update the split test prefix
+                splitTestCasePrefix = splitTestCase.clone();
                 // Update the split test case body
                 splitTestCaseBody = splitTestCase.getBody().get();
                 // Add the split test cases generated from the do statement to the list
                 splitTestCases.addAll(result.getValue1());
+                // Add the split test prefixes generated from the do statement to the list
+                splitTestPrefixes.addAll(result.getValue2());
                 // Update idx of the split tests
                 idx += result.getValue1().size();
             } else if (statement.isDoStmt()) {
@@ -821,10 +851,11 @@ public class TestUtils {
                 // Clone the do statement and set the body to an empty block
                 DoStmt doStmtClone = statement.asDoStmt().clone();
                 doStmtClone.setBody(new BlockStmt());
+                splitTestCasePrefix = splitTestCase.clone();
                 // Add the cloned do statement to the current split test case body
                 addStatement(doStmtClone, splitTestCaseBody, blockStatementsType);
                 // Parse the statements of the do body and split it into multiple test cases
-                Pair<MethodDeclaration, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
+                Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
                         config,
                         junitVersion,
                         new ArrayList<>(Arrays.asList(doStmtBody)),
@@ -837,10 +868,14 @@ public class TestUtils {
                 );
                 // Update the split test case with the last generated from the do statement
                 splitTestCase = result.getValue0();
+                // Update the split test prefix
+                splitTestCasePrefix = splitTestCase.clone();
                 // Update the split test case body
                 splitTestCaseBody = splitTestCase.getBody().get();
                 // Add the split test cases generated from the do statement to the list
                 splitTestCases.addAll(result.getValue1());
+                // Add the split test prefixes generated from the do statement to the list
+                splitTestPrefixes.addAll(result.getValue2());
                 // Update idx of the split tests
                 idx += result.getValue1().size();
             } else if (statement.isExpressionStmt()) {
@@ -857,17 +892,20 @@ public class TestUtils {
                 if (currentExpr.isMethodCallExpr() && JUnitAssertionType.isJUnitAssertion(currentExpr.asMethodCallExpr().getNameAsString())) {
                     // Add the statement to the flat body
                     if (!(JUnitAssertionType.fromString(((MethodCallExpr) currentExpr).getNameAsString()) == JUnitAssertionType.ASSERT_THROWS)) {
+                        splitTestCasePrefix = splitTestCase.clone();
                         addStatement(statement, splitTestCaseBody, blockStatementsType);
                         // Flag the statement as an assertion
                         isAssertion = true;
                     } else {
                         if (config.assertThrowsStrategy() == AssertThrowsStrategyType.STANDARD) {
+                            splitTestCasePrefix = splitTestCase.clone();
                             // Add the statement to the flat body
                             addStatement(statement, splitTestCaseBody, blockStatementsType);
                             // Flag the statement as an assertion
                             isAssertion = true;
                         } else {
                             BlockStmt newSplitTestCaseBody = splitTestCaseBody.clone();
+                            splitTestCasePrefix = splitTestCase.clone();
                             addStatement(statement, newSplitTestCaseBody, blockStatementsType);
                             MethodCallExpr assertThrowsMethodCallExpr = statement.asExpressionStmt().getExpression().asMethodCallExpr();
                             Expression expr;
@@ -888,6 +926,7 @@ public class TestUtils {
                             if (expr.isMethodCallExpr()) {
                                 ExpressionStmt exprStmt = new ExpressionStmt();
                                 exprStmt.setExpression(expr.clone());
+                                splitTestCasePrefix = splitTestCase.clone();
                                 addStatement(exprStmt, splitTestCaseBody, blockStatementsType);
                             } else if (expr.isLambdaExpr()) {
                                 LambdaExpr lambdaExpr = expr.asLambdaExpr();
@@ -902,12 +941,15 @@ public class TestUtils {
                                     if (lambdaSingleExpr.isMethodCallExpr()) {
                                         ExpressionStmt exprStmt = new ExpressionStmt();
                                         exprStmt.setExpression(lambdaSingleExpr.clone());
+                                        splitTestCasePrefix = splitTestCase.clone();
                                         addStatement(exprStmt, splitTestCaseBody, blockStatementsType);
                                         if (JUnitAssertionType.isJUnitAssertion(lambdaSingleExpr.asMethodCallExpr().getNameAsString()) || config.splitStrategy() == SplitStrategyType.STATEMENT) {
                                             // Initialize a new split test case, starting from the body of the previous one
                                             MethodDeclaration newSplitTestCase = initializeSplitTestCase(splitTestCase, testCasePrefixName, exceptionsToThrow, ++idx);
                                             // Add the split test case to the list
                                             splitTestCases.add(splitTestCase);
+                                            // Add the split test prefix to the list
+                                            splitTestPrefixes.add(splitTestCasePrefix);
                                             // Update the split test case with the new one
                                             splitTestCase = newSplitTestCase;
                                             // Get the body of the new split test case
@@ -921,7 +963,7 @@ public class TestUtils {
                                     Statement lambdaStmt = lambdaExpr.getBody();
                                     if (lambdaStmt.isBlockStmt()) {
                                         BlockStmt blockStmt = lambdaStmt.asBlockStmt();
-                                        Pair<MethodDeclaration, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
+                                        Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
                                                 config,
                                                 junitVersion,
                                                 blockStmt.getStatements(),
@@ -934,10 +976,14 @@ public class TestUtils {
                                         );
                                         // Update the split test case with the last generated from the block statement
                                         splitTestCase = result.getValue0();
+                                        // Update the split test prefix
+                                        splitTestCasePrefix = splitTestCase.clone();
                                         // Update the split test case body
                                         splitTestCaseBody = splitTestCase.getBody().get();
                                         // Add the split test cases generated from the block statement to the list
                                         splitTestCases.addAll(result.getValue1());
+                                        // Add the split test prefixes generated from the block statement to the list
+                                        splitTestPrefixes.addAll(result.getValue2());
                                         // Update idx of the split tests
                                         idx += result.getValue1().size();
                                     } else {
@@ -948,8 +994,10 @@ public class TestUtils {
                             //Statement fakeStmt = new AssertStmt(new StringLiteralExpr(FAKE_ELEMENT_LABEL), new StringLiteralExpr(FAKE_ELEMENT_LABEL));
                             Statement fakeStmt = new ExpressionStmt(new MethodCallExpr("fail", new StringLiteralExpr(THROW_EXCEPTION_LABEL)));
                             fakeStmt.addOrphanComment(new LineComment(THROW_EXCEPTION_LABEL));
+                            splitTestCasePrefix = splitTestCase.clone();
                             addStatement(fakeStmt, splitTestCaseBody, blockStatementsType);
                             splitTestCases.add(splitTestCase);
+                            splitTestPrefixes.add(splitTestCasePrefix);
                             MethodDeclaration newSplitTestCase = initializeSplitTestCase(splitTestCase, testCasePrefixName, exceptionsToThrow, ++idx);
                             newSplitTestCase.setBody(newSplitTestCaseBody);
                             // Initialize a new split test case, starting from the body of the previous one
@@ -969,6 +1017,7 @@ public class TestUtils {
                             if (JUnitAssertionType.isJUnitAssertion(currentExpr.asMethodCallExpr().getNameAsString())) {
                                 // Add the statement to the flat body
                                 if (!(JUnitAssertionType.fromString(((MethodCallExpr) currentExpr).getNameAsString()) == JUnitAssertionType.ASSERT_THROWS)) {
+                                    splitTestCasePrefix = splitTestCase.clone();
                                     addStatement(statement, splitTestCaseBody, blockStatementsType);
                                 } else {
                                     throw new IllegalStateException("assertThrows within lambda expression, not supported");
@@ -976,10 +1025,12 @@ public class TestUtils {
                                 // Flag the statement as an assertion
                                 isAssertion = true;
                             } else {
+                                splitTestCasePrefix = splitTestCase.clone();
                                 // Add the statement to the flat body
                                 addStatement(statement, splitTestCaseBody, blockStatementsType);
                             }
                         } else {
+                            splitTestCasePrefix = splitTestCase.clone();
                             addStatement(statement, splitTestCaseBody, blockStatementsType);
                         }
                     } else {
@@ -987,8 +1038,9 @@ public class TestUtils {
                         LambdaExpr lambdaExprClone = lambdaExpr.clone();
                         lambdaExprClone.setParameters(new NodeList<>(lambdaExpr.getParameters()));
                         ExpressionStmt lambdaExprStmt = new ExpressionStmt(lambdaExpr.clone());
+                        splitTestCasePrefix = splitTestCase.clone();
                         addStatement(lambdaExprStmt, splitTestCaseBody, blockStatementsType);
-                        Pair<MethodDeclaration, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
+                        Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
                                 config,
                                 junitVersion,
                                 new ArrayList<>(Arrays.asList(lambdaBody)),
@@ -1001,15 +1053,20 @@ public class TestUtils {
                         );
                         // Update the split test case with the last generated from the lambda expression
                         splitTestCase = result.getValue0();
+                        // Update the split test prefix
+                        splitTestCasePrefix = splitTestCase.clone();
                         // Update the split test case body
                         splitTestCaseBody = splitTestCase.getBody().get();
                         // Add the split test cases generated from the lambda expression to the list
                         splitTestCases.addAll(result.getValue1());
+                        // Add the split test prefixes generated from the lambda expression to the list
+                        splitTestPrefixes.addAll(result.getValue2());
                         // Update idx of the split tests
                         idx += result.getValue1().size();
                     }
                 } else {
                     if (currentExpr.findAll(BlockStmt.class).isEmpty()) {
+                        splitTestCasePrefix = splitTestCase.clone();
                         addStatement(statement, splitTestCaseBody, blockStatementsType);
                     } else {
                         if (currentExpr.findAll(BlockStmt.class).size() > 1) {
@@ -1032,8 +1089,9 @@ public class TestUtils {
                             throw new IllegalStateException("Unexpected block statement parent node of block in expression different from statement, not supported.");
                         }
                         stmtClone.findAll(BlockStmt.class).get(0).setStatements(new NodeList<>());
+                        splitTestCasePrefix = splitTestCase.clone();
                         addStatement(stmtClone, splitTestCaseBody, blockStatementsType);
-                        Pair<MethodDeclaration, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
+                        Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
                                 config,
                                 junitVersion,
                                 blockStmt.getStatements(),
@@ -1046,10 +1104,14 @@ public class TestUtils {
                         );
                         // Update the split test case with the last generated from the block statement
                         splitTestCase = result.getValue0();
+                        // Update the split test prefix
+                        splitTestCasePrefix = splitTestCase.clone();
                         // Update the split test case body
                         splitTestCaseBody = splitTestCase.getBody().get();
                         // Add the split test cases generated from the block statement to the list
                         splitTestCases.addAll(result.getValue1());
+                        // Add the split test prefixes generated from the block statement to the list
+                        splitTestPrefixes.addAll(result.getValue2());
                         // Update idx of the split tests
                         idx += result.getValue1().size();
                     }
@@ -1060,10 +1122,11 @@ public class TestUtils {
                 // Clone the for each statement and set the body to an empty block
                 ForEachStmt forEachStmtClone = statement.asForEachStmt().clone();
                 forEachStmtClone.setBody(new BlockStmt());
+                splitTestCasePrefix = splitTestCase.clone();
                 // Add the cloned for each statement to the current split test case body
                 addStatement(forEachStmtClone, splitTestCaseBody, blockStatementsType);
                 // Parse the statements of the for each body and split it into multiple test cases
-                Pair<MethodDeclaration, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
+                Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
                         config,
                         junitVersion,
                         new ArrayList<>(Arrays.asList(forEachStmtBody)),
@@ -1076,10 +1139,14 @@ public class TestUtils {
                 );
                 // Update the split test case with the last generated from the for each statement
                 splitTestCase = result.getValue0();
+                // Update the split test prefix
+                splitTestCasePrefix = splitTestCase.clone();
                 // Update the split test case body
                 splitTestCaseBody = splitTestCase.getBody().get();
                 // Add the split test cases generated from the for each statement to the list
                 splitTestCases.addAll(result.getValue1());
+                // Add the split test prefixes generated from the for each statement to the list
+                splitTestPrefixes.addAll(result.getValue2());
                 // Update idx of the split tests
                 idx += result.getValue1().size();
             } else if (statement.isForStmt()) {
@@ -1088,10 +1155,11 @@ public class TestUtils {
                 // Clone the for statement and set the body to an empty block
                 ForStmt forStmtClone = statement.asForStmt().clone();
                 forStmtClone.setBody(new BlockStmt());
+                splitTestCasePrefix = splitTestCase.clone();
                 // Add the cloned for statement to the current split test case body
                 addStatement(forStmtClone, splitTestCaseBody, blockStatementsType);
                 // Parse the statements of the for body and split it into multiple test cases
-                Pair<MethodDeclaration, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
+                Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
                         config,
                         junitVersion,
                         new ArrayList<>(Arrays.asList(forStmtBody)),
@@ -1104,10 +1172,14 @@ public class TestUtils {
                 );
                 // Update the split test case with the last generated from the for statement
                 splitTestCase = result.getValue0();
+                // Update the split test prefix
+                splitTestCasePrefix = splitTestCase.clone();
                 // Update the split test case body
                 splitTestCaseBody = splitTestCase.getBody().get();
                 // Add the split test cases generated from the for statement to the list
                 splitTestCases.addAll(result.getValue1());
+                // Add the split test prefixes generated from the for statement to the list
+                splitTestPrefixes.addAll(result.getValue2());
                 // Update idx of the split tests
                 idx += result.getValue1().size();
             } else if (statement.isIfStmt()) {
@@ -1135,6 +1207,7 @@ public class TestUtils {
                         if (ifStmtClone == null) {
                             rootIf = true;
                             ifStmtClone = new IfStmt(ifCondition.get(), new BlockStmt(), null);
+                            splitTestCasePrefix = splitTestCase.clone();
                             // Add the cloned if statement to the current split test case body
                             addStatement(ifStmtClone, splitTestCaseBody, blockStatementsType);
                         } else {
@@ -1146,7 +1219,7 @@ public class TestUtils {
                         lastIfStmt.setElseStmt(new BlockStmt());
                     }
                     // Parse the statements of the if body and split it into multiple test cases
-                    Pair<MethodDeclaration, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
+                    Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
                             config,
                             junitVersion,
                             new ArrayList<>(Arrays.asList(ifStmtBody)),
@@ -1159,10 +1232,14 @@ public class TestUtils {
                     );
                     // Update the split test case with the last generated from the if statement
                     splitTestCase = result.getValue0();
+                    // Update the split test prefix
+                    splitTestCasePrefix = splitTestCase.clone();
                     // Update the split test case body
                     splitTestCaseBody = splitTestCase.getBody().get();
                     // Add the split test cases generated from the if statement to the list
                     splitTestCases.addAll(result.getValue1());
+                    // Add the split test prefixes generated from the if statement to the list
+                    splitTestPrefixes.addAll(result.getValue2());
                     // Update idx of the split tests
                     idx += result.getValue1().size();
                     // Update the if statement clone
@@ -1178,10 +1255,11 @@ public class TestUtils {
                 // Clone the synchronized statement and set the body to an empty block
                 SynchronizedStmt synchronizedStmtClone = statement.asSynchronizedStmt().clone();
                 synchronizedStmtClone.setBody(new BlockStmt());
+                splitTestCasePrefix = splitTestCase.clone();
                 // Add the cloned synchronized statement to the current split test case body
                 addStatement(synchronizedStmtClone, splitTestCaseBody, blockStatementsType);
                 // Parse the statements of the synchronized body and split it into multiple test cases
-                Pair<MethodDeclaration, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
+                Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
                         config,
                         junitVersion,
                         new ArrayList<>(Arrays.asList(synchronizedStmtBody)),
@@ -1194,10 +1272,14 @@ public class TestUtils {
                 );
                 // Update the split test case with the last generated from the synchronized statement
                 splitTestCase = result.getValue0();
+                // Update the split test prefix
+                splitTestCasePrefix = splitTestCase.clone();
                 // Update the split test case body
                 splitTestCaseBody = splitTestCase.getBody().get();
                 // Add the split test cases generated from the synchronized statement to the list
                 splitTestCases.addAll(result.getValue1());
+                // Add the split test prefixes generated from the synchronized statement to the list
+                splitTestPrefixes.addAll(result.getValue2());
                 // Update idx of the split tests
                 idx += result.getValue1().size();
             } else if (statement.isSwitchStmt()) {
@@ -1256,7 +1338,7 @@ public class TestUtils {
                     // Flatten the try statement into a block statement
                     BlockStmt flatTryStmt = flatTryStmt(junitVersion, tryStmt);
                     // Parse the statements of the synchronized body and split it into multiple test cases
-                    Pair<MethodDeclaration, List<MethodDeclaration>> resultTry = parseSplitTestStatementsBlock(
+                    Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> resultTry = parseSplitTestStatementsBlock(
                             config,
                             junitVersion,
                             new ArrayList<>(flatTryStmt.getStatements()),
@@ -1269,10 +1351,14 @@ public class TestUtils {
                     );
                     // Update the split test case with the last generated from the synchronized statement
                     splitTestCase = resultTry.getValue0();
+                    // Update the split test prefix
+                    splitTestCasePrefix = splitTestCase.clone();
                     // Update the split test case body
                     splitTestCaseBody = splitTestCase.getBody().get();
                     // Add the split test cases generated from the synchronized statement to the list
                     splitTestCases.addAll(resultTry.getValue1());
+                    // Add the split test prefixes generated from the synchronized statement to the list
+                    splitTestPrefixes.addAll(resultTry.getValue2());
                     // Update idx of the split tests
                     idx += resultTry.getValue1().size();
 
@@ -1288,7 +1374,7 @@ public class TestUtils {
                         catchClauseClone.setBody(new BlockStmt());
                         addCatchClause(catchClauseClone, splitTestCaseBody);
                         // Parse the statements of the catch body and split it into multiple test cases
-                        Pair<MethodDeclaration, List<MethodDeclaration>> resultCatch = parseSplitTestStatementsBlock(
+                        Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> resultCatch = parseSplitTestStatementsBlock(
                                 config,
                                 junitVersion,
                                 new ArrayList<>(Arrays.asList(catchStmtBody)),
@@ -1301,19 +1387,24 @@ public class TestUtils {
                         );
                         // Update the split test case with the last generated from the catch statement
                         splitTestCase = resultCatch.getValue0();
+                        // Update the split test prefix
+                        splitTestCasePrefix = splitTestCase.clone();
                         // Update the split test case body
                         splitTestCaseBody = splitTestCase.getBody().get();
                         // Add the split test cases generated from the catch statement to the list
                         splitTestCases.addAll(resultCatch.getValue1());
+                        // Add the split test prefixes generated from the catch statement to the list
+                        splitTestPrefixes.addAll(resultCatch.getValue2());
                         // Update idx of the split tests
                         idx += resultCatch.getValue1().size();
                     }
 
                     if (tryStmt.getFinallyBlock().isPresent()) {
+                        splitTestCasePrefix = splitTestCase.clone();
                         // Add the cloned while statement to the current split test case body
                         addStatement(new BlockStmt(), splitTestCaseBody, BlockStatementsType.FINALLY);
                         // Parse the statements of the try block and split it into multiple test cases
-                        Pair<MethodDeclaration, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
+                        Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
                                 config,
                                 junitVersion,
                                 new ArrayList<>(Arrays.asList(tryStmt.getFinallyBlock().get())),
@@ -1326,10 +1417,14 @@ public class TestUtils {
                         );
                         // Update the split test case with the last generated from the while statement
                         splitTestCase = result.getValue0();
+                        // Update the split test prefix
+                        splitTestCasePrefix = splitTestCase.clone();
                         // Update the split test case body
                         splitTestCaseBody = splitTestCase.getBody().get();
                         // Add the split test cases generated from the while statement to the list
                         splitTestCases.addAll(result.getValue1());
+                        // Add the split test prefixes generated from the while statement to the list
+                        splitTestPrefixes.addAll(result.getValue2());
                         // Update idx of the split tests
                         idx += result.getValue1().size();
                     }
@@ -1350,7 +1445,7 @@ public class TestUtils {
                     if (config.tryCatchFinallyStrategy() == TryCatchFinallyStrategyType.FLAT) {
                         BlockStmt newSplitTestCaseBody = splitTestCaseBody.clone();
                         tryStmtClone.setTryBlock((BlockStmt) tryStmtBody);
-
+                        splitTestCasePrefix = splitTestCase.clone();
                         addStatement(tryStmtClone, newSplitTestCaseBody, blockStatementsType);
                         TryStmt tryStmtFilteredStmtClone = tryStmtClone.clone();
 
@@ -1386,6 +1481,7 @@ public class TestUtils {
 
                         List<Statement> tryResourcesStmts = tryStmt.getResources().stream().map(r -> new ExpressionStmt(r)).collect(Collectors.toList());
                         for(Statement resource: tryResourcesStmts) {
+                            splitTestCasePrefix = splitTestCase.clone();
                             addStatement(resource, splitTestCaseBody, blockStatementsType);
                         }
 
@@ -1401,7 +1497,7 @@ public class TestUtils {
                         }
 
                         // Parse the statements of the try block and split it into multiple test cases
-                        Pair<MethodDeclaration, List<MethodDeclaration>> resultTry = parseSplitTestStatementsBlock(
+                        Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> resultTry = parseSplitTestStatementsBlock(
                                 config,
                                 junitVersion,
                                 new ArrayList<>(tryStmtFilteredStmtClone.getTryBlock().getStatements()),
@@ -1414,10 +1510,14 @@ public class TestUtils {
                         );
                         // Update the split test case with the last generated from the try statement
                         splitTestCase = resultTry.getValue0();
+                        // Update the split test prefix
+                        splitTestCasePrefix = splitTestCase.clone();
                         // Update the split test case body
                         splitTestCaseBody = splitTestCase.getBody().get();
                         // Add the split test cases generated from the try statement to the list
                         splitTestCases.addAll(resultTry.getValue1());
+                        // Add the split test prefixes generated from the try statement to the list
+                        splitTestPrefixes.addAll(resultTry.getValue2());
                         // Update idx of the split tests
                         idx += resultTry.getValue1().size();
                         if (resultTry.getValue1().size() > 0) {
@@ -1436,10 +1536,11 @@ public class TestUtils {
                         // Get the body of the new split test case
                         splitTestCaseBody = splitTestCase.getBody().orElseThrow();
                     } else if (config.tryCatchFinallyStrategy() == TryCatchFinallyStrategyType.STANDARD || (config.tryCatchFinallyStrategy() == TryCatchFinallyStrategyType.ASSERT_THROW && tryStmt.getResources().size() > 0)) {
+                        splitTestCasePrefix = splitTestCase.clone();
                         // Add the cloned while statement to the current split test case body
                         addStatement(tryStmtClone, splitTestCaseBody, blockStatementsType);
                         // Parse the statements of the try block and split it into multiple test cases
-                        Pair<MethodDeclaration, List<MethodDeclaration>> resultTry = parseSplitTestStatementsBlock(
+                        Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> resultTry = parseSplitTestStatementsBlock(
                                 config,
                                 junitVersion,
                                 new ArrayList<>(Arrays.asList(tryStmtBody)),
@@ -1452,10 +1553,14 @@ public class TestUtils {
                         );
                         // Update the split test case with the last generated from the while statement
                         splitTestCase = resultTry.getValue0();
+                        // Update the split test prefix
+                        splitTestCasePrefix = splitTestCase.clone();
                         // Update the split test case body
                         splitTestCaseBody = splitTestCase.getBody().get();
                         // Add the split test cases generated from the while statement to the list
                         splitTestCases.addAll(resultTry.getValue1());
+                        // Add the split test prefixes generated from the while statement to the list
+                        splitTestPrefixes.addAll(resultTry.getValue2());
                         // Update idx of the split tests
                         idx += resultTry.getValue1().size();
                     }
@@ -1470,7 +1575,7 @@ public class TestUtils {
                         catchClauseClone.setBody(new BlockStmt());
                         addCatchClause(catchClauseClone, splitTestCaseBody);
                         // Parse the statements of the catch body and split it into multiple test cases
-                        Pair<MethodDeclaration, List<MethodDeclaration>> resultCatch = parseSplitTestStatementsBlock(
+                        Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> resultCatch = parseSplitTestStatementsBlock(
                                 config,
                                 junitVersion,
                                 new ArrayList<>(Arrays.asList(catchStmtBody)),
@@ -1483,19 +1588,24 @@ public class TestUtils {
                         );
                         // Update the split test case with the last generated from the catch statement
                         splitTestCase = resultCatch.getValue0();
+                        // Update the split test prefix
+                        splitTestCasePrefix = splitTestCase.clone();
                         // Update the split test case body
                         splitTestCaseBody = splitTestCase.getBody().get();
                         // Add the split test cases generated from the catch statement to the list
                         splitTestCases.addAll(resultCatch.getValue1());
+                        // Add the split test prefixes generated from the catch statement to the list
+                        splitTestPrefixes.addAll(resultCatch.getValue2());
                         // Update idx of the split tests
                         idx += resultCatch.getValue1().size();
                     }
 
                     if (tryStmt.getFinallyBlock().isPresent()) {
+                        splitTestCasePrefix = splitTestCase.clone();
                         // Add the cloned while statement to the current split test case body
                         addStatement(new BlockStmt(), splitTestCaseBody, BlockStatementsType.FINALLY);
                         // Parse the statements of the try block and split it into multiple test cases
-                        Pair<MethodDeclaration, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
+                        Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
                                 config,
                                 junitVersion,
                                 new ArrayList<>(Arrays.asList(tryStmt.getFinallyBlock().get())),
@@ -1508,10 +1618,14 @@ public class TestUtils {
                         );
                         // Update the split test case with the last generated from the while statement
                         splitTestCase = result.getValue0();
+                        // Update the split test prefix
+                        splitTestCasePrefix = splitTestCase.clone();
                         // Update the split test case body
                         splitTestCaseBody = splitTestCase.getBody().get();
                         // Add the split test cases generated from the while statement to the list
                         splitTestCases.addAll(result.getValue1());
+                        // Add the split test prefixes generated from the while statement to the list
+                        splitTestPrefixes.addAll(result.getValue2());
                         // Update idx of the split tests
                         idx += result.getValue1().size();
                     }
@@ -1522,10 +1636,11 @@ public class TestUtils {
                 // Clone the while statement and set the body to an empty block
                 WhileStmt whileStmtClone = statement.asWhileStmt().clone();
                 whileStmtClone.setBody(new BlockStmt());
+                splitTestCasePrefix = splitTestCase.clone();
                 // Add the cloned while statement to the current split test case body
                 addStatement(whileStmtClone, splitTestCaseBody, blockStatementsType);
                 // Parse the statements of the while body and split it into multiple test cases
-                Pair<MethodDeclaration, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
+                Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
                         config,
                         junitVersion,
                         new ArrayList<>(Arrays.asList(whileStmtBody)),
@@ -1538,13 +1653,18 @@ public class TestUtils {
                 );
                 // Update the split test case with the last generated from the while statement
                 splitTestCase = result.getValue0();
+                // Update the split test prefix
+                splitTestCasePrefix = splitTestCase.clone();
                 // Update the split test case body
                 splitTestCaseBody = splitTestCase.getBody().get();
                 // Add the split test cases generated from the while statement to the list
                 splitTestCases.addAll(result.getValue1());
+                // Add the split test prefixes generated from the while statement to the list
+                splitTestPrefixes.addAll(result.getValue2());
                 // Update idx of the split tests
                 idx += result.getValue1().size();
             } else {
+                splitTestCasePrefix = splitTestCase.clone();
                 // Add the statement to the current split test case body
                 addStatement(statement, splitTestCaseBody, blockStatementsType);
                 // continue;
@@ -1570,8 +1690,12 @@ public class TestUtils {
                 // }
                 // Add the split test case to the list
                 splitTestCases.add(splitTestCase);
+                // Add the split test prefix to the list
+                splitTestPrefixes.add(splitTestCasePrefix);
                 // Update the split test case with the new one
                 splitTestCase = newSplitTestCase;
+                // Update the split test case prefix
+                splitTestCasePrefix = splitTestCase.clone();
                 // Get the body of the new split test case
                 splitTestCaseBody = splitTestCase.getBody().orElseThrow();
             }
@@ -1592,10 +1716,11 @@ public class TestUtils {
             if(!lastAddedSplitTestCase.getBody().get().equals(splitTestCaseBody)) {
                 // Add the last split test case to the list
                 splitTestCases.add(splitTestCase);
+                splitTestPrefixes.add(splitTestCasePrefix);
             }
         }
         // Return the list of split test cases generated
-        return new Pair<>(splitTestCase, splitTestCases);
+        return new Triplet<>(splitTestCase, splitTestCases, splitTestPrefixes);
     }
 
     private static boolean parseNormalizeTestStatementsBlock(
@@ -2560,6 +2685,7 @@ public class TestUtils {
     public static Pair<TestClazzDatapoints<OracleDatapoint>, HashMap<String, HashMap<String, List<String>>>> processSplitTestClass(
             OraclesDatasetConfig config,
             Path testFilePath,
+            Path testPrefixFilePath,
             Path sourceFilePath,
             Path repoRootPath
     ) {
@@ -2591,7 +2717,7 @@ public class TestUtils {
             // Set the list of all the auxiliary methods defined in the given test class
             HashMap<String, MethodDeclaration> auxiliaryMethods = distributedMethods.getValue2();
             // Process test class
-            TestClazz testClassTracto = processTestClass(testClass, testFilePath, repoRootPath, distributedMethods);
+            TestClazz testClassTracto = processTestClass(testClass, testFilePath, testPrefixFilePath, repoRootPath, distributedMethods);
             // Process focal class
             Clazz focalClazz = processFocalClass(focalClass, sourceFilePath, repoRootPath);
             testClassOracleDatapointsBuilder.setJunitVersion(junitVersion.getVersion());
@@ -3124,6 +3250,7 @@ public class TestUtils {
      *
      * @param testClass the test class to process
      * @param testFilePath the path to the test class file
+     * @param testPrefixFilePath the path to the test prefix file
      * @param repoRootPath the path to the root of the repository
      * @param distributedMethods the methods of the test class distributed according to their meaning
      *                           (auxiliary, setup & tear down, test cases)
@@ -3132,6 +3259,7 @@ public class TestUtils {
     private static TestClazz processTestClass(
             TypeDeclaration testClass,
             Path testFilePath,
+            Path testPrefixFilePath,
             Path repoRootPath,
             Triplet<List<MethodDeclaration>, HashMap<String, MethodDeclaration>, HashMap<String, MethodDeclaration>> distributedMethods
     ) {
@@ -3165,6 +3293,7 @@ public class TestUtils {
         testClazzBuilder.setInterfaces(interfaces);
         // Set file path of the test class
         testClazzBuilder.setFilePath(testFilePath.toString().replace(repoRootPath.toString(), ""));
+        testClazzBuilder.setPrefixFilePath(testPrefixFilePath.toString().replace(repoRootPath.toString(), ""));
         // Set test class fields
         testClazzBuilder.setFields(processFieldsFromTypeDeclaration(testClass));
         // Set the list of all the test cases defined in the given test class

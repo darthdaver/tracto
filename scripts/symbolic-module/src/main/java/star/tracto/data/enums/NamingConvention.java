@@ -5,6 +5,8 @@ public enum NamingConvention {
     NORMALIZED_TEST_FILE("STARNormalizedTest.java"),
     TEST_SPLIT_CLASS("STARSplitTest"),
     TEST_SPLIT_FILE("STARSplitTest.java"),
+    TEST_PREFIX_SPLIT_CLASS("STARSplitTestPrefix"),
+    TEST_PREFIX_SPLIT_FILE("STARSplitTestPrefix.java"),
     LIB_FOLDER("processed_libs"),
     SOURCE_LIB_FOLDER("processed_libs/sources"),
     JAR_LIB_FOLDER("processed_libs/jars"),

@@ -2,12 +2,14 @@ package star.tracto.preprocessing.utils;
 
 import com.github.javaparser.ast.*;
 import com.github.javaparser.ast.body.*;
+import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.TypeParameter;
 import com.github.javaparser.resolution.MethodUsage;
 import com.github.javaparser.resolution.declarations.ResolvedConstructorDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedMethodDeclaration;
+import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedTypeParameterDeclaration;
 import com.github.javaparser.resolution.types.ResolvedArrayType;
 import com.github.javaparser.resolution.types.ResolvedType;
@@ -36,6 +38,11 @@ public class TokensUtils {
     private static final Logger logger = LoggerFactory.getLogger(TokensUtils.class);
     private static TokenIdentifiersCollector rootTokenIdentifiersCollector;
     private static TokenReferencesCollector rootTokenReferencesCollector;
+    private static Path repoSourcePath;
+    private static Path repoTestPath;
+    private static Path testPrefixClassPath;
+    private static Path focalClassPath;
+    private static HashMap<String, HashMap<String, List<String>>> clazzDatapointsErrors;
 
     /**
      * A support class to collect various types of candidate token identifiers categorized by their type when processing
@@ -115,7 +122,8 @@ public class TokensUtils {
     private static class TokenReferencesCollector {
         ContextualInfoType contextualInfoType;
         HashMap<String, List<ResolvedType>> typeParametersReferences;
-        HashMap<String, List<Path>> clazzes;
+        HashMap<String, List<Path>> currentClasses;
+        HashMap<String, List<Path>> returnClasses;
         HashMap<String, List<Pair<VariableDeclarator,Type>>> fields;
         HashMap<String, List<MethodUsage>> methods;
         HashMap<String, List<ResolvedConstructorDeclaration>> constructors;
@@ -125,7 +133,8 @@ public class TokensUtils {
         public TokenReferencesCollector(
                 ContextualInfoType contextualInfoType,
                 HashMap<String, List<ResolvedType>> typeParametersReferences,
-                HashMap<String, List<Path>> clazzes,
+                HashMap<String, List<Path>> currentClasses,
+                HashMap<String, List<Path>> returnClasses,
                 HashMap<String, List<Pair<VariableDeclarator,Type>>> fields,
                 HashMap<String, List<MethodUsage>> methods,
                 HashMap<String, List<ResolvedConstructorDeclaration>> constructors,
@@ -133,7 +142,8 @@ public class TokensUtils {
         ) {
             this.contextualInfoType = contextualInfoType;
             this.typeParametersReferences = typeParametersReferences;
-            this.clazzes = clazzes;
+            this.currentClasses = currentClasses;
+            this.returnClasses = returnClasses;
             this.fields = fields;
             this.methods = methods;
             this.constructors = constructors;
@@ -143,7 +153,8 @@ public class TokensUtils {
         public TokenReferencesCollector() {
             this.contextualInfoType = ContextualInfoType.INIT;
             this.typeParametersReferences = new HashMap<>();
-            this.clazzes = new HashMap<>();
+            this.currentClasses = new HashMap<>();
+            this.returnClasses = new HashMap<>();
             this.fields = new HashMap<>();
             this.methods = new HashMap<>();
             this.constructors = new HashMap<>();
@@ -158,8 +169,12 @@ public class TokensUtils {
             this.typeParametersReferences = typeParametersReferences;
         }
 
-        public void setClazzes(HashMap<String,List<Path>> clazzes) {
-            this.clazzes = clazzes;
+        public void setCurrentClasses(HashMap<String,List<Path>> currentClasses) {
+            this.currentClasses = currentClasses;
+        }
+
+        public void setReturnClasses(HashMap<String,List<Path>> returnClasses) {
+            this.returnClasses = returnClasses;
         }
 
         public void setFields(HashMap<String,List<Pair<VariableDeclarator,Type>>> fieldTypes) {
@@ -184,13 +199,15 @@ public class TokensUtils {
      * and generates a list of token steps from the target assertion
      *
      * @param repoRootPath the path to the repository root
+     * @param testClazzDatapoints the test class datapoints to process
+     * @return a pair containing the test class datapoints with the generated token steps and a map of processing errors
      */
     public static Pair<TestClazzDatapoints,HashMap<String, HashMap<String, List<String>>>> generateTokenSteps (
             Path repoRootPath,
             TestClazzDatapoints<OracleDatapoint> testClazzDatapoints
     ) throws IllegalStateException {
         // Create a map to store the processing errors when processing the datapoints
-        HashMap<String, HashMap<String, List<String>>> clazzDatapointsErrors = new HashMap<>();
+        clazzDatapointsErrors = new HashMap<>();
         // Define test class datapoints builder
         TestClazzDatapointsBuilder<PartialOracleDatapoint> testClazzDatapointsBuilder = new TestClazzDatapointsBuilder<>();
         // Define the set of literal tokens to be replaced with "LITERAL"
@@ -201,29 +218,30 @@ public class TokensUtils {
         ));
         // Retrieve the datapoints and the path of the test class and the focal class from the test class object
         List<OracleDatapoint> datapoints = testClazzDatapoints.datapoints();
-        Path testFilePath = repoRootPath.resolve(testClazzDatapoints.testClass().filePath().substring(1));
-        Path focalFilePath = repoRootPath.resolve(testClazzDatapoints.focalClass().filePath().substring(1));
+        Path testClassPath = repoRootPath.resolve(testClazzDatapoints.testClass().filePath().substring(1));
+        testPrefixClassPath = repoRootPath.resolve(testClazzDatapoints.testClass().prefixFilePath().substring(1));
+        focalClassPath = repoRootPath.resolve(testClazzDatapoints.focalClass().filePath().substring(1));
         String fqnTestClass = testClazzDatapoints.testClass().packageIdentifier() + "." + testClazzDatapoints.testClass().identifier();
         String fqnFocalClass = testClazzDatapoints.focalClass().packageIdentifier() + "." + testClazzDatapoints.focalClass().identifier();
         // Get the path of the test directory of the repository
-        Path repoTestPath = Path.of(testFilePath.toString().replace(FilesUtils.getFQNPath(fqnTestClass).toString(), ""));
+        repoTestPath = Path.of(testClassPath.toString().replace(FilesUtils.getFQNPath(fqnTestClass).toString(), ""));
         // Get the path of the source directory of the repository
-        Path repoSourcePath = Path.of(focalFilePath.toString().replace(FilesUtils.getFQNPath(fqnFocalClass).toString(), ""));
+        repoSourcePath = Path.of(focalClassPath.toString().replace(FilesUtils.getFQNPath(fqnFocalClass).toString(), ""));
         
         try {
             // Get the compilation units for the test class and the focal class
-            CompilationUnit tcCu = JavaParserUtils.getCompilationUnit(testFilePath);
-            CompilationUnit fcCu = JavaParserUtils.getCompilationUnit(focalFilePath);
+            CompilationUnit tcCu = JavaParserUtils.getCompilationUnit(testPrefixClassPath);
+            CompilationUnit fcCu = JavaParserUtils.getCompilationUnit(focalClassPath);
             // Check that the compilation units are not null
             if (tcCu == null || fcCu == null) {
-                logger.error("Compilation unit is null for test class: " + testFilePath + " or focal class: " + focalFilePath);
+                logger.error("Compilation unit is null for test class: " + testPrefixClassPath + " or focal class: " + focalClassPath);
                 testClazzDatapointsBuilder.setDatapoints(new ArrayList<>());
                 return new Pair<>(testClazzDatapointsBuilder.build(), clazzDatapointsErrors);
             }
-            TypeDeclaration testClass = tcCu.getPrimaryType().get();
+            TypeDeclaration testPrefixClass = tcCu.getPrimaryType().get();
             TypeDeclaration focalClass = fcCu.getPrimaryType().get();
-            // Get the methods from the test class (test cases and auxiliary methods defined in the test class)
-            List<MethodDeclaration> testCases = testClass.getMethods();
+            // Get the test prefixes from the test class (test cases and auxiliary methods defined in the test class)
+            List<MethodDeclaration> testPrefixes = testPrefixClass.getMethods();
 
             testClazzDatapointsBuilder.setTestClass(testClazzDatapoints.testClass());
             testClazzDatapointsBuilder.setFocalClass(testClazzDatapoints.focalClass());
@@ -233,28 +251,29 @@ public class TokensUtils {
             // Iterate over the oracle datapoints and process each test prefix and associated target assertion
             for (OracleDatapoint datapoint : datapoints) {
                 // Get the test prefix from the datapoint
-                Callable testPrefix = datapoint.testPrefix();
+                Callable targetTestPrefix = datapoint.testPrefix();
                 // Define partial oracle datapoints builder
                 PartialOracleDatapointBuilder partialOracleDatapointBuilder = new PartialOracleDatapointBuilder();
                 // Iterate over the test methods to find the one matching the test prefix identifier
-                for (MethodDeclaration testCase : testCases) {
-                    if (testCase.getNameAsString().equals(testPrefix.identifier())) {
+                for (MethodDeclaration testPrefix : testPrefixes) {
+                    if (testPrefix.getNameAsString().equals(targetTestPrefix.identifier())) {
                         List<Pair<TokenIdentifiersCollector, TokenReferencesCollector>> tokenIdentifiersStack = new ArrayList<>();
                         rootTokenIdentifiersCollector = new TokenIdentifiersCollector();
                         rootTokenReferencesCollector = new TokenReferencesCollector();
                         // Get the target assertion from the test prefix
                         String originalTargetAssertion = datapoint.target();
                         String targetAssertion = originalTargetAssertion.replace(" ", "");
+
                         //if (targetAssertion.contains("assertEquals(HttpMethod")) {
                         try {
                             // Setup error map for the test class
-                            clazzDatapointsErrors.putIfAbsent(testCase.getNameAsString(), new HashMap<>());
+                            clazzDatapointsErrors.putIfAbsent(testPrefix.getNameAsString(), new HashMap<>());
                             // Setup error map for the test case
-                            clazzDatapointsErrors.get(testCase.getNameAsString()).putIfAbsent(targetAssertion, new ArrayList<>());
-                            clazzDatapointsErrors.get(testCase.getNameAsString()).putIfAbsent("targetFound", new ArrayList<>());
-                            clazzDatapointsErrors.get(testCase.getNameAsString()).putIfAbsent("targetMissing", new ArrayList<>());
+                            clazzDatapointsErrors.get(testPrefix.getNameAsString()).putIfAbsent(targetAssertion, new ArrayList<>());
+                            clazzDatapointsErrors.get(testPrefix.getNameAsString()).putIfAbsent("targetFound", new ArrayList<>());
+                            clazzDatapointsErrors.get(testPrefix.getNameAsString()).putIfAbsent("targetMissing", new ArrayList<>());
                             // Setup the root token identifiers amd references collector
-                            setUpRootTokenIdentifiers(rootTokenIdentifiersCollector, clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion), repoSourcePath, repoTestPath, testFilePath, focalFilePath, tcCu, fcCu, testCase);
+                            setUpRootTokenIdentifiers(tcCu, testPrefix, targetAssertion);
                             setupRootTokenReferences(rootTokenReferencesCollector, rootTokenIdentifiersCollector);
                             TokenIdentifiersCollector currentTokenIdentifiersCollector = cloneRootTokenIdentifiers();
                             TokenReferencesCollector currentTokenReferences = new TokenReferencesCollector(); //cloneRootTokenReferences();
@@ -269,7 +288,7 @@ public class TokensUtils {
                             } catch (IllegalArgumentException e) {
                                 String message = "Assertion do not start with JUnit api (do not implemented yet): " + targetAssertion + " - " + e.getMessage();
                                 logger.error(message);
-                                clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion).add(message);
+                                clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(message);
                                 continue;
                             }
                             // Start with an empty partial snippet
@@ -304,7 +323,7 @@ public class TokensUtils {
                                 // do not follow the Java syntax imposed by the grammar
                                 if (nextANTLRTokens.isEmpty() && !token.equals(";")) {
                                     IllegalStateException exception = new IllegalStateException("Unexpected empty token candidates after partial snippet: " + partialSnippet + " and token: " + token);
-                                    clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion).add(exception.getMessage());
+                                    clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(exception.getMessage());
                                     throw exception;
                                 }
                                 // Process the list of raw ANTLR next tokens
@@ -333,15 +352,15 @@ public class TokensUtils {
                                     if (!literalsSet.contains(Antlr4Utils.getAntlrToken(token).toString())) {
                                         String message = "Unexpected token: " + token + " not found in the collected list of candidate tokens: " + partialSnippet;
                                         logger.error(message);
-                                        clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion).add(message);
-                                        clazzDatapointsErrors.get(testCase.getNameAsString()).get("targetMissing").add(token);
+                                        clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(message);
+                                        clazzDatapointsErrors.get(testPrefix.getNameAsString()).get("targetMissing").add(token);
                                     } else {
                                         // If the token is a literal, is the model responsible for generating the specific token
-                                        clazzDatapointsErrors.get(testCase.getNameAsString()).get("targetFound").add(Antlr4Utils.getAntlrToken(token) + ":" + token);
+                                        clazzDatapointsErrors.get(testPrefix.getNameAsString()).get("targetFound").add(Antlr4Utils.getAntlrToken(token) + ":" + token);
                                     }
                                 } else {
                                     // Token found among the candidates
-                                    clazzDatapointsErrors.get(testCase.getNameAsString()).get("targetFound").add(Antlr4Utils.getAntlrToken(token) + ":" + token);
+                                    clazzDatapointsErrors.get(testPrefix.getNameAsString()).get("targetFound").add(Antlr4Utils.getAntlrToken(token) + ":" + token);
                                 }
                                 // Build the token step
                                 tokenStepBuilder.setNextPossibleGenericTokens(adjustedNextGenericTokens);
@@ -354,18 +373,18 @@ public class TokensUtils {
                                 // Update the partial snippet
                                 partialSnippet += token;
                                 // Update the token identifiers and references collectors
-                                Pair<TokenIdentifiersCollector, TokenReferencesCollector> updatedCollectors = updateTokenIdentifiersAndReferences(tokenIdentifiersStack, token, tokens.get(i-1), testClass, testCase.getNameAsString(), clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion));
+                                Pair<TokenIdentifiersCollector, TokenReferencesCollector> updatedCollectors = updateTokenIdentifiersAndReferences(tokenIdentifiersStack, token, tokens.get(i-1), testPrefixClass, testPrefix.getNameAsString(), targetAssertion);
                                 currentTokenIdentifiersCollector = updatedCollectors.getValue0();
                                 currentTokenReferences = updatedCollectors.getValue1();
                             }
                             // Build the partial oracle datapoint
-                            partialOracleDatapointBuilder.setTestPrefix(testPrefix);
+                            partialOracleDatapointBuilder.setTestPrefix(targetTestPrefix);
                             partialOracleDatapointBuilder.setTarget(targetAssertion);
                             partialOracleDatapointBuilder.setDatapoints(tokenSteps);
                             partialOraclesDatapoints.add(partialOracleDatapointBuilder.build());
                         } catch (Exception e) {
                             logger.error(e.getMessage());
-                            clazzDatapointsErrors.get(testCase.getNameAsString()).get(targetAssertion).add(e.getMessage());
+                            clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(e.getMessage());
                         }
                         //}
                         break;
@@ -374,7 +393,7 @@ public class TokensUtils {
             }
             testClazzDatapointsBuilder.setDatapoints(partialOraclesDatapoints);
         } catch (IOException e) {
-            logger.error("Error reading file: " + testFilePath);
+            logger.error("Error reading file: " + testPrefixClassPath);
         }
         return new Pair<>(testClazzDatapointsBuilder.build(), clazzDatapointsErrors);
     }
@@ -394,7 +413,8 @@ public class TokensUtils {
         TokenReferencesCollector clonedTokenReferencesCollector = new TokenReferencesCollector(
                 rootTokenReferencesCollector.contextualInfoType,
                 new HashMap<>(rootTokenReferencesCollector.typeParametersReferences),
-                new HashMap<>(rootTokenReferencesCollector.clazzes),
+                new HashMap<>(rootTokenReferencesCollector.currentClasses),
+                new HashMap<>(rootTokenReferencesCollector.returnClasses),
                 new HashMap<>(rootTokenReferencesCollector.fields),
                 new HashMap<>(rootTokenReferencesCollector.methods),
                 new HashMap<>(rootTokenReferencesCollector.constructors),
@@ -409,23 +429,14 @@ public class TokensUtils {
      * This is useful to clear any previously collected token identifiers before processing a new test case or a new
      * expression within the same test case.
      *
-     * @param tokenIdentifiersCollector the map of token identifiers to reset
-     * @param repoSourcePath the path to the source directory of the repository
-     * @param repoTestPath the path to the test directory of the repository
      * @param tcCu the compilation unit of the test class
-     * @param fcCu the compilation unit of the focal class
      * @param tp the method declaration of the test prefix
+     * @param targetAssertion the target assertion to process
      */
     public static void setUpRootTokenIdentifiers (
-            TokenIdentifiersCollector tokenIdentifiersCollector,
-            List<String> clazzDatapointsErrors,
-            Path repoSourcePath,
-            Path repoTestPath,
-            Path tcFilePath,
-            Path fcFilePath,
             CompilationUnit tcCu,
-            CompilationUnit fcCu,
-            MethodDeclaration tp
+            MethodDeclaration tp,
+            String targetAssertion
     ) {
         // Get the primary type of the test class to collect fields and methods defined within it
         TypeDeclaration tc = tcCu.getPrimaryType().get();
@@ -441,7 +452,7 @@ public class TokensUtils {
         } catch (Exception e) {
             String message = "Error collecting root variables type identifiers for test case: " + tp.getNameAsString() + " - " + e.getMessage();
             logger.error(message);
-            clazzDatapointsErrors.add(e.getMessage());
+            clazzDatapointsErrors.get(tp.getNameAsString()).get(targetAssertion).add(e.getMessage());
         }
         // Collect the list of classes imported within the test class and the focal class, and the ones defined within
         // the same package of the test class or the focal class (immediately accessible)
@@ -452,13 +463,13 @@ public class TokensUtils {
         ));
         try {
             List<String> errorMessages = new ArrayList<>();
-            updateHashMapOfTypeDeclarationPathIdentifiers(typeDeclarationPathIdentifiers, List.of(repoTestPath, repoSourcePath), tcFilePath, typeDeclModifiersRules, errorMessages);
-            updateHashMapOfTypeDeclarationPathIdentifiers(typeDeclarationPathIdentifiers, List.of(repoSourcePath), fcFilePath, typeDeclModifiersRules, errorMessages);
-            clazzDatapointsErrors.addAll(errorMessages);
+            updateHashMapOfTypeDeclarationPathIdentifiers(typeDeclarationPathIdentifiers, List.of(repoTestPath, repoSourcePath), testPrefixClassPath, typeDeclModifiersRules, errorMessages);
+            updateHashMapOfTypeDeclarationPathIdentifiers(typeDeclarationPathIdentifiers, List.of(repoSourcePath), focalClassPath, typeDeclModifiersRules, errorMessages);
+            clazzDatapointsErrors.get(tp.getNameAsString()).get(targetAssertion).addAll(errorMessages);
         } catch (Exception e) {
             String message = "Error collecting root type declaration identifiers for test case: " + tp.getNameAsString() + " - " + e.getMessage();
             logger.error(message);
-            clazzDatapointsErrors.add(e.getMessage());
+            clazzDatapointsErrors.get(tp.getNameAsString()).get(targetAssertion).add(e.getMessage());
         }
         // Collect the list of methods defined within the test class (immediately accessible)
         HashMap<String, List<MethodUsage>> methodUsageIdentifiers = new HashMap<>();
@@ -467,19 +478,19 @@ public class TokensUtils {
         } catch (Exception e) {
             String message = "Error collecting root method usage identifiers for test case: " + tp.getNameAsString() + " - " + e.getMessage();
             logger.error(message);
-            clazzDatapointsErrors.add(e.getMessage());
+            clazzDatapointsErrors.get(tp.getNameAsString()).get(targetAssertion).add(e.getMessage());
         }
         // Setup the token identifiers map
-        tokenIdentifiersCollector.setClassIdentifiersMap(typeDeclarationPathIdentifiers);
-        tokenIdentifiersCollector.setFieldIdentifiersMap(fieldTypeIdentifiers);
-        tokenIdentifiersCollector.setMethodIdentifiersMap(methodUsageIdentifiers);
+        rootTokenIdentifiersCollector.setClassIdentifiersMap(typeDeclarationPathIdentifiers);
+        rootTokenIdentifiersCollector.setFieldIdentifiersMap(fieldTypeIdentifiers);
+        rootTokenIdentifiersCollector.setMethodIdentifiersMap(methodUsageIdentifiers);
     }
 
     public static void setupRootTokenReferences (
             TokenReferencesCollector tokenReferencesCollector,
             TokenIdentifiersCollector tokenIdentifiersCollector
     ) {
-        tokenReferencesCollector.setClazzes(tokenIdentifiersCollector.classPathIdentifiers);
+        tokenReferencesCollector.setCurrentClasses(tokenIdentifiersCollector.classPathIdentifiers);
         HashMap<String,List<MethodUsage>> methods = new HashMap<>();
         updateHashMapOfMethodUsageReferencesFromIdentifiers(methods,tokenIdentifiersCollector.methodIdentifiers);
         tokenReferencesCollector.setMethods(methods);
@@ -586,13 +597,14 @@ public class TokensUtils {
     }
 
     public static TokenStep.ContextualInfo generateTokenStepContextualInfo(TokenReferencesCollector tokenReferences) {
-        List<Clazz> clazzes = new ArrayList<>();
+        List<Clazz> currentClasses = new ArrayList<>();
+        List<Clazz> returnClasses = new ArrayList<>();
         List<Callable> methods = new ArrayList<>();
         List<Callable> constructors = new ArrayList<>();
         List<TokenStep.FieldContextualInfo> fields = new ArrayList<>();
         List<String> enumConstants = new ArrayList<>();
 
-        for (Map.Entry<String,List<Path>> entry: tokenReferences.clazzes.entrySet()) {
+        for (Map.Entry<String,List<Path>> entry: tokenReferences.currentClasses.entrySet()) {
             String identifier = entry.getKey();
             List<Path> classPaths = entry.getValue();
             for (final Path classPath: classPaths) {
@@ -600,7 +612,23 @@ public class TokensUtils {
                     CompilationUnit cu = JavaParserUtils.getCompilationUnit(classPath);
                     List<TypeDeclaration> matchedTypeDeclarations = JavaParserUtils.getTypeDeclarationsFromCompilationUnitAndName(cu, identifier);
                     for (TypeDeclaration typeDeclaration: matchedTypeDeclarations) {
-                        clazzes.add(TestUtils.processTypeDeclarationForContextualInfo(typeDeclaration));
+                        currentClasses.add(TestUtils.processTypeDeclarationForContextualInfo(typeDeclaration));
+                    }
+                } catch (IOException e) {
+                    logger.error("Error reading compilation unit from file: " + classPath);
+                }
+            }
+        }
+
+        for (Map.Entry<String,List<Path>> entry: tokenReferences.returnClasses.entrySet()) {
+            String identifier = entry.getKey();
+            List<Path> classPaths = entry.getValue();
+            for (final Path classPath: classPaths) {
+                try {
+                    CompilationUnit cu = JavaParserUtils.getCompilationUnit(classPath);
+                    List<TypeDeclaration> matchedTypeDeclarations = JavaParserUtils.getTypeDeclarationsFromCompilationUnitAndName(cu, identifier);
+                    for (TypeDeclaration typeDeclaration: matchedTypeDeclarations) {
+                        returnClasses.add(TestUtils.processTypeDeclarationForContextualInfo(typeDeclaration));
                     }
                 } catch (IOException e) {
                     logger.error("Error reading compilation unit from file: " + classPath);
@@ -670,7 +698,8 @@ public class TokensUtils {
 
         return new TokenStep.ContextualInfo(
                 tokenReferences.contextualInfoType,
-                clazzes,
+                currentClasses,
+                returnClasses,
                 methods,
                 constructors,
                 fields,
@@ -683,8 +712,8 @@ public class TokensUtils {
             final String token,
             final String previousToken,
             TypeDeclaration tc,
-            String testCaseName,
-            List<String> clazzDatapointsErrors
+            String testPrefixName,
+            String targetAssertion
     ) {
         // Get the action associated with the current token
         AntlrTokenAction tokenAction = AntlrTokenMapper.getTokenAction(token);
@@ -701,7 +730,8 @@ public class TokensUtils {
         HashMap<String, List<MethodUsage>> methodIdentifiers = new HashMap<>();
         HashMap<String, List<ResolvedConstructorDeclaration>> constructorIdentifiers = new HashMap<>();
         HashMap<String, List<EnumConstantDeclaration>> enumIdentifiers = new HashMap<>();
-        HashMap<String, List<Path>> classReferences = new HashMap<>();
+        HashMap<String, List<Path>> currentClassReferences = new HashMap<>();
+        HashMap<String, List<Path>> returnClassReferences = new HashMap<>();
         HashMap<String, List<ResolvedType>> typeParameterReferences = new HashMap<>();
         HashMap<String,List<Pair<VariableDeclarator,Type>>> fieldReferences = new HashMap<>();
         HashMap<String, List<MethodUsage>> methodReferences = new HashMap<>();
@@ -714,9 +744,10 @@ public class TokensUtils {
                     boolean methodsMatch = tokenReferences.methods.values().stream().anyMatch(l -> l.stream().anyMatch(m -> m.getName().equals(previousToken)));
                     boolean fieldsMatch = tokenReferences.fields.values().stream().anyMatch(l -> l.stream().anyMatch(f -> f.getValue0().getNameAsString().equals(previousToken)));
                     boolean constructorsMatch = tokenReferences.constructors.values().stream().anyMatch(l -> l.stream().anyMatch(c -> c.getName().equals(previousToken)));
-
-                    if (methodsMatch) {
-
+                    if (methodsMatch || fieldsMatch) {
+                        tokenReferences.setContextualInfoType(ContextualInfoType.METHOD_CALL);
+                    } else if (constructorsMatch) {
+                        tokenReferences.setContextualInfoType(ContextualInfoType.CONSTRUCTOR_CALL);
                     }
                 }
                 tokenIdentifiersStack.add(new Pair<>(cloneRootTokenIdentifiers(), cloneRootTokenReferences()));
@@ -732,6 +763,16 @@ public class TokensUtils {
             case REMOVE_CURRENT:
                 // Pop the current token identifiers and references collectors from the stack
                 tokenIdentifiersStack.remove(currentTokenIdentifiersAndReferences);
+                if (tokenType == AntlrToken.RPAREN) {
+                    tokenReferences = tokenIdentifiersStack.get(tokenIdentifiersStack.size() - 1).getValue1();
+                    if (tokenReferences.contextualInfoType == ContextualInfoType.CONSTRUCTOR_CALL) {
+                        tokenReferences.setContextualInfoType(ContextualInfoType.CONSTRUCTOR_RETURN);
+                        tokenReferences.setConstructors(new HashMap<>());
+                    } else if (tokenReferences.contextualInfoType == ContextualInfoType.METHOD_CALL) {
+                        tokenReferences.setContextualInfoType(ContextualInfoType.METHOD_RETURN);
+                        tokenReferences.setMethods(new HashMap<>());
+                    }
+                }
                 break;
             case UPDATE_CURRENT:
                 switch (tokenType){
@@ -786,7 +827,7 @@ public class TokensUtils {
                     case HEX_FLOAT_LITERAL:
                     case BOOL_LITERAL:
                     case CHAR_LITERAL:
-                    case STRING_LITERAL:
+                    case STRING_LITERAL: //TODO: consider to add candidate next tokens for string (equals methods, etc.)
                     case TEXT_BLOCK:
                     case NULL_LITERAL:
                         // In case of unusual unexpected tokens within the oracle expression, remove all the references
@@ -796,6 +837,13 @@ public class TokensUtils {
                         tokenIdentifiersCollector.setMethodIdentifiersMap(new HashMap<>());
                         tokenIdentifiersCollector.setConstructorIdentifiersMap(new HashMap<>());
                         tokenIdentifiersCollector.setEnumIdentifiersMap(new HashMap<>());
+                        tokenReferences.setContextualInfoType(ContextualInfoType.DEFINITION);
+                        tokenReferences.setCurrentClasses(new HashMap<>());
+                        tokenReferences.setReturnClasses(new HashMap<>());
+                        tokenReferences.setMethods(new HashMap<>());
+                        tokenReferences.setFields(new HashMap<>());
+                        tokenReferences.setConstructors(new HashMap<>());
+                        tokenReferences.setEnums(new HashMap<>());
                         break;
                     case IMPLEMENTS:
                     case INSTANCEOF:
@@ -818,32 +866,35 @@ public class TokensUtils {
                         tokenIdentifiersCollector.setFieldIdentifiersMap(new HashMap<>());
                         tokenIdentifiersCollector.setEnumIdentifiersMap(new HashMap<>());
                         tokenReferences.setContextualInfoType(ContextualInfoType.DEFINITION);
+                        tokenReferences.setReturnClasses(new HashMap<>());
                         tokenReferences.setMethods(new HashMap<>());
+                        tokenReferences.setConstructors(new HashMap<>());
                         tokenReferences.setFields(new HashMap<>());
                         tokenReferences.setEnums(new HashMap<>());
                         break;
                     case THIS:
                         try {
-                            updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, tc.getFields(), List.of(
-                                    List.of(new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))),
-                                    List.of(new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(true))),
-                                    List.of(new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(true)))
-                            ));
+                            // Retrieve the private, protected and public fields defined within the test class
+                            updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, tc.getFields(), new ArrayList<>());
+                            // Retrieve the private, protected and public methods defined within the test class (excluding test methods)
                             updateHashMapOfMethodUsageIdentifiers(methodIdentifiers, tc, new ArrayList<>(), List.of(new Pair("Test", Boolean.valueOf(false))));
-                            updateHashMapOfResolvedConstructorDeclarationIdentifiers(constructorIdentifiers, tc);
+                            // This keyword excludes constructors
+                            constructorIdentifiers = new HashMap<>();
+                            // Retrieve the enum constants defined within the test class (in case)
                             updateHashMapOfEnumConstantDeclarationIdentifiers(enumIdentifiers, tc);
                         } catch (Exception e) {
-                            String message = "Error collecting variable type identifiers for test case: " + testCaseName + " - " + e.getMessage();
+                            String message = "Error collecting variable type identifiers for test case: " + testPrefixName + " - " + e.getMessage();
                             logger.error(message);
-                            clazzDatapointsErrors.add(e.getMessage());
+                            clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(e.getMessage());
                         }
                         tokenIdentifiersCollector.setClassIdentifiersMap(new HashMap<>());
                         tokenIdentifiersCollector.setMethodIdentifiersMap(methodIdentifiers);
-                        tokenIdentifiersCollector.setConstructorIdentifiersMap(new HashMap<>());
+                        tokenIdentifiersCollector.setConstructorIdentifiersMap(constructorIdentifiers);
                         tokenIdentifiersCollector.setFieldIdentifiersMap(fieldIdentifiers);
+                        tokenIdentifiersCollector.setEnumIdentifiersMap(enumIdentifiers);
                         tokenReferences.setContextualInfoType(ContextualInfoType.THIS);
-                        tokenReferences.setClazzes(new HashMap<>());
-
+                        currentClassReferences.put(tc.getNameAsString(), List.of(testPrefixClassPath));
+                        tokenReferences.setCurrentClasses(currentClassReferences);
                         updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, fieldIdentifiers);
                         tokenReferences.setFields(fieldReferences);
                         updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
@@ -894,11 +945,14 @@ public class TokensUtils {
                         }
                         // Set the filtered class identifiers map and clear all other maps
                         tokenIdentifiersCollector.setClassIdentifiersMap(typeDeclarationPathIdentifiers);
+                        tokenIdentifiersCollector.setMethodIdentifiersMap(new HashMap<>());
                         tokenIdentifiersCollector.setConstructorIdentifiersMap(new HashMap<>());
                         tokenIdentifiersCollector.setFieldIdentifiersMap(new HashMap<>());
+                        tokenIdentifiersCollector.setEnumIdentifiersMap(new HashMap<>());
                         tokenReferences.setContextualInfoType(ContextualInfoType.THROW);
                         // Set the filtered class references and clear all other references
-                        tokenReferences.setClazzes(typeDeclarationPathIdentifiers);
+                        tokenReferences.setCurrentClasses(typeDeclarationPathIdentifiers);
+                        tokenReferences.setReturnClasses(new HashMap<>());
                         tokenReferences.setFields(new HashMap<>());
                         tokenReferences.setMethods(new HashMap<>());
                         tokenReferences.setConstructors(new HashMap<>());
@@ -910,6 +964,10 @@ public class TokensUtils {
                         boolean methodsMatch = tokenIdentifiersCollector.methodIdentifiers.containsKey(token);
                         boolean fieldsMatch = tokenIdentifiersCollector.fieldIdentifiers.containsKey(token);
                         boolean constructorsMatch = tokenIdentifiersCollector.constructorIdentifiers.containsKey(token);
+                        int matchCount = 0;
+                        if (classesMatch) matchCount++;
+                        if (methodsMatch) matchCount++;
+                        if (fieldsMatch) matchCount++;
                         // If the token does not match any identifier, clear all maps to avoid suggesting irrelevant tokens
                         // TODO: Manage tokens that could refer to lambda expressions or generics
                         if (!classesMatch && !methodsMatch && !fieldsMatch && !constructorsMatch) {
@@ -919,6 +977,13 @@ public class TokensUtils {
                             tokenIdentifiersCollector.setFieldIdentifiersMap(new HashMap<>());
                             break;
                         }
+
+                        if (matchCount > 1) {
+                            String message = "Multiple identifier matches for token: " + token + " (classes: " + classesMatch + ", methods: " + methodsMatch + ", fields: " + fieldsMatch + ", constructors: " + constructorsMatch + ")";
+                            logger.warn(message);
+                            clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
+                        }
+
                         // If the token matches a class name, collect its members (fields and methods or constructors)
                         if (classesMatch) {
                             // Get the list of class paths for the matched class name
@@ -957,10 +1022,10 @@ public class TokensUtils {
                                                 .forEach(t -> classIdentifiers.put(((TypeDeclaration) t).getNameAsString(), List.of(classPath)));
                                         // Collect the references to the matched class
                                         String fullyQualifiedName = (String) targetTypeDeclaration.getFullyQualifiedName().orElse(targetTypeDeclaration.getNameAsString());
-                                        if (!classReferences.containsKey(fullyQualifiedName)) {
-                                            classReferences.put(fullyQualifiedName, new ArrayList<>());
+                                        if (!currentClassReferences.containsKey(fullyQualifiedName)) {
+                                            currentClassReferences.put(fullyQualifiedName, new ArrayList<>());
                                         }
-                                        classReferences.get(fullyQualifiedName).add(classPath);
+                                        currentClassReferences.get(fullyQualifiedName).add(classPath);
                                     }
                                     // If the previous token is "new", we are likely dealing with a constructor call
                                     if (previousTokenType == AntlrToken.NEW) {
@@ -996,42 +1061,93 @@ public class TokensUtils {
                                         }
                                         // Add all possible enum constant declarations if the type is an enum
                                         updateHashMapOfEnumConstantDeclarationIdentifiers(enumIdentifiers, targetTypeDeclaration);
+                                        updateHashMapOfEnumConstantReferencesFromIdentifiers(enumReferences, enumIdentifiers);
                                         // Collect method usages and field type identifiers from the matched type declaration
                                         // Methods and fields must be static and public or protected (if in the same package)
                                         updateHashMapOfMethodUsageIdentifiers(methodIdentifiers, targetTypeDeclaration, modifiers, List.of(new Pair("Test", Boolean.valueOf(false))));
+                                        updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
                                         updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, targetTypeDeclaration.getFields(), modifiers);
+                                        updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, fieldIdentifiers);
                                     }
                                 } catch (IOException e) {
                                     logger.error("Error reading compilation unit from file: " + classPath);
                                 }
                             }
+                            tokenReferences.setReturnClasses(new HashMap<>());
                             tokenReferences.setContextualInfoType(ContextualInfoType.CLASS_CALL);
                         }
 
                         List<ResolvedType> resolvedTypes = new ArrayList<>();
 
                         if (methodsMatch) {
+                            // Get the list of method usages for the matched method name
                             List<MethodUsage> methodUsages = tokenIdentifiersCollector.methodIdentifiers.get(token);
+                            // Collect the return types of the matched methods as possible next class identifiers
                             for (MethodUsage methodUsage: methodUsages) {
+                                // Get the return type of the method usage
                                 ResolvedType resolvedType = methodUsage.getDeclaration().getReturnType();
                                 resolvedTypes.add(resolvedType);
+                                // Get the declaring type of the method usage
+                                ResolvedReferenceTypeDeclaration declaringType = methodUsage.getDeclaration().declaringType();
+                                String declaringTypeQualifiedName = declaringType.getQualifiedName();
+                                Optional<Path> declaringTypePath = JavaParserUtils.retrieveFilePathFromFullyQualifiedName(declaringTypeQualifiedName, repoSourcePath);
+                                if (!declaringTypePath.isPresent()) {
+                                    declaringTypePath =JavaParserUtils.retrieveFilePathFromFullyQualifiedName(declaringTypeQualifiedName, repoTestPath);
+                                }
+                                if (declaringTypePath.isPresent()) {
+                                    if (!currentClassReferences.containsKey(declaringTypeQualifiedName)) {
+                                        currentClassReferences.put(declaringTypeQualifiedName, new ArrayList<>());
+                                    }
+                                    currentClassReferences.get(declaringTypeQualifiedName).add(declaringTypePath.get());
+                                } else {
+                                    logger.error("Declaring type path not found for while processing a method match (" + methodUsage.getName() + "): " + declaringTypeQualifiedName);
+
+                                }
                             }
+                            // Collect the references to the matched methods
                             updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
+                            tokenReferences.setContextualInfoType(ContextualInfoType.METHOD_CALL);
                         }
 
                         if (fieldsMatch) {
                             List<Pair<VariableDeclarator,Type>> fields = tokenIdentifiersCollector.fieldIdentifiers.get(token);
+                            currentClassReferences = tokenReferences.currentClasses;
                             for (Pair<VariableDeclarator,Type> field: fields) {
                                 Type varType = field.getValue1();
                                 try {
                                     ResolvedType resolvedType = varType.resolve();
                                     resolvedTypes.add(resolvedType);
 
+                                    if (resolvedType.isTypeVariable()) {
+                                        String typeParameterKey = resolvedType.asTypeParameter().getContainerQualifiedName() + "<" + resolvedType.asTypeParameter().getName() + ">";
+                                        if (tokenReferences.typeParametersReferences.containsKey(typeParameterKey)) {
+                                            resolvedType = tokenReferences.typeParametersReferences.get(typeParameterKey).get(0);
+                                        }
+                                    }
+
+                                    if (resolvedType.isReferenceType()) {
+                                        // Get the declaring type of the method usage
+                                        String declaringTypeQualifiedName = resolvedType.asReferenceType().getQualifiedName();
+                                        Optional<Path> declaringTypePath = JavaParserUtils.retrieveFilePathFromFullyQualifiedName(declaringTypeQualifiedName, repoSourcePath);
+                                        if (!declaringTypePath.isPresent()) {
+                                            declaringTypePath = JavaParserUtils.retrieveFilePathFromFullyQualifiedName(declaringTypeQualifiedName, repoTestPath);
+                                        }
+                                        if (declaringTypePath.isPresent()) {
+                                            if (!currentClassReferences.containsKey(declaringTypeQualifiedName)) {
+                                                currentClassReferences.put(declaringTypeQualifiedName, new ArrayList<>());
+                                            }
+                                            currentClassReferences.get(declaringTypeQualifiedName).add(declaringTypePath.get());
+                                        } else {
+                                            logger.error("Declaring type path not found for while processing a field match (" + token + " of type " + resolvedType.asReferenceType().getQualifiedName() + "): " + declaringTypeQualifiedName);
+
+                                        }
+                                    }
                                 } catch (Exception e) {
                                     logger.error("Error resolving reference type: " + varType);
                                 }
                             }
                             updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, fieldIdentifiers);
+                            tokenReferences.setContextualInfoType(ContextualInfoType.FIELD_CALL);
                         }
 
                         for (ResolvedType resolvedType: resolvedTypes) {
@@ -1055,6 +1171,32 @@ public class TokensUtils {
                             }
 
                             if (resolvedType.isReferenceType()) {
+                                int typeNameIdx = resolvedType.asReferenceType().getQualifiedName().lastIndexOf(".");
+                                String typeName = resolvedType.asReferenceType().getQualifiedName().substring(typeNameIdx + 1);
+                                String packageName = resolvedType.asReferenceType().getQualifiedName().replace( "." + typeName, "");
+                                // Get the compilation unit of the test class to get its package declaration
+                                // It's important to collect protected members from a type in the same package
+                                CompilationUnit testCu = (CompilationUnit) tc.getParentNode().get();
+                                Optional<PackageDeclaration> testClassPackageDeclaration = testCu.getPackageDeclaration();
+                                if (testClassPackageDeclaration.isPresent() && testClassPackageDeclaration.get().getNameAsString().contains(packageName)) {
+                                    modifiers.add(List.of(new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(true))));
+                                }
+
+                                // Get the declaring type of the method usage
+                                String qualifiedName = resolvedType.asReferenceType().getQualifiedName();
+                                Optional<Path> resolvedTypePath = JavaParserUtils.retrieveFilePathFromFullyQualifiedName(qualifiedName, repoSourcePath);
+                                if (!resolvedTypePath.isPresent()) {
+                                    resolvedTypePath = JavaParserUtils.retrieveFilePathFromFullyQualifiedName(qualifiedName, repoTestPath);
+                                }
+                                if (resolvedTypePath.isPresent()) {
+                                    if (!returnClassReferences.containsKey(qualifiedName)) {
+                                        returnClassReferences.put(qualifiedName, new ArrayList<>());
+                                    }
+                                    returnClassReferences.get(qualifiedName).add(resolvedTypePath.get());
+                                } else {
+                                    logger.error("Declaring type path not found for while processing a field match (" + token + " of type " + resolvedType.asReferenceType().getQualifiedName() + "): " + qualifiedName);
+                                }
+
                                 try {
                                     try {
                                         collectMethodUsages(
@@ -1066,7 +1208,7 @@ public class TokensUtils {
                                     } catch (Exception e) {
                                         String message = "Error resolving reference type: " + resolvedType + " - " + e.getMessage();
                                         logger.error(message);
-                                        clazzDatapointsErrors.add(message);
+                                        clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
                                         collectResolvedMethodDeclaration(
                                                 methodIdentifiers,
                                                 resolvedType.asReferenceType().getTypeDeclaration().get().getDeclaredMethods(),
@@ -1074,13 +1216,14 @@ public class TokensUtils {
                                                 List.of(new Pair("Test", Boolean.valueOf(false)))
                                         );
                                     }
-
+                                    updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
                                     List<FieldDeclaration> fieldDeclarations =  resolvedType.asReferenceType().getTypeDeclaration().get().toAst().get().findAll(FieldDeclaration.class);
                                     updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, fieldDeclarations, modifiers);
+                                    updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, fieldIdentifiers);
                                 } catch (Exception e) {
                                     String message = "Error resolving reference type: " + resolvedType + " - " + e.getMessage();
                                     logger.error(message);
-                                    clazzDatapointsErrors.add(message);
+                                    clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
                                 }
                             }
                         }
@@ -1090,7 +1233,7 @@ public class TokensUtils {
                         tokenIdentifiersCollector.setConstructorIdentifiersMap(new HashMap<>());
                         tokenIdentifiersCollector.setEnumIdentifiersMap(enumIdentifiers);
                         tokenReferences.setContextualInfoType(ContextualInfoType.IDENTIFIER);
-                        tokenReferences.setClazzes(tokenIdentifiersCollector.classPathIdentifiers);
+                        tokenReferences.setCurrentClasses(currentClassReferences);
                         tokenReferences.setMethods(methodReferences);
                         tokenReferences.setFields(fieldReferences);
                         tokenReferences.setConstructors(constructorReferences);
@@ -1206,8 +1349,8 @@ public class TokensUtils {
             }
 
             if (collectClassesInSamePackage) {
-                for (Path repoSourcePath : repoSourcePaths) {
-                    JavaParserUtils.collectPathsOfClassesInSamePackage(typeDeclarationPathIdentifiers, repoSourcePath, cu, modifiersRules, errorMessages);
+                for (Path path : repoSourcePaths) {
+                    JavaParserUtils.collectPathsOfClassesInSamePackage(typeDeclarationPathIdentifiers, path, cu, modifiersRules, errorMessages);
                 }
             }
         } catch (IOException e) {
@@ -1260,8 +1403,8 @@ public class TokensUtils {
         }
 
         if (collectClassesInSamePackage) {
-            for (Path repoSourcePath : repoSourcePaths) {
-                JavaParserUtils.collectClassesInSamePackage(typeDeclarationIdentifiers, repoSourcePath, cu, modifiersRules);
+            for (Path path : repoSourcePaths) {
+                JavaParserUtils.collectClassesInSamePackage(typeDeclarationIdentifiers, path, cu, modifiersRules);
             }
         }
     }

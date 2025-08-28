@@ -142,7 +142,7 @@ public class OraclesDataset {
         JavaParserUtils.setRepoJavaParser(repoRootPath, classpath);
         // Define the list to store the test pair of split test cases (generated from the original test cases) and the
         // corresponding source class (if available)
-        List<Pair<Path, Optional<Path>>> splittedTestFilePaths = new ArrayList<>();
+        List<Pair<Pair<Path,Path>, Optional<Path>>> splittedTestFilePaths = new ArrayList<>();
         // Iterate over the original test class files and split the test cases at any occurrence of an assertion
         for (Pair<Path,Path> normalizedTestClassPair : normalizedTestFilePaths) {
             Path normalizedTestClassPath = normalizedTestClassPair.getValue0();
@@ -150,13 +150,13 @@ public class OraclesDataset {
             // if (normalizedTestClassPath.toString().contains("/TableauCutGeneratorTest")) {
             try {
                 logger.info("Splitting test class: {}", normalizedTestClassPath.toString().replace(repoRootPath.toString(), ""));
-                Path splitTestClassPath = TestUtils.splitTest(
+                Pair<Path,Path> result = TestUtils.splitTest(
                         oraclesDatasetConfig,
                         repoRootPath,
                         normalizedTestClassPath,
                         Paths.get(outputPath.toString(), "test-split", projectIdentifier)
                 );
-                splittedTestFilePaths.add(new Pair<>(splitTestClassPath, Optional.ofNullable(mappedTests.get(originalTestClassPath))));
+                splittedTestFilePaths.add(new Pair<>(result, Optional.ofNullable(mappedTests.get(originalTestClassPath))));
             } catch (Exception e) {
                 logger.error(e.getMessage());
             }
@@ -169,8 +169,9 @@ public class OraclesDataset {
         int oraclesDatapoints = 0;
         HashMap<String,HashMap<String, HashMap<String, List<String>>>> errorsStatistics = new HashMap<>();
         // Iterate over the original test class files and split the test cases at any occurrence of an assertion
-        for (Pair<Path, Optional<Path>> splitTestClassPathsPair : splittedTestFilePaths) {
-            Path splitTestClassPath = splitTestClassPathsPair.getValue0();
+        for (Pair<Pair<Path,Path>, Optional<Path>> splitTestClassPathsPair : splittedTestFilePaths) {
+            Path splitTestClassPath = splitTestClassPathsPair.getValue0().getValue0();
+            Path splitTestPrefixClassPath = splitTestClassPathsPair.getValue0().getValue1();
             Optional<Path> sourceFilePath = splitTestClassPathsPair.getValue1();
             logger.info("Processing split test class {} to generate oracles datapoints", splitTestClassPath.toString().replace(repoRootPath.toString(), ""));
             if (sourceFilePath.isPresent()) {
@@ -188,7 +189,7 @@ public class OraclesDataset {
                 //     }
                 // }
                 try {
-                    Pair<TestClazzDatapoints<OracleDatapoint>, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(oraclesDatasetConfig, splitTestClassPath, sourceFilePath.get(), repoRootPath);
+                    Pair<TestClazzDatapoints<OracleDatapoint>, HashMap<String, HashMap<String, List<String>>>> processedSplitTestClassResult = TestUtils.processSplitTestClass(oraclesDatasetConfig, splitTestClassPath, splitTestPrefixClassPath, sourceFilePath.get(), repoRootPath);
                     TestClazzDatapoints<OracleDatapoint> splitTestClasstestClassesOracleDatapoints = processedSplitTestClassResult.getValue0();
                     HashMap<String, HashMap<String, List<String>>> splitTestClassErrorsStatistics = processedSplitTestClassResult.getValue1();
                     testClassesOracleDatapoints.add(splitTestClasstestClassesOracleDatapoints);

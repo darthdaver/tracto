@@ -13,6 +13,7 @@ public class TestClazzBuilder {
     private List<String> superClasses;
     private List<String> interfaces;
     private String filePath;
+    private String prefixFilePath;
     private List<Field> fields;
     private List<Callable> auxiliaryMethods;
     private List<Callable> setupTearDownMethods;
@@ -25,6 +26,7 @@ public class TestClazzBuilder {
                 this.superClasses,
                 this.interfaces,
                 this.filePath,
+                this.prefixFilePath,
                 this.fields,
                 this.auxiliaryMethods,
                 this.setupTearDownMethods,
@@ -75,6 +77,15 @@ public class TestClazzBuilder {
      */
     public void setFilePath(String filePath) {
         this.filePath = filePath;
+    }
+
+    /**
+     * Set the prefix file path of a test class.
+     *
+     * @param prefixFilePath the file path of the test prefix class within the repository
+     */
+    public void setPrefixFilePath(String prefixFilePath) {
+        this.prefixFilePath = prefixFilePath;
     }
 
     /**
