@@ -227,7 +227,7 @@ public class TokensUtils {
         repoTestPath = Path.of(testClassPath.toString().replace(FilesUtils.getFQNPath(fqnTestClass).toString(), ""));
         // Get the path of the source directory of the repository
         repoSourcePath = Path.of(focalClassPath.toString().replace(FilesUtils.getFQNPath(fqnFocalClass).toString(), ""));
-        
+
         try {
             // Get the compilation units for the test class and the focal class
             CompilationUnit tcCu = JavaParserUtils.getCompilationUnit(testPrefixClassPath);
@@ -511,7 +511,12 @@ public class TokensUtils {
             for (Pair<VariableDeclarator,Type> fieldEntry: entry.getValue()) {
                 VariableDeclarator variable = fieldEntry.getValue0();
                 Type fieldType = fieldEntry.getValue1();
-                String fieldKey = fieldType.asReferenceType().resolve().asReferenceType().getQualifiedName() + "." + fieldName;
+                String fieldKey;
+                if (fieldType.isReferenceType()) {
+                    fieldKey = fieldType.asReferenceType().resolve().asReferenceType().getQualifiedName() + "." + fieldName;
+                } else {
+                    fieldKey = fieldName;
+                }
                 if (!fieldTypeReferences.containsKey(fieldKey)) {
                     fieldTypeReferences.put(fieldKey, new ArrayList<>());
                 }
@@ -584,7 +589,7 @@ public class TokensUtils {
             String constructorName = entry.getKey();
             for (ResolvedConstructorDeclaration constructorDeclaration: entry.getValue()) {
                 String declaringTypeQualifiedName = constructorDeclaration.getQualifiedName();
-                String constructorKey = declaringTypeQualifiedName + "." + constructorName;
+                String constructorKey = declaringTypeQualifiedName;
                 if (!constructorReferences.containsKey(constructorKey)) {
                     constructorReferences.put(constructorKey, new ArrayList<>());
                 }
@@ -772,6 +777,72 @@ public class TokensUtils {
                         tokenReferences.setContextualInfoType(ContextualInfoType.METHOD_RETURN);
                         tokenReferences.setMethods(new HashMap<>());
                     }
+                }
+                if (
+                        tokenReferences.contextualInfoType == ContextualInfoType.METHOD_RETURN ||
+                        tokenReferences.contextualInfoType == ContextualInfoType.CONSTRUCTOR_RETURN
+                ) {
+                    // Get the compilation unit of the test class to get its package declaration
+                    // It's important to collect protected members from classes in the same package
+                    CompilationUnit testCu = (CompilationUnit) tc.getParentNode().get();
+                    for (Map.Entry<String, List<Path>> returnClassReference : tokenReferences.returnClasses.entrySet()) {
+                        String classNameKey = returnClassReference.getKey();
+                        List<Path> classPaths = returnClassReference.getValue();
+                        for (final Path classPath: classPaths) {
+                            try {
+                                // Get the compilation unit of the matched class
+                                CompilationUnit cu = JavaParserUtils.getCompilationUnit(classPath);
+                                // Get the package declaration of the matched class and the test class
+                                Optional<PackageDeclaration> matchedPackageDeclaration = cu.getPackageDeclaration();
+                                Optional<PackageDeclaration> testPackageDeclaration = testCu.getPackageDeclaration();
+                                int lastDotIndex = classNameKey.lastIndexOf('.');
+                                int lastDiamondIndex = classNameKey.lastIndexOf('<');
+                                String className = lastDiamondIndex == -1 ? classNameKey.substring(lastDotIndex + 1) : classNameKey.substring(lastDotIndex + 1, lastDiamondIndex);
+                                List<TypeDeclaration> matchedTypeDeclarations = JavaParserUtils.getTypeDeclarationsFromCompilationUnitAndName(cu, className);
+                                // For each matched type declaration, collect its inner types as possible next class identifiers
+                                for (TypeDeclaration targetTypeDeclaration: matchedTypeDeclarations) {
+                                    updateHashMapOfResolvedConstructorDeclarationIdentifiers(constructorIdentifiers, targetTypeDeclaration);
+                                    updateHashMapOfResolvedConstructorReferencesFromIdentifiers(constructorReferences, constructorIdentifiers);
+                                    // Set up an initial list of modifiers rules for searching field and method members
+                                    List<List<Pair<Modifier.Keyword,Boolean>>> modifiers = new ArrayList<>();
+                                    modifiers.add(List.of(
+                                            new Pair(Modifier.Keyword.STATIC, Boolean.valueOf(true)),
+                                            new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))
+                                    ));
+                                    modifiers.add(List.of(new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(false))));
+                                    // Check if the matched class is in the same package as the test class
+                                    if (matchedPackageDeclaration.isPresent() && testPackageDeclaration.isPresent()) {
+                                        String matchedPackageName = matchedPackageDeclaration.get().getNameAsString();
+                                        String testPackageName = testPackageDeclaration.get().getNameAsString();
+                                        // If the matched class is in the same package as the test class, add protected members to the search
+                                        if (testPackageName.equals(matchedPackageName)) {
+                                            modifiers.add(List.of(
+                                                    new Pair(Modifier.Keyword.STATIC, Boolean.valueOf(true)),
+                                                    new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(true))
+                                            ));
+                                        }
+                                    }
+                                    // Add all possible enum constant declarations if the type is an enum
+                                    updateHashMapOfEnumConstantDeclarationIdentifiers(enumIdentifiers, targetTypeDeclaration);
+                                    updateHashMapOfEnumConstantReferencesFromIdentifiers(enumReferences, enumIdentifiers);
+                                    // Collect method usages and field type identifiers from the matched type declaration
+                                    // Methods and fields must be static and public or protected (if in the same package)
+                                    updateHashMapOfMethodUsageIdentifiers(methodIdentifiers, targetTypeDeclaration, modifiers, List.of(new Pair("Test", Boolean.valueOf(false))));
+                                    updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
+                                    updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, targetTypeDeclaration.getFields(), modifiers);
+                                    updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, fieldIdentifiers);
+                                }
+                            } catch (IOException e) {
+                                logger.error("Error reading compilation unit from file: " + classPath);
+                            }
+                        }
+                    }
+                    tokenReferences.setCurrentClasses(tokenReferences.returnClasses);
+                    tokenReferences.setReturnClasses(new HashMap<>());
+                    tokenReferences.setMethods(methodReferences);
+                    tokenReferences.setFields(fieldReferences);
+                    tokenReferences.setConstructors(constructorReferences);
+                    tokenReferences.setEnums(enumReferences);
                 }
                 break;
             case UPDATE_CURRENT:
@@ -1082,6 +1153,7 @@ public class TokensUtils {
                         if (methodsMatch) {
                             // Get the list of method usages for the matched method name
                             List<MethodUsage> methodUsages = tokenIdentifiersCollector.methodIdentifiers.get(token);
+                            methodReferences.put(token, methodUsages);
                             // Collect the return types of the matched methods as possible next class identifiers
                             for (MethodUsage methodUsage: methodUsages) {
                                 // Get the return type of the method usage
@@ -1111,37 +1183,39 @@ public class TokensUtils {
 
                         if (fieldsMatch) {
                             List<Pair<VariableDeclarator,Type>> fields = tokenIdentifiersCollector.fieldIdentifiers.get(token);
-                            currentClassReferences = tokenReferences.currentClasses;
                             for (Pair<VariableDeclarator,Type> field: fields) {
+                                VariableDeclarator variableDeclarator = field.getValue0();
                                 Type varType = field.getValue1();
                                 try {
+                                    Optional<TypeDeclaration> varTypeDeclaration = Optional.empty();
+                                    Optional<Node> parentNode = variableDeclarator.getParentNode();
+
+                                    while(parentNode.isPresent() && varTypeDeclaration.isEmpty()) {
+                                        if (parentNode.get() instanceof TypeDeclaration) {
+                                            varTypeDeclaration = Optional.of((TypeDeclaration) parentNode.get());
+                                            break;
+                                        } else {
+                                            parentNode = parentNode.get().getParentNode();
+                                        }
+                                    }
+
+                                    if (varTypeDeclaration.isPresent()) {
+                                        Optional<String> qualifiedName = varTypeDeclaration.get().getFullyQualifiedName();
+                                        if (qualifiedName.isPresent()) {
+                                            if (!currentClassReferences.containsKey(qualifiedName.get())) {
+                                                Optional<Path> declaringTypePath = JavaParserUtils.retrieveFilePathFromFullyQualifiedName(qualifiedName.get(), repoSourcePath);
+                                                if (!declaringTypePath.isPresent()) {
+                                                    declaringTypePath = JavaParserUtils.retrieveFilePathFromFullyQualifiedName(qualifiedName.get(), repoTestPath);
+                                                }
+                                                if (declaringTypePath.isPresent()) {
+                                                    currentClassReferences.put(qualifiedName.get(), List.of(declaringTypePath.get()));
+                                                }
+                                            }
+                                        }
+                                    }
+
                                     ResolvedType resolvedType = varType.resolve();
                                     resolvedTypes.add(resolvedType);
-
-                                    if (resolvedType.isTypeVariable()) {
-                                        String typeParameterKey = resolvedType.asTypeParameter().getContainerQualifiedName() + "<" + resolvedType.asTypeParameter().getName() + ">";
-                                        if (tokenReferences.typeParametersReferences.containsKey(typeParameterKey)) {
-                                            resolvedType = tokenReferences.typeParametersReferences.get(typeParameterKey).get(0);
-                                        }
-                                    }
-
-                                    if (resolvedType.isReferenceType()) {
-                                        // Get the declaring type of the method usage
-                                        String declaringTypeQualifiedName = resolvedType.asReferenceType().getQualifiedName();
-                                        Optional<Path> declaringTypePath = JavaParserUtils.retrieveFilePathFromFullyQualifiedName(declaringTypeQualifiedName, repoSourcePath);
-                                        if (!declaringTypePath.isPresent()) {
-                                            declaringTypePath = JavaParserUtils.retrieveFilePathFromFullyQualifiedName(declaringTypeQualifiedName, repoTestPath);
-                                        }
-                                        if (declaringTypePath.isPresent()) {
-                                            if (!currentClassReferences.containsKey(declaringTypeQualifiedName)) {
-                                                currentClassReferences.put(declaringTypeQualifiedName, new ArrayList<>());
-                                            }
-                                            currentClassReferences.get(declaringTypeQualifiedName).add(declaringTypePath.get());
-                                        } else {
-                                            logger.error("Declaring type path not found for while processing a field match (" + token + " of type " + resolvedType.asReferenceType().getQualifiedName() + "): " + declaringTypeQualifiedName);
-
-                                        }
-                                    }
                                 } catch (Exception e) {
                                     logger.error("Error resolving reference type: " + varType);
                                 }
@@ -1151,11 +1225,11 @@ public class TokensUtils {
                         }
 
                         for (ResolvedType resolvedType: resolvedTypes) {
-                            List<List<Pair<Modifier.Keyword,Boolean>>> modifiers = List.of(
+                            List<List<Pair<Modifier.Keyword,Boolean>>> modifiers = new ArrayList<>(List.of(
                                     List.of(new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))),
                                     List.of(new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(false))),
                                     List.of(new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(false)))
-                            );
+                            ));
                             if (resolvedType.isArray()) {
                                 ResolvedArrayType resolvedArrayType = resolvedType.asArrayType();
                                 while (resolvedArrayType.isArray()) {
@@ -1216,10 +1290,10 @@ public class TokensUtils {
                                                 List.of(new Pair("Test", Boolean.valueOf(false)))
                                         );
                                     }
-                                    updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
+                                    //updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
                                     List<FieldDeclaration> fieldDeclarations =  resolvedType.asReferenceType().getTypeDeclaration().get().toAst().get().findAll(FieldDeclaration.class);
                                     updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, fieldDeclarations, modifiers);
-                                    updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, fieldIdentifiers);
+                                    //updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, fieldIdentifiers);
                                 } catch (Exception e) {
                                     String message = "Error resolving reference type: " + resolvedType + " - " + e.getMessage();
                                     logger.error(message);
@@ -1234,6 +1308,7 @@ public class TokensUtils {
                         tokenIdentifiersCollector.setEnumIdentifiersMap(enumIdentifiers);
                         tokenReferences.setContextualInfoType(ContextualInfoType.IDENTIFIER);
                         tokenReferences.setCurrentClasses(currentClassReferences);
+                        tokenReferences.setReturnClasses(returnClassReferences);
                         tokenReferences.setMethods(methodReferences);
                         tokenReferences.setFields(fieldReferences);
                         tokenReferences.setConstructors(constructorReferences);

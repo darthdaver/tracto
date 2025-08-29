@@ -128,7 +128,7 @@ public class FilesUtils {
      * Reads a JSON file containing a list and maps it to a Java record.
      *
      * @param path the path to the file
-     * @param clazz the class of the objects to read
+     * @param javaType the JavaType of the objects to read
      * @return the list of Java record representing the JSON file
      * @throws Error if an error occurs while reading the file
      */
