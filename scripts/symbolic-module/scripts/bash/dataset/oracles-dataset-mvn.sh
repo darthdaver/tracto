@@ -100,20 +100,30 @@ while IFS=, read -r repo_id repo_name; do
           junit_plugin=false
       fi
 
-      if [[ "$pom_count" -eq 1 && "$junit_plugin" == true ]]; then
-        if [ ! -d "${GITHUB_REPOS_DIR}/${repo_name}/processed_libs" ]; then
-          echo "Processing dependencies of project"  >> "$log_file"
-          # Setup dependencies
-          if [ "$resolve_deps" == "true" ]; then
-            bash "${BASH_UTILS_DIR}/resolve_dependencies_mvn.sh" "${GITHUB_REPOS_DIR}/${repo_name}"
-          fi
-        fi
-      fi
+#      if [[ "$pom_count" -eq 1 && "$junit_plugin" == true ]]; then
+#        if [ ! -d "${GITHUB_REPOS_DIR}/${repo_name}/processed_libs" ]; then
+#          echo "Processing dependencies of project"  >> "$log_file"
+#          # Setup dependencies
+#          if [ "$resolve_deps" == "true" ]; then
+#            bash "${BASH_UTILS_DIR}/resolve_dependencies_mvn.sh" "${GITHUB_REPOS_DIR}/${repo_name}"
+#          fi
+#        fi
+#        cd "$SYMBOLIC_DIR"
+#        # Generate Oracle dataset
+#        sdk use java "$JAVA21"
+#        java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" 24 "${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" >> "$log_file" 2>&1
+#      fi
 
-      cd "$SYMBOLIC_DIR"
-      # Generate Oracle dataset
-      sdk use java "$JAVA21"
-      java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" 24 "${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" >> "$log_file" 2>&1
+      echo "Maven processing code: ${repo_id}-${repo_name}-${project_type}-${pom_count}-${junit_plugin}" >> "$log_file"
+
+      if [ "$junit_plugin" == true ]; then
+        cd "$SYMBOLIC_DIR"
+        # Generate Oracle dataset
+        sdk use java "$JAVA21"
+        java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" 24 "${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" >> "$log_file" 2>&1
+      else
+        echo "Project ${repo_name} do not use JUnit library to test, skipping."  >> "$log_file"
+      fi
     else
       echo "Project ${repo_name} is not a Maven project, skipping."  >> "$log_file"
     fi
