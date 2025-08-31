@@ -185,7 +185,7 @@ public class TokensUtils {
             this.contextualInfoType = contextualInfoType;
         }
 
-        public void settypePrameterReferences(HashMap<String,List<ResolvedType>> typeParametersReferences) {
+        public void setTypeParameterReferences(HashMap<String,List<ResolvedType>> typeParametersReferences) {
             this.typeParametersReferences = typeParametersReferences;
         }
 
@@ -360,6 +360,7 @@ public class TokensUtils {
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.methodIdentifiers.keySet());
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.constructorIdentifiers.keySet());
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.fieldIdentifiers.keySet());
+                                            adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.lambdaIdentifiers.keySet());
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.enumIdentifiers.keySet());
                                         }
                                         if (streamFlag) {
@@ -546,7 +547,17 @@ public class TokensUtils {
                 Type fieldType = fieldEntry.getValue1();
                 String fieldKey;
                 if (fieldType.isReferenceType()) {
-                    fieldKey = fieldType.asReferenceType().resolve().asReferenceType().getQualifiedName() + "." + fieldName;
+                    ResolvedType fieldResolvedType = fieldType.asReferenceType().resolve();
+                    while (fieldResolvedType.isArray()) {
+                        fieldResolvedType = fieldResolvedType.asArrayType().getComponentType();
+                    }
+                    if (fieldResolvedType.isReferenceType()) {
+                        fieldKey = fieldResolvedType.asReferenceType().getQualifiedName() + "." + fieldName;
+                    } else if (fieldResolvedType.isTypeVariable()) {
+                        fieldKey = fieldResolvedType.asTypeParameter().getContainerQualifiedName() + "<" + fieldResolvedType.asTypeParameter().getName() + ">";
+                    } else {
+                        fieldKey = fieldName;
+                    }
                 } else {
                     fieldKey = fieldName;
                 }
@@ -805,14 +816,19 @@ public class TokensUtils {
                     boolean fieldsMatch = tokenReferences.fields.values().stream().anyMatch(l -> l.stream().anyMatch(f -> f.getValue0().getNameAsString().equals(previousToken)));
                     boolean constructorsMatch = tokenReferences.constructors.values().stream().anyMatch(l -> l.stream().anyMatch(c -> c.getName().equals(previousToken)));
                     if (methodsMatch || fieldsMatch) {
-                        tokenReferences.setContextualInfoType(ContextualInfoType.METHOD_CALL);
+                        if (streamFlag) {
+                            tokenReferences.setContextualInfoType(ContextualInfoType.LAMBDA_CALL);
+                        } else {
+                            tokenReferences.setContextualInfoType(ContextualInfoType.METHOD_CALL);
+                        }
                     } else if (constructorsMatch) {
                         tokenReferences.setContextualInfoType(ContextualInfoType.CONSTRUCTOR_CALL);
                     }
                 }
                 if (streamFlag) {
-                    newTokenIdentifiersCollector.setLambdaIdentifiersMap(tokenReferences.lambdaReferences);
+                    newTokenIdentifiersCollector.setLambdaIdentifiersMap(tokenIdentifiersCollector.lambdaIdentifiers);
                     newTokenReferencesCollector.setLambdaReferences(tokenReferences.lambdaReferences);
+                    newTokenReferencesCollector.setTypeParameterReferences(tokenReferences.typeParametersReferences);
                 }
                 tokenIdentifiersStack.add(new Pair<>(newTokenIdentifiersCollector, newTokenReferencesCollector));
                 break;
@@ -823,7 +839,7 @@ public class TokensUtils {
                 if (tokenType == AntlrToken.ARROW) {
                     streamFlag = false;
                     tokenReferences.setContextualInfoType(ContextualInfoType.LAMBDA_BODY);
-                    newTokenIdentifiersCollector.setLambdaIdentifiersMap(tokenIdentifiersCollector.lambdaIdentifiers);
+                    newTokenIdentifiersCollector.setLambdaIdentifiersMap(tokenReferences.lambdaReferences);
                 }
                 break;
             case KEEP_CURRENT:
@@ -1107,6 +1123,7 @@ public class TokensUtils {
                         boolean methodsMatch = tokenIdentifiersCollector.methodIdentifiers.containsKey(token);
                         boolean fieldsMatch = tokenIdentifiersCollector.fieldIdentifiers.containsKey(token);
                         boolean lambdasMatch = tokenIdentifiersCollector.lambdaIdentifiers.containsKey(token);
+                        List<ResolvedType> resolvedTypes = new ArrayList<>();
 
                         int matchCount = 0;
                         if (classesMatch) matchCount++;
@@ -1119,6 +1136,15 @@ public class TokensUtils {
                             tokenIdentifiersCollector.setClassIdentifiersMap(new HashMap<>());
                             tokenIdentifiersCollector.setMethodIdentifiersMap(new HashMap<>());
                             tokenIdentifiersCollector.setConstructorIdentifiersMap(new HashMap<>());
+                            tokenIdentifiersCollector.setLambdaIdentifiersMap(new HashMap<>());
+                            tokenIdentifiersCollector.setEnumIdentifiersMap(new HashMap<>());
+                            tokenReferences.setCurrentClasses(new HashMap<>());
+                            tokenReferences.setReturnClasses(new HashMap<>());
+                            tokenReferences.setMethods(new HashMap<>());
+                            tokenReferences.setConstructors(new HashMap<>());
+                            tokenReferences.setEnums(new HashMap<>());
+                            tokenReferences.setFields(new HashMap<>());
+                            tokenReferences.setLambdaReferences(new HashMap<>());
                             if (streamFlag) {
                                 String streamTypeParameterKey = streamClassReference + "<" + streamTypeParameter + ">";
                                 for (String key: tokenReferences.typeParametersReferences.keySet()) {
@@ -1130,7 +1156,29 @@ public class TokensUtils {
                                     if (!lambdaReferences.containsKey(token)) {
                                         lambdaReferences.put(token, new ArrayList<>());
                                     }
-                                    lambdaReferences.get(streamTypeParameterKey).addAll(tokenReferences.typeParametersReferences.get(streamTypeParameterKey));
+                                    List<ResolvedType> lambdaParametersTypes = tokenReferences.typeParametersReferences.get(streamTypeParameterKey);
+                                    lambdaReferences.get(token).addAll(lambdaParametersTypes);
+                                    tokenReferences.setLambdaReferences(lambdaReferences);
+                                    resolvedTypes.addAll(lambdaParametersTypes);
+                                    for (ResolvedType lambdaParameterType :lambdaParametersTypes) {
+                                        if (lambdaParameterType.isReferenceType()) {
+                                            String qualifiedName = lambdaParameterType.asReferenceType().getQualifiedName();
+                                            Optional<Path> lambdaParameterTypePath = JavaParserUtils.retrieveFilePathFromFullyQualifiedName(qualifiedName, repoSourcePath);
+                                            if (!lambdaParameterTypePath.isPresent()) {
+                                                lambdaParameterTypePath = JavaParserUtils.retrieveFilePathFromFullyQualifiedName(qualifiedName, repoTestPath);
+                                            }
+                                            if (lambdaParameterTypePath.isPresent()) {
+                                                if (!currentClassReferences.containsKey(qualifiedName)) {
+                                                    currentClassReferences.put(qualifiedName, new ArrayList<>());
+                                                }
+                                                currentClassReferences.get(qualifiedName).add(lambdaParameterTypePath.get());
+                                            } else {
+                                                logger.error("Declaring type path not found for while processing a lambda parameter (" + token + "): " + qualifiedName);
+
+                                            }
+                                        }
+                                    }
+                                    tokenReferences.setCurrentClasses(currentClassReferences);
                                 } else {
                                     tokenIdentifiersCollector.setFieldIdentifiersMap(new HashMap<>());
                                 }
@@ -1239,8 +1287,6 @@ public class TokensUtils {
                             tokenReferences.setContextualInfoType(ContextualInfoType.CLASS_CALL);
                         }
 
-                        List<ResolvedType> resolvedTypes = new ArrayList<>();
-
                         if (lambdasMatch) {
                             List<ResolvedType> lambdaFields = tokenIdentifiersCollector.lambdaIdentifiers.get(token);
                             for (ResolvedType lambdaField: lambdaFields) {
@@ -1272,7 +1318,6 @@ public class TokensUtils {
                                                     typeParameterValue = tokenReferences.typeParametersReferences.get(typeParameterValueKey).get(0);
                                                 }
                                             }
-
                                             if (!typeParameterReferences.containsKey(typeParameterKey)) {
                                                 typeParameterReferences.put(typeParameterKey, new ArrayList<>());
                                             }
@@ -1284,7 +1329,6 @@ public class TokensUtils {
                                 }
                             }
                             updateHashMapOfLambdaReferencesFromIdentifiers(lambdaReferences, lambdaIdentifiers);
-                            tokenReferences.setContextualInfoType(ContextualInfoType.LAMBDA_CALL);
                         }
 
                         if (methodsMatch) {
@@ -1499,7 +1543,7 @@ public class TokensUtils {
                         if (streamFlag) {
                             typeParameterReferences = tokenReferences.typeParametersReferences;
                         }
-                        tokenReferences.settypePrameterReferences(typeParameterReferences);
+                        tokenReferences.setTypeParameterReferences(typeParameterReferences);
                         updateHashMapOfEnumConstantReferencesFromIdentifiers(enumReferences, enumIdentifiers);
                         tokenReferences.setEnums(enumReferences);
                         if (currentClassReferences.containsKey(streamClassReference)) {
