@@ -10,6 +10,9 @@ public enum ContextualInfoType {
     METHOD_CALL,
     METHOD_RETURN,
     FIELD_CALL,
+    LAMBDA_CALL,
+    LAMBDA_BODY,
+    LAMBDA_RETURN,
     CONSTRUCTOR_CALL,
     CONSTRUCTOR_RETURN
 }
