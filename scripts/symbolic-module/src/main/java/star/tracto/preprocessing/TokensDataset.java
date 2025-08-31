@@ -41,7 +41,7 @@ public class TokensDataset {
         Path inputDatasetPath = outputPath.resolve("raw-oracles-dataset-" + mode).resolve(projectIdentifier);
         // Generate directories to output path if they do not exist
         Path outputDatasetPath = outputPath.resolve("raw-tokens-dataset-" + mode).resolve(projectIdentifier);
-        Path outputStatisticsPath = outputPath.resolve("statistics-tokens-dataset" + mode);
+        Path outputStatisticsPath = outputPath.resolve("statistics-tokens-dataset-" + mode);
         FilesUtils.createDirectories(outputDatasetPath);
         FilesUtils.createDirectories(outputStatisticsPath);
         // Setup the repository root path for JavaParser
