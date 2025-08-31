@@ -52,20 +52,25 @@ find_repo() {
 
 # Read the CSV file line by line and split into project_id, bug_id, and modified_classes field
 while IFS=, read -r repo_id repo_name; do
+    # Define a log file at the top of the script
+    log_file="${OUTPUT_DIR}/logs/tokens-dataset_log_${repo_id}.log"
+    mkdir -p "$(dirname "$log_file")"
     cd "$ROOT_DIR"
     # Clean repo_name string from undesired white-spaces/line-breaks introduced with the CSV parsing
     repo_name="${repo_name//[$'\t\r\n ']/}"
-    echo "Processing project: ${repo_name}."
+    echo "==============================" >> "$log_file"
+    echo "Repo: $repo_name  ID: $repo_id" >> "$log_file"
+    echo "==============================" >> "$log_file"
     repo_url="${GITHUB_BASE_URL}/${repo_name}.git"
     if [ ! -d "${GITHUB_REPOS_DIR}/${repo_name}" ]; then
-      echo "Unexpected project repository not found in path: ${GITHUB_REPOS_DIR}/${repo_name}"
+      echo "Unexpected project repository not found in path: ${GITHUB_REPOS_DIR}/${repo_name}" >> "$log_file"
     fi
     # Check if the project is a Maven project and if it has only one pom.xml file and uses JUnit as plugin
     if find_repo "$repo_id"; then
-      echo "Raw oracles dataset found for project: ${repo_name}"
+      echo "Raw oracles dataset found for project: ${repo_name}"  >> "$log_file"
       cd "$SYMBOLIC_DIR"
       # Generate Tokens dataset for project
       sdk use java "$JAVA21"
-      java -jar "${SYMBOLIC_JAR}" "tokens" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" 24
+      java -jar "${SYMBOLIC_JAR}" "tokens" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" 24  >> "$log_file" 2>&1
     fi
 done < "$GITHUB_REPOS_LIST_FILE"

@@ -36,7 +36,7 @@ check_running_processes() {
 
 while (( current_index < num_files )); do
     if (( ${#running_pids[@]} < max_jobs )); then
-        nohup bash "${current_dir}/${bash_script_name}" "${RESOURCES_DIR}/github-repos-split/split_${current_index}.csv" "${resolve_deps}"
+        nohup bash "${current_dir}/${bash_script_name}" "${RESOURCES_DIR}/github-repos-split/split_${current_index}.csv" "${resolve_deps}"  2>&1 &
         last_pid=$!
         echo "$last_pid" > "pids/pid-${current_index}.txt"
         running_pids+=("$last_pid")
