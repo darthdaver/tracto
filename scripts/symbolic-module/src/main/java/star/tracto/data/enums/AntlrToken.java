@@ -161,4 +161,79 @@ public enum AntlrToken {
         }
         throw new IllegalArgumentException("No enum constant for symbol: " + token);
     }
+
+    public static boolean isAtomicKeywordToken(AntlrToken antlrToken) {
+        switch (antlrToken) {
+            case THIS,
+                 DECIMAL_LITERAL,
+                 HEX_LITERAL,
+                 OCT_LITERAL,
+                 BINARY_LITERAL,
+                 FLOAT_LITERAL,
+                 HEX_FLOAT_LITERAL,
+                 BOOL_LITERAL,
+                 CHAR_LITERAL,
+                 STRING_LITERAL,
+                 TEXT_BLOCK,
+                 NULL_LITERAL,
+                 // Separators
+                 LPAREN,
+                 RPAREN,
+                 LBRACE,
+                 RBRACE,
+                 LBRACK,
+                 RBRACK,
+                 SEMI,
+                 COMMA,
+                 DOT,
+                 // Operators
+                 ASSIGN,
+                 GT,
+                 LT,
+                 BANG,
+                 TILDE,
+                 QUESTION,
+                 COLON,
+                 EQUAL,
+                 LE,
+                 GE,
+                 NOTEQUAL,
+                 AND,
+                 OR,
+                 INC,
+                 DEC,
+                 ADD,
+                 SUB,
+                 MUL,
+                 DIV,
+                 BITAND,
+                 BITOR,
+                 CARET,
+                 MOD,
+                 QUERY_ARROW,
+                 ADD_ASSIGN,
+                 SUB_ASSIGN,
+                 MUL_ASSIGN,
+                 DIV_ASSIGN,
+                 AND_ASSIGN,
+                 OR_ASSIGN,
+                 XOR_ASSIGN,
+                 MOD_ASSIGN,
+                 LSHIFT_ASSIGN,
+                 RSHIFT_ASSIGN,
+                 URSHIFT_ASSIGN,
+                 // Others
+                 ARROW,
+                 COLONCOLON,
+                 AT,
+                 ELLIPSIS,
+                 WS,
+                 COMMENT,
+                 LINE_COMMENT,
+                 IDENTIFIER:
+                return false;
+            default:
+                return true;
+        }
+    }
 }

@@ -50,6 +50,7 @@ public class TokensUtils {
     private static final String streamClassReference = "java.util.stream.Stream";
     private static final String streamTypeParameter = "T";
     private static boolean streamFlag = false;
+    private static final String THROW_EXCEPTION_LABEL = "THROW EXCEPTION";
 
     /**
      * A support class to collect various types of candidate token identifiers categorized by their type when processing
@@ -285,8 +286,7 @@ public class TokensUtils {
                         rootTokenIdentifiersCollector = new TokenIdentifiersCollector();
                         rootTokenReferencesCollector = new TokenReferencesCollector();
                         // Get the target assertion from the test prefix
-                        String originalTargetAssertion = datapoint.target();
-                        String targetAssertion = originalTargetAssertion.replace(" ", "");
+                        String targetAssertion = datapoint.target();
 
                         //if (targetAssertion.contains("assertEquals(HttpMethod")) {
                         try {
@@ -305,15 +305,18 @@ public class TokensUtils {
                             // Initialize the list of token steps
                             List<TokenStep> tokenSteps = new ArrayList<>();
                             // Split the target assertion into tokens
-                            List<String> tokens = Antlr4Utils.tokenizeSnippet(targetAssertion);
-                            // Check that the first token is a valid JUnit assertion method
-                            try {
-                                JUnitAssertionType.fromString(tokens.get(0));
-                            } catch (IllegalArgumentException e) {
-                                String message = "Assertion do not start with JUnit api (do not implemented yet): " + targetAssertion + " - " + e.getMessage();
-                                logger.error(message);
-                                clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(message);
-                                continue;
+                            List<String> tokens = !targetAssertion.equals(THROW_EXCEPTION_LABEL) ? Antlr4Utils.tokenizeSnippet(targetAssertion) : List.of(THROW_EXCEPTION_LABEL);
+                            if (!tokens.get(0).equals(THROW_EXCEPTION_LABEL)) {
+                                // Remove spurious tokens and check that the first token is a valid JUnit assertion method
+                                try {
+                                    tokens.removeIf(t -> t.equals(" "));
+                                    JUnitAssertionType.fromString(tokens.get(0));
+                                } catch (IllegalArgumentException e) {
+                                    String message = "Assertion do not start with JUnit api (do not implemented yet): " + targetAssertion + " - " + e.getMessage();
+                                    logger.error(message);
+                                    clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(message);
+                                    continue;
+                                }
                             }
                             // Start with an empty partial snippet
                             String partialSnippet = "";
@@ -328,7 +331,7 @@ public class TokensUtils {
                                 if (partialSnippet.isEmpty()) {
                                     tokenStepBuilder.setNextPossibleJavaTokens(Arrays.stream(JUnitAssertionType.values()).map(a -> a.getAssertionMethodName()).collect(Collectors.toList()));
                                     tokenStepBuilder.setNextPossibleProjectTokens(new ArrayList<>());
-                                    tokenStepBuilder.setNextPossibleGenericTokens(new ArrayList<>());
+                                    tokenStepBuilder.setNextPossibleGenericTokens(List.of(THROW_EXCEPTION_LABEL));
                                     tokenStepBuilder.setSyntaxCorrect(false);
                                     tokenStepBuilder.setTarget("ASSERT:" + tokens.get(0));
                                     tokenStepBuilder.setContextualInfos(new ArrayList<>());
@@ -403,7 +406,7 @@ public class TokensUtils {
                                 tokenStepBuilder.setContextualInfos(tokenIdentifiersStack.stream().map(t -> generateTokenStepContextualInfo(t.getValue1())).collect(Collectors.toList()));
                                 tokenSteps.add(tokenStepBuilder.build());
                                 // Update the partial snippet
-                                partialSnippet += token;
+                                partialSnippet += AntlrToken.isAtomicKeywordToken(Antlr4Utils.getAntlrToken(token)) ? token + " " : token;
                                 // Update the token identifiers and references collectors
                                 Pair<TokenIdentifiersCollector, TokenReferencesCollector> updatedCollectors = updateTokenIdentifiersAndReferences(tokenIdentifiersStack, token, tokens.get(i-1), testPrefixClass, testPrefix.getNameAsString(), targetAssertion);
                                 currentTokenIdentifiersCollector = updatedCollectors.getValue0();
@@ -547,15 +550,19 @@ public class TokensUtils {
                 Type fieldType = fieldEntry.getValue1();
                 String fieldKey;
                 if (fieldType.isReferenceType()) {
-                    ResolvedType fieldResolvedType = fieldType.asReferenceType().resolve();
-                    while (fieldResolvedType.isArray()) {
-                        fieldResolvedType = fieldResolvedType.asArrayType().getComponentType();
-                    }
-                    if (fieldResolvedType.isReferenceType()) {
-                        fieldKey = fieldResolvedType.asReferenceType().getQualifiedName() + "." + fieldName;
-                    } else if (fieldResolvedType.isTypeVariable()) {
-                        fieldKey = fieldResolvedType.asTypeParameter().getContainerQualifiedName() + "<" + fieldResolvedType.asTypeParameter().getName() + ">";
-                    } else {
+                    try {
+                        ResolvedType fieldResolvedType = fieldType.asReferenceType().resolve();
+                        while (fieldResolvedType.isArray()) {
+                            fieldResolvedType = fieldResolvedType.asArrayType().getComponentType();
+                        }
+                        if (fieldResolvedType.isReferenceType()) {
+                            fieldKey = fieldResolvedType.asReferenceType().getQualifiedName() + "." + fieldName;
+                        } else if (fieldResolvedType.isTypeVariable()) {
+                            fieldKey = fieldResolvedType.asTypeParameter().getContainerQualifiedName() + "<" + fieldResolvedType.asTypeParameter().getName() + ">";
+                        } else {
+                            fieldKey = fieldName;
+                        }
+                    } catch (Exception e) {
                         fieldKey = fieldName;
                     }
                 } else {
@@ -750,8 +757,8 @@ public class TokensUtils {
                             fields.add(fieldContextualInfo);
                         }
                     } catch (Exception e) {
-                        //String message = "Error processing field type declaration for field: " + variableDeclarator.getNameAsString() + " - " + e.getMessage();
-                        //logger.error(message);
+                        String message = "Error processing field type declaration for field: " + variableDeclarator.getNameAsString() + " - " + e.getMessage();
+                        logger.error(message);
                     }
                 }
             }
@@ -1431,7 +1438,7 @@ public class TokensUtils {
                                         }
                                     }
                                 } catch (Exception e) {
-                                    logger.error("Error resolving reference type: " + varType);
+                                    logger.error("Error resolving reference type " + varType + ": " + e.getMessage() /*+ " - " + e.getStackTrace()*/);
                                 }
                             }
                             updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, fieldIdentifiers);
@@ -1726,8 +1733,12 @@ public class TokensUtils {
             List<Pair<String, Boolean>> annotations
     ) {
         // Collect callable methods from type declaration
-        Set<MethodUsage> methodUsages = typeDeclaration.resolve().getAllMethods();
-        collectMethodUsages(methodUsageIdentifiers, methodUsages, modifiersRules, annotations);
+        try {
+            Set<MethodUsage> methodUsages = typeDeclaration.resolve().getAllMethods();
+            collectMethodUsages(methodUsageIdentifiers, methodUsages, modifiersRules, annotations);
+        } catch (Exception e) {
+            logger.error("Unable to resolve type declaration " + typeDeclaration.getFullyQualifiedName() + " and collect methods from it: " + e.getMessage() /*+ " - " + e.getStackTrace()*/);
+        }
     }
 
     private static void collectResolvedMethodDeclaration(
@@ -1844,17 +1855,22 @@ public class TokensUtils {
         for (Pair<VariableDeclarator,Type> entry: fieldIdentifiers) {
             Type type = entry.getValue1();
             if (type.isClassOrInterfaceType()) {
-                List<com.github.javaparser.utils.Pair<ResolvedTypeParameterDeclaration, ResolvedType>> typeParametersMap = type.asClassOrInterfaceType().resolve().asReferenceType().getTypeParametersMap();
-                for (com.github.javaparser.utils.Pair<ResolvedTypeParameterDeclaration, ResolvedType> typeParameter: typeParametersMap) {
-                    String referenceKey = type.resolve().asReferenceType().getQualifiedName() + "<" + typeParameter.a.getName() + ">";
-                    ResolvedType typeParameterResolvedType = typeParameter.b;
-                    if (!typeParametersReferences.containsKey(referenceKey)) {
-                        typeParametersReferences.put(referenceKey, new ArrayList<>());
+                try {
+                    List<com.github.javaparser.utils.Pair<ResolvedTypeParameterDeclaration, ResolvedType>> typeParametersMap = type.asClassOrInterfaceType().resolve().asReferenceType().getTypeParametersMap();
+                    for (com.github.javaparser.utils.Pair<ResolvedTypeParameterDeclaration, ResolvedType> typeParameter : typeParametersMap) {
+                        String referenceKey = type.resolve().asReferenceType().getQualifiedName() + "<" + typeParameter.a.getName() + ">";
+                        ResolvedType typeParameterResolvedType = typeParameter.b;
+                        if (!typeParametersReferences.containsKey(referenceKey)) {
+                            typeParametersReferences.put(referenceKey, new ArrayList<>());
+                        }
+                        boolean isAlreadyPresent = typeParametersReferences.get(referenceKey).stream().anyMatch(v -> v.equals(typeParameterResolvedType));
+                        if (!isAlreadyPresent) {
+                            typeParametersReferences.get(referenceKey).add(typeParameterResolvedType);
+                        }
                     }
-                    boolean isAlreadyPresent = typeParametersReferences.get(referenceKey).stream().anyMatch(v -> v.equals(typeParameterResolvedType));
-                    if (!isAlreadyPresent) {
-                        typeParametersReferences.get(referenceKey).add(typeParameterResolvedType);
-                    }
+                } catch (Exception e) {
+                    String message = "Unable to successfully resolve the type of the field to extract type parameters: " + e.getMessage() /*+ " - " + e.getStackTrace()*/;
+                    logger.error(message);
                 }
             }
         }
@@ -1871,16 +1887,20 @@ public class TokensUtils {
             HashMap<String, List<ResolvedConstructorDeclaration>> resolvedConstructorIdentifiers,
             TypeDeclaration typeDeclaration
     ) {
-        List<ResolvedConstructorDeclaration> resolvedConstructors = typeDeclaration.resolve().getConstructors();
-        for (ResolvedConstructorDeclaration resolvedConstructor : resolvedConstructors) {
-            if (!resolvedConstructorIdentifiers.containsKey(resolvedConstructor.getName())) {
-                resolvedConstructorIdentifiers.put(resolvedConstructor.getName(), new ArrayList<>());
+        try {
+            List<ResolvedConstructorDeclaration> resolvedConstructors = typeDeclaration.resolve().getConstructors();
+            for (ResolvedConstructorDeclaration resolvedConstructor : resolvedConstructors) {
+                if (!resolvedConstructorIdentifiers.containsKey(resolvedConstructor.getName())) {
+                    resolvedConstructorIdentifiers.put(resolvedConstructor.getName(), new ArrayList<>());
+                }
+                boolean isAlreadyPresent = resolvedConstructorIdentifiers.get(resolvedConstructor.getName()).stream()
+                        .anyMatch(c -> c.equals(resolvedConstructor));
+                if (!isAlreadyPresent) {
+                    resolvedConstructorIdentifiers.get(resolvedConstructor.getName()).add(resolvedConstructor);
+                }
             }
-            boolean isAlreadyPresent = resolvedConstructorIdentifiers.get(resolvedConstructor.getName()).stream()
-                    .anyMatch(c -> c.equals(resolvedConstructor));
-            if (!isAlreadyPresent) {
-                resolvedConstructorIdentifiers.get(resolvedConstructor.getName()).add(resolvedConstructor);
-            }
+        } catch (Exception e) {
+            logger.error("Unable to resolve the type declaration " + typeDeclaration.getFullyQualifiedName() + " to extract constructors from it: " + e.getMessage() /*+ " - " + e.getStackTrace()*/);
         }
     }
 
