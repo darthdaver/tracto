@@ -1940,9 +1940,7 @@ public class JavaParserUtils {
             hasLibFolder = FilesUtils.hasChildDirectory(referencePath, NamingConvention.LIB_FOLDER.getConventionName());
         }
         if (hasLibFolder) {
-            candidatePrefixPaths = FilesUtils.listDirectories(
-                    referencePath.resolve(NamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())
-            );
+            candidatePrefixPaths.addAll(FilesUtils.listDirectories(referencePath.resolve(NamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())));
         }
         candidatePrefixPaths.add(repoSourcePath);
         for(Path candidatePrefixPath : candidatePrefixPaths) {
@@ -1986,9 +1984,7 @@ public class JavaParserUtils {
             hasLibFolder = FilesUtils.hasChildDirectory(referencePath, NamingConvention.LIB_FOLDER.getConventionName());
         }
         if (hasLibFolder) {
-            candidatePrefixPaths = FilesUtils.listDirectories(
-                    referencePath.resolve(NamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())
-            );
+            candidatePrefixPaths.addAll(FilesUtils.listDirectories(referencePath.resolve(NamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())));
         }
         candidatePrefixPaths.add(repoSourcePath);
         for(Path candidatePrefixPath : candidatePrefixPaths) {
@@ -2035,9 +2031,7 @@ public class JavaParserUtils {
             hasLibFolder = FilesUtils.hasChildDirectory(referencePath, NamingConvention.LIB_FOLDER.getConventionName());
         }
         if (hasLibFolder) {
-            candidatePrefixPaths = FilesUtils.listDirectories(
-                    referencePath.resolve(NamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())
-            );
+            candidatePrefixPaths.addAll(FilesUtils.listDirectories(referencePath.resolve(NamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())));
         }
         candidatePrefixPaths.add(repoSourcePath);
         for(Path candidatePrefixPath : candidatePrefixPaths) {
@@ -2095,9 +2089,7 @@ public class JavaParserUtils {
             hasLibFolder = FilesUtils.hasChildDirectory(referencePath, NamingConvention.LIB_FOLDER.getConventionName());
         }
         if (hasLibFolder) {
-            candidatePrefixPaths = FilesUtils.listDirectories(
-                    referencePath.resolve(NamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())
-            );
+            candidatePrefixPaths.addAll(FilesUtils.listDirectories(referencePath.resolve(NamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())));
         }
         candidatePrefixPaths.add(repoSourcePath);
         for(Path candidatePrefixPath : candidatePrefixPaths) {
