@@ -290,6 +290,7 @@ public class TokensUtils {
             testClazzDatapointsBuilder.setJunitVersion(testClazzDatapoints.junitVersion());
             // Define list of token steps to return
             List<PartialOracleDatapoint> partialOraclesDatapoints = new ArrayList<>();
+            // Commented if statement for debug
             //if (testPrefixClass.getNameAsString().contains("MethodSorterTest")) {
             // Iterate over the oracle datapoints and process each test prefix and associated target assertion
             for (OracleDatapoint datapoint : datapoints) {
@@ -307,8 +308,8 @@ public class TokensUtils {
                         String targetAssertion = datapoint.target();
 
                         logger.info("Processing test class " + (testPrefixClass.getFullyQualifiedName().isPresent() ? testPrefixClass.getFullyQualifiedName().get() : testPrefixClass.getNameAsString()) + " - target assertion: " + targetAssertion);
-
-                        //if (targetAssertion.contains("assertArrayEquals(fromJvmWithSynthetics, sorted)")) {
+                        // Commented if statement for debug
+                        //if (targetAssertion.contains("assertTrue(frame.isFin()")) {
                         try {
                             // Setup error map for the test class
                             clazzDatapointsErrors.putIfAbsent(testPrefix.getNameAsString(), new HashMap<>());
@@ -691,10 +692,10 @@ public class TokensUtils {
             for (EnumConstantDeclaration enumConstant: entry.getValue()) {
                 String enumKey = entry.getKey();
                 Optional<Node> parentNode = enumConstant.getParentNode();
-                Optional<EnumConstantDeclaration> enumDeclaration = Optional.empty();
+                Optional<EnumDeclaration> enumDeclaration = Optional.empty();
                 while(parentNode.isPresent() && !enumDeclaration.isPresent()) {
                     if (parentNode.get() instanceof EnumDeclaration) {
-                        enumDeclaration = Optional.of((EnumConstantDeclaration) parentNode.get());
+                        enumDeclaration = Optional.of((EnumDeclaration) parentNode.get());
                         break;
                     }
                     parentNode = parentNode.get().getParentNode();
@@ -1897,7 +1898,7 @@ public class TokensUtils {
             Set<MethodUsage> methodUsages = typeDeclaration.resolve().getAllMethods();
             collectMethodUsages(methodUsageIdentifiers, methodUsages, modifiersRules, annotations);
         } catch (Exception e) {
-            logger.error("Unable to resolve type declaration " + typeDeclaration.getFullyQualifiedName() + " and collect methods from it: " + e.getMessage() /*+ " - " + e.getStackTrace()*/);
+            logger.error("Unable to resolve type declaration " + (typeDeclaration.getFullyQualifiedName().isPresent() ? typeDeclaration.getFullyQualifiedName().get() : typeDeclaration.getNameAsString()) + " and collect methods from it: " + e.getMessage() /*+ " - " + e.getStackTrace()*/);
         }
     }
 

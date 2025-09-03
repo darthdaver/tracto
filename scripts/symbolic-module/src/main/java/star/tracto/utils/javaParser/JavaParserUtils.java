@@ -1684,6 +1684,16 @@ public class JavaParserUtils {
                                         // Add the type declaration to the list of existing classes
                                         existingClasses.get(classOrInterfaceDeclaration.getNameAsString()).add(typeDeclaration);
                                     }
+                                } else if (typeDeclaration.isEnumDeclaration()) {
+                                    EnumDeclaration enumDecl = typeDeclaration.asEnumDeclaration();
+                                    if (!existingClasses.containsKey(enumDecl.getNameAsString())) {
+                                        existingClasses.put(enumDecl.getNameAsString(), new ArrayList<>());
+                                    }
+                                    boolean isAlreadyPresent = existingClasses.get(enumDecl.getNameAsString()).stream().anyMatch(t -> t.equals(typeDeclaration));
+                                    if (!isAlreadyPresent) {
+                                        // Add the type declaration to the list of existing classes
+                                        existingClasses.get(enumDecl.getNameAsString()).add(typeDeclaration);
+                                    }
                                 }
                             }
                         } catch (Exception e) {
@@ -1757,6 +1767,16 @@ public class JavaParserUtils {
                             if (!isAlreadyPresent) {
                                 // Add the type declaration to the list of existing classes
                                 existingClasses.get(classOrInterfaceDecl.getNameAsString()).add(relatedTypeDeclPath);
+                            }
+                        } else if (typeDecl.isEnumDeclaration()) {
+                            EnumDeclaration enumDecl = typeDecl.asEnumDeclaration();
+                            if (!existingClasses.containsKey(enumDecl.getNameAsString())) {
+                                existingClasses.put(enumDecl.getNameAsString(), new ArrayList<>());
+                            }
+                            boolean isAlreadyPresent = existingClasses.get(enumDecl.getNameAsString()).stream().anyMatch(t -> t.equals(relatedTypeDeclPath));
+                            if (!isAlreadyPresent) {
+                                // Add the type declaration to the list of existing classes
+                                existingClasses.get(enumDecl.getNameAsString()).add(relatedTypeDeclPath);
                             }
                         }
                     }
