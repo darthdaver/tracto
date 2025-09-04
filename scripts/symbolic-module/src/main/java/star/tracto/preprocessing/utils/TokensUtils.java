@@ -309,7 +309,7 @@ public class TokensUtils {
 
                         logger.info("Processing test class " + (testPrefixClass.getFullyQualifiedName().isPresent() ? testPrefixClass.getFullyQualifiedName().get() : testPrefixClass.getNameAsString()) + " - target assertion: " + targetAssertion);
                         // Commented if statement for debug
-                        //if (targetAssertion.contains("assertTrue(frame.isFin()")) {
+                        //if (targetAssertion.contains("Delete access denied for user")) {
                         try {
                             // Setup error map for the test class
                             clazzDatapointsErrors.putIfAbsent(testPrefix.getNameAsString(), new HashMap<>());
@@ -384,6 +384,7 @@ public class TokensUtils {
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.methodIdentifiers.keySet());
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.constructorIdentifiers.keySet());
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.fieldIdentifiers.keySet());
+                                            adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.parameterIdentifiers.keySet());
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.lambdaIdentifiers.keySet());
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.enumIdentifiers.keySet());
                                         }
@@ -424,7 +425,8 @@ public class TokensUtils {
                                 } else {
                                     tokenStepBuilder.setTarget(Antlr4Utils.getAntlrToken(token) + ":" + token);
                                 }
-                                tokenStepBuilder.setContextualInfos(tokenIdentifiersStack.stream().map(t -> generateTokenStepContextualInfo(t.getValue1())).collect(Collectors.toList()));
+                                //tokenStepBuilder.setContextualInfos(tokenIdentifiersStack.stream().map(t -> generateTokenStepContextualInfo(t.getValue1())).collect(Collectors.toList()));
+                                tokenStepBuilder.setContextualInfos(List.of(generateTokenStepContextualInfo(tokenIdentifiersStack.get(tokenIdentifiersStack.size()-1).getValue1())));
                                 tokenSteps.add(tokenStepBuilder.build());
                                 // Update the partial snippet
                                 partialSnippet += AntlrToken.isAtomicKeywordToken(Antlr4Utils.getAntlrToken(token)) ? token + " " : token;
@@ -554,6 +556,7 @@ public class TokensUtils {
         rootTokenIdentifiersCollector.setClassIdentifiersMap(typeDeclarationPathIdentifiers);
         rootTokenIdentifiersCollector.setFieldIdentifiersMap(fieldTypeIdentifiers);
         rootTokenIdentifiersCollector.setMethodIdentifiersMap(methodUsageIdentifiers);
+        rootTokenIdentifiersCollector.setParameterIdentifiersMap(parameterIdentifiers);
     }
 
     public static void setupRootTokenReferences (
@@ -1422,47 +1425,70 @@ public class TokensUtils {
                         if (fieldsMatch || parametersMatch) {
                             if (fieldsMatch) {
                                 List<Pair<VariableDeclarator,Type>> fields = tokenIdentifiersCollector.fieldIdentifiers.get(token);
+                                HashMap<String, List<Pair<VariableDeclarator, Type>>> tempFieldIdentifiers = new HashMap<>();
+                                tempFieldIdentifiers.put(token, fields);
                                 for (Pair<VariableDeclarator,Type> field: fields) {
-                                    VariableDeclarator variableDeclarator = field.getValue0();
-                                    Type varType = field.getValue1();
-                                    ResolvedType resolvedType = varType.resolve();
-                                    resolvedTypes.add(resolvedType);
-                                    HashMap<String, List<Pair<VariableDeclarator,Type>>> tempFieldIdentifiers = new HashMap<>();
-                                    tempFieldIdentifiers.put(token, fields);
+                                    try {
+                                        VariableDeclarator variableDeclarator = field.getValue0();
+                                        Type varType = field.getValue1();
+                                        ResolvedType resolvedType = varType.resolve();
+                                        resolvedTypes.add(resolvedType);
+                                        Optional<Node> parentNode = variableDeclarator.getParentNode();
+                                        Optional<TypeDeclaration> declaringTypeDeclaration = Optional.empty();
 
-                                    Optional<Node> parentNode = variableDeclarator.getParentNode();
-                                    Optional<TypeDeclaration> declaringTypeDeclaration = Optional.empty();
-
-                                    while(parentNode.isPresent() && declaringTypeDeclaration.isEmpty()) {
-                                        if (parentNode.get() instanceof TypeDeclaration) {
-                                            declaringTypeDeclaration = Optional.of((TypeDeclaration) parentNode.get());
-                                            break;
+                                        while (parentNode.isPresent() && declaringTypeDeclaration.isEmpty()) {
+                                            if (parentNode.get() instanceof TypeDeclaration) {
+                                                declaringTypeDeclaration = Optional.of((TypeDeclaration) parentNode.get());
+                                                break;
+                                            }
+                                            parentNode = parentNode.get().getParentNode();
                                         }
-                                        parentNode = parentNode.get().getParentNode();
+
+                                        if (declaringTypeDeclaration.isPresent()) {
+                                            TypeDeclaration typeDeclaration = declaringTypeDeclaration.get();
+                                            String declaringTypeQualifiedName = typeDeclaration.getNameAsString();
+                                            if (typeDeclaration.getFullyQualifiedName().isPresent()) {
+                                                declaringTypeQualifiedName = (String) typeDeclaration.getFullyQualifiedName().get();
+                                            }
+                                            List<ResolvedReferenceType> ancestors = new ArrayList<>();
+                                            try {
+                                                ancestors = typeDeclaration.resolve().getAllAncestors();
+                                            } catch (Exception e) {
+                                                String message = "Unable to resolve test class in the form of type declaration: " + testPrefixClassPath;
+                                                logger.error(message);
+                                                clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
+                                            }
+                                            processDeclaringType(tokenReferences, declaringTypeQualifiedName, currentClassReferences, typeParameterReferences, resolvedType, ancestors);
+                                        }
+                                    }  catch (Exception e) {
+                                        String message = "Unable to process field " + token;
+                                        logger.error(message);
+                                        clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
                                     }
-
-                                    if (declaringTypeDeclaration.isPresent()) {
-                                        TypeDeclaration typeDeclaration = declaringTypeDeclaration.get();
-                                        String declaringTypeQualifiedName = typeDeclaration.getNameAsString();
-                                        if (typeDeclaration.getFullyQualifiedName().isPresent()) {
-                                            declaringTypeQualifiedName = (String) typeDeclaration.getFullyQualifiedName().get();
-                                        }
-                                        List<ResolvedReferenceType> ancestors = new ArrayList<>();
+                                    contextualInfoType = ContextualInfoType.FIELD_CALL;
+                                    updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, tempFieldIdentifiers);
+                                }
+                            } else {
+                                if (tokenIdentifiersCollector.parameterIdentifiers.containsKey(token)) {
+                                    String parameterKey = token;
+                                    List<Type> parameterTypes = tokenIdentifiersCollector.parameterIdentifiers.get(token);
+                                    for (Type type: parameterTypes) {
                                         try {
-                                            ancestors = typeDeclaration.resolve().getAllAncestors();
+                                            ResolvedType resolvedType = type.resolve();
+                                            while (resolvedType.isArray()) {
+                                                resolvedType = resolvedType.asArrayType().getComponentType();
+                                            }
+                                            if (resolvedType.isReferenceType()) {
+                                                String qualifiedName = resolvedType.asReferenceType().getQualifiedName();
+                                                parameterKey = qualifiedName + "." + parameterKey;
+                                            }
+                                            resolvedTypes.addAll(tokenReferences.parametersReferences.get(parameterKey));
                                         } catch (Exception e) {
-                                            String message = "Unable to resolve test class in the form of type declaration: " + testPrefixClassPath;
+                                            String message = "Unable to retrieve parameter reference from qualified name, for parameter " + token;
                                             logger.error(message);
                                             clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
                                         }
-                                        processDeclaringType(tokenReferences, declaringTypeQualifiedName, currentClassReferences, typeParameterReferences, resolvedType, ancestors);
                                     }
-                                    contextualInfoType = ContextualInfoType.FIELD_CALL;
-                                    updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences,tempFieldIdentifiers);
-                                }
-                            } else {
-                                if (tokenReferences.parametersReferences.containsKey(token)) {
-                                    resolvedTypes.addAll(tokenReferences.parametersReferences.get(token));
                                 } else {
                                     String message = "Unexpected parameter " + token + " not found in parameter reference hashmap.";
                                     logger.error(message);
