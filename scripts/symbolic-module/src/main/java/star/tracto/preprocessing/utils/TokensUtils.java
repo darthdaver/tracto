@@ -309,7 +309,7 @@ public class TokensUtils {
 
                         logger.info("Processing test class " + (testPrefixClass.getFullyQualifiedName().isPresent() ? testPrefixClass.getFullyQualifiedName().get() : testPrefixClass.getNameAsString()) + " - target assertion: " + targetAssertion);
                         // Commented if statement for debug
-                        //if (targetAssertion.contains("Delete access denied for user")) {
+                        if (targetAssertion.contains("a(INTENSITY_BOLD).fg(RED).a(\"foo\")")) {
                         try {
                             // Setup error map for the test class
                             clazzDatapointsErrors.putIfAbsent(testPrefix.getNameAsString(), new HashMap<>());
@@ -444,7 +444,7 @@ public class TokensUtils {
                             logger.error(e.getMessage());
                             clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(e.getMessage());
                         }
-                        //}
+                        }
                         break;
                     }
                 }
@@ -610,7 +610,7 @@ public class TokensUtils {
                 if (!fieldTypeReferences.containsKey(fieldKey)) {
                     fieldTypeReferences.put(fieldKey, new ArrayList<>());
                 }
-                boolean isAlreadyPresent = fieldTypeReferences.get(fieldKey).stream().anyMatch(t -> t.equals(fieldType));
+                boolean isAlreadyPresent = fieldTypeReferences.get(fieldKey).stream().anyMatch(t -> t.getValue0().equals(variable) && t.getValue1().equals(fieldType));
                 if (!isAlreadyPresent) {
                     fieldTypeReferences.get(fieldKey).add(new Pair<>(variable,fieldType));
                 }
@@ -1157,7 +1157,10 @@ public class TokensUtils {
                                                     if (!typeDeclarationPathIdentifiers.containsKey(key)) {
                                                         typeDeclarationPathIdentifiers.put(key, new ArrayList<>());
                                                     }
-                                                    typeDeclarationPathIdentifiers.get(key).add(path);
+                                                    boolean isAlreadyPresent = typeDeclarationPathIdentifiers.get(key).stream().anyMatch(p -> p.toString().equals(path.toString()));
+                                                    if (!isAlreadyPresent) {
+                                                        typeDeclarationPathIdentifiers.get(key).add(path);
+                                                    }
                                                 }
                                             }
                                         }
@@ -1167,7 +1170,10 @@ public class TokensUtils {
                                     if (!typeDeclarationPathIdentifiers.containsKey(key)) {
                                         typeDeclarationPathIdentifiers.put(key, new ArrayList<>());
                                     }
-                                    typeDeclarationPathIdentifiers.get(key).add(path);
+                                    boolean isAlreadyPresent = typeDeclarationPathIdentifiers.get(key).stream().anyMatch(p -> p.toString().equals(path.toString()));
+                                    if (!isAlreadyPresent) {
+                                        typeDeclarationPathIdentifiers.get(key).add(path);
+                                    }
                                 }
                             }
                         }
@@ -1229,7 +1235,12 @@ public class TokensUtils {
                                         lambdaReferences.put(token, new ArrayList<>());
                                     }
                                     List<ResolvedType> lambdaParametersTypes = tokenReferences.typeParametersReferences.get(streamTypeParameterKey);
-                                    lambdaReferences.get(token).addAll(lambdaParametersTypes);
+                                    for(ResolvedType lambdaParameterType : lambdaParametersTypes) {
+                                        boolean isAlreadyPresent = lambdaReferences.get(token).stream().anyMatch(p -> p.equals(lambdaParameterType));
+                                        if (!isAlreadyPresent) {
+                                            lambdaReferences.get(token).add(lambdaParameterType);
+                                        }
+                                    }
                                     tokenReferences.setLambdaReferences(lambdaReferences);
                                     resolvedTypes.addAll(lambdaParametersTypes);
                                     for (ResolvedType lambdaParameterType :lambdaParametersTypes) {
@@ -1243,7 +1254,11 @@ public class TokensUtils {
                                                 if (!currentClassReferences.containsKey(qualifiedName)) {
                                                     currentClassReferences.put(qualifiedName, new ArrayList<>());
                                                 }
-                                                currentClassReferences.get(qualifiedName).add(lambdaParameterTypePath.get());
+                                                final Path lambdaParameterTypePathToCompare = lambdaParameterTypePath.get();
+                                                boolean isAlreadyPresent = currentClassReferences.get(qualifiedName).stream().anyMatch(p -> p.toString().equals(lambdaParameterTypePathToCompare.toString()));
+                                                if (!isAlreadyPresent) {
+                                                    currentClassReferences.get(qualifiedName).add(lambdaParameterTypePath.get());
+                                                }
                                             } else {
                                                 logger.error("Declaring type path not found for while processing a lambda parameter (" + token + "): " + qualifiedName);
 
@@ -1307,7 +1322,10 @@ public class TokensUtils {
                                         if (!currentClassReferences.containsKey(fullyQualifiedName)) {
                                             currentClassReferences.put(fullyQualifiedName, new ArrayList<>());
                                         }
-                                        currentClassReferences.get(fullyQualifiedName).add(classPath);
+                                        boolean isAlreadyPresent = currentClassReferences.get(fullyQualifiedName).stream().anyMatch(p -> p.toString().equals(classPath.toString()));
+                                        if (!isAlreadyPresent) {
+                                            currentClassReferences.get(fullyQualifiedName).add(classPath);
+                                        }
                                     }
                                     // If the previous token is "new", we are likely dealing with a constructor call
                                     if (previousTokenType == AntlrToken.NEW) {
@@ -1392,7 +1410,11 @@ public class TokensUtils {
                                             if (!typeParameterReferences.containsKey(typeParameterKey)) {
                                                 typeParameterReferences.put(typeParameterKey, new ArrayList<>());
                                             }
-                                            typeParameterReferences.get(typeParameterKey).add(typeParameterValue);
+                                            final ResolvedType typeParameterValueToCompare = typeParameterValue;
+                                            boolean isAlreadyPresent = typeParameterReferences.get(typeParameterKey).stream().anyMatch(t -> t.toString().equals(typeParameterValueToCompare.toString()));
+                                            if (!isAlreadyPresent) {
+                                                typeParameterReferences.get(typeParameterKey).add(typeParameterValue);
+                                            }
                                         }
                                     }
                                 } catch (Exception e) {
@@ -1540,7 +1562,11 @@ public class TokensUtils {
                                     if (!returnClassReferences.containsKey(qualifiedName)) {
                                         returnClassReferences.put(qualifiedName, new ArrayList<>());
                                     }
-                                    returnClassReferences.get(qualifiedName).add(resolvedTypePath.get());
+                                    final Path resolvedTypePathToCompare = resolvedTypePath.get();
+                                    boolean isAlreadyPresent = returnClassReferences.get(qualifiedName).stream().anyMatch(p -> p.toString().equals(resolvedTypePathToCompare.toString()));
+                                    if (!isAlreadyPresent) {
+                                        returnClassReferences.get(qualifiedName).add(resolvedTypePath.get());
+                                    }
                                 } else {
                                     logger.error("Declaring type path not found for while processing a field match (" + token + " of type " + resolvedType.asReferenceType().getQualifiedName() + "): " + qualifiedName);
                                 }
@@ -1562,7 +1588,8 @@ public class TokensUtils {
                                     if (!typeParameterReferences.containsKey(typeParameterKey)) {
                                         typeParameterReferences.put(typeParameterKey, new ArrayList<>());
                                     }
-                                    boolean isAlreadyPresent = typeParameterReferences.get(typeParameterKey).contains(typeParameterValue);
+                                    final ResolvedType typeParameterValueToCompare = typeParameterValue;
+                                    boolean isAlreadyPresent = typeParameterReferences.get(typeParameterKey).stream().anyMatch(t -> t.equals(typeParameterValueToCompare));
                                     if (!isAlreadyPresent) {
                                         typeParameterReferences.get(typeParameterKey).add(typeParameterValue);
                                     }
@@ -1734,7 +1761,8 @@ public class TokensUtils {
             if (!currentClassReferences.containsKey(declaringTypeQualifiedName)) {
                 currentClassReferences.put(declaringTypeQualifiedName, new ArrayList<>());
             }
-            boolean isAlreadyPresent = currentClassReferences.get(declaringTypeQualifiedName).contains(declaringTypePath);
+            final Path declaringTypePathToCompare = declaringTypePath.get();
+            boolean isAlreadyPresent = currentClassReferences.get(declaringTypeQualifiedName).stream().anyMatch(p -> p.toString().equals(declaringTypePathToCompare.toString()));
             if (!isAlreadyPresent) {
                 currentClassReferences.get(declaringTypeQualifiedName).add(declaringTypePath.get());
             }
@@ -2114,7 +2142,7 @@ public class TokensUtils {
             if (!variableDeclaratorIdentifiers.containsKey(variableName)) {
                 variableDeclaratorIdentifiers.put(variableName, new ArrayList<>());
             }
-            boolean isAlreadyPresent = variableDeclaratorIdentifiers.get(variableName).stream().anyMatch(v -> v.equals(variableType));
+            boolean isAlreadyPresent = variableDeclaratorIdentifiers.get(variableName).stream().anyMatch(v -> v.getValue0().equals(variableDeclarator) && v.getValue1().equals(variableType));
             if (!isAlreadyPresent) {
                 variableDeclaratorIdentifiers.get(variableName).add(new Pair(variableDeclarator, variableType));
             }
