@@ -309,7 +309,7 @@ public class TokensUtils {
 
                         logger.info("Processing test class " + (testPrefixClass.getFullyQualifiedName().isPresent() ? testPrefixClass.getFullyQualifiedName().get() : testPrefixClass.getNameAsString()) + " - target assertion: " + targetAssertion);
                         // Commented if statement for debug
-                        if (targetAssertion.contains("a(INTENSITY_BOLD).fg(RED).a(\"foo\")")) {
+                        //if (targetAssertion.contains("a(INTENSITY_BOLD).fg(RED).a(\"foo\")")) {
                         try {
                             // Setup error map for the test class
                             clazzDatapointsErrors.putIfAbsent(testPrefix.getNameAsString(), new HashMap<>());
@@ -444,7 +444,7 @@ public class TokensUtils {
                             logger.error(e.getMessage());
                             clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(e.getMessage());
                         }
-                        }
+                        //}
                         break;
                     }
                 }
