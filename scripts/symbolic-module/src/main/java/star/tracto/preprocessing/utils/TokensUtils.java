@@ -309,7 +309,20 @@ public class TokensUtils {
 
                         logger.info("Processing test class " + (testPrefixClass.getFullyQualifiedName().isPresent() ? testPrefixClass.getFullyQualifiedName().get() : testPrefixClass.getNameAsString()) + " - target assertion: " + targetAssertion);
                         // Commented if statement for debug
-                        //if (targetAssertion.contains("a(INTENSITY_BOLD).fg(RED).a(\"foo\")")) {
+                        // List<String> tokens = !targetAssertion.equals(THROW_EXCEPTION_LABEL) ? Antlr4Utils.tokenizeSnippet(targetAssertion) : List.of(THROW_EXCEPTION_LABEL);
+                        // if (!tokens.get(0).equals(THROW_EXCEPTION_LABEL)) {
+                        //     // Remove spurious tokens and check that the first token is a valid JUnit assertion method
+                        //     try {
+                        //         tokens.removeIf(t -> t.equals(" "));
+                        //         JUnitAssertionType.fromString(tokens.get(0));
+                        //     } catch (IllegalArgumentException e) {
+                        //         String message = "Assertion do not start with JUnit api (do not implemented yet): " + targetAssertion + " - " + e.getMessage();
+                        //         logger.error(message);
+                        //         clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(message);
+                        //         continue;
+                        //     }
+                        // }
+                        // if (String.join("",tokens).contains("assertEquals(\"test\",Ansi.ansi().fg(32).a(\"t\").fgRgb(0).a(\"e\").bg(24).a(\"s\")")) {
                         try {
                             // Setup error map for the test class
                             clazzDatapointsErrors.putIfAbsent(testPrefix.getNameAsString(), new HashMap<>());
@@ -444,7 +457,7 @@ public class TokensUtils {
                             logger.error(e.getMessage());
                             clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(e.getMessage());
                         }
-                        //}
+                        // }
                         break;
                     }
                 }
@@ -1432,12 +1445,15 @@ public class TokensUtils {
                             for (MethodUsage methodUsage: methodUsages) {
                                 // Get the return type of the method usage
                                 ResolvedType resolvedType = methodUsage.getDeclaration().getReturnType();
-                                resolvedTypes.add(resolvedType);
-                                // Get the declaring type of the method usage
-                                ResolvedReferenceTypeDeclaration declaringType = methodUsage.getDeclaration().declaringType();
-                                String declaringTypeQualifiedName = declaringType.getQualifiedName();
-                                List<ResolvedReferenceType> ancestors = declaringType.asReferenceType().getAllAncestors();
-                                processDeclaringType(tokenReferences, declaringTypeQualifiedName, currentClassReferences, typeParameterReferences, resolvedType, ancestors);
+                                boolean isAlreadyPresent = resolvedTypes.stream().anyMatch(r -> r.equals(resolvedType));
+                                if (!isAlreadyPresent) {
+                                    resolvedTypes.add(resolvedType);
+                                    // Get the declaring type of the method usage
+                                    ResolvedReferenceTypeDeclaration declaringType = methodUsage.getDeclaration().declaringType();
+                                    String declaringTypeQualifiedName = declaringType.getQualifiedName();
+                                    List<ResolvedReferenceType> ancestors = declaringType.asReferenceType().getAllAncestors();
+                                    processDeclaringType(tokenReferences, declaringTypeQualifiedName, currentClassReferences, typeParameterReferences, resolvedType, ancestors);
+                                }
                             }
                             // Collect the references to the matched methods
                             updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
