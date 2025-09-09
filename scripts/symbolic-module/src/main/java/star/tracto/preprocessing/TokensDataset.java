@@ -35,8 +35,7 @@ public class TokensDataset {
         for (Path libraryPath : librariesPaths) {
             classpath += ":" + libraryPath.toString();
         }
-        // Define list of oracles datapoints
-        List<TestClazzDatapoints<PartialOracleDatapoint>> testClassesPartialOracleDatapoints = new ArrayList<>();
+
         // Individuate the input oracles dataset path referencing the project identifier
         Path inputDatasetPath = outputPath.resolve("raw-oracles-dataset-" + mode).resolve(projectIdentifier);
         // Generate directories to output path if they do not exist
@@ -46,20 +45,23 @@ public class TokensDataset {
         FilesUtils.createDirectories(outputStatisticsPath);
         // Setup the repository root path for JavaParser
         JavaParserUtils.setRepoJavaParser(repoRootPath, classpath);
-        // Convert statistics to JSON
+        // ObjectMapper for JSON processing
         ObjectMapper objectMapper = new ObjectMapper();
         // Define the filename pattern to match: oracles-datapoints-*.json
         Pattern filePattern = Pattern.compile(".*oracles-datapoints-.*\\.json");
+        // Set up Jackson type for reading input JSON
         ObjectMapper mapper = new ObjectMapper();
         JavaType innerType = mapper.getTypeFactory().constructParametricType(TestClazzDatapoints.class, OracleDatapoint.class);
         JavaType listType = mapper.getTypeFactory().constructCollectionType(List.class, innerType);
-        HashMap<String,HashMap<String, HashMap<String, List<String>>>> errorsStatistics = new HashMap<>();
+
         // Walk through the directory and process files recursively
         Files.walk(inputDatasetPath)
                 .filter(Files::isRegularFile) // Only process files, not directories
                 .filter(path -> filePattern.matcher(path.getFileName().toString()).matches()) // Match pattern
                 .forEach(filePath -> {
-                    List<List<PartialOracleDatapoint>> testClazzTokensDatapoints = new ArrayList<>();
+                    // Initialize per-file data containers to avoid memory buildup
+                    List<TestClazzDatapoints<PartialOracleDatapoint>> testClassesPartialOracleDatapoints = new ArrayList<>();
+                    HashMap<String, HashMap<String, HashMap<String, List<String>>>> errorsStatistics = new HashMap<>();
                     List<TestClazzDatapoints<OracleDatapoint>> testClazzOraclesDatapoints = FilesUtils.readJSONList(filePath, listType);
                     for (TestClazzDatapoints testClazzDatapoint : testClazzOraclesDatapoints) {
                         try {
@@ -68,24 +70,20 @@ public class TokensDataset {
                             errorsStatistics.put(testClazzDatapoints.testClass().filePath(), result.getValue1());
                             testClassesPartialOracleDatapoints.add(testClazzDatapoints);
                         } catch (IllegalStateException e) {
-                            logger.error(e.getMessage().toString());
+                            logger.error(e.getMessage());
                         }
                     }
 
-                    // Save it in a json file
                     logger.info("Datapoints processed: {}", testClassesPartialOracleDatapoints.size());
 
-                    // Convert individual data points to JSON to estimate their size
-                    String dataPointJSON = null;
+                    Path datapointsOutFile = outputDatasetPath.resolve(filePath.getFileName().toString());
+                    Path statsOutFile = outputStatisticsPath.resolve(filePath.getFileName().toString());
                     try {
-                        dataPointJSON = objectMapper.writeValueAsString(testClassesPartialOracleDatapoints);
-                        String errorsStatisticsJSON = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(errorsStatistics);
-                        FilesUtils.writeJSONFile(outputDatasetPath.resolve(filePath.getFileName().toString()), dataPointJSON);
-                        FilesUtils.writeJSONFile(outputStatisticsPath.resolve(filePath.getFileName().toString()), errorsStatisticsJSON);
-                    } catch (JsonProcessingException e) {
-                        throw new RuntimeException(e);
+                        objectMapper.writeValue(datapointsOutFile.toFile(), testClassesPartialOracleDatapoints);
+                        objectMapper.writerWithDefaultPrettyPrinter().writeValue(statsOutFile.toFile(), errorsStatistics);
+                    } catch (IOException e) {
+                        throw new RuntimeException("Error writing JSON to file", e);
                     }
                 });
-
     }
 }

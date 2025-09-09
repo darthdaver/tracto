@@ -309,20 +309,7 @@ public class TokensUtils {
 
                         logger.info("Processing test class " + (testPrefixClass.getFullyQualifiedName().isPresent() ? testPrefixClass.getFullyQualifiedName().get() : testPrefixClass.getNameAsString()) + " - target assertion: " + targetAssertion);
                         // Commented if statement for debug
-                        // List<String> tokens = !targetAssertion.equals(THROW_EXCEPTION_LABEL) ? Antlr4Utils.tokenizeSnippet(targetAssertion) : List.of(THROW_EXCEPTION_LABEL);
-                        // if (!tokens.get(0).equals(THROW_EXCEPTION_LABEL)) {
-                        //     // Remove spurious tokens and check that the first token is a valid JUnit assertion method
-                        //     try {
-                        //         tokens.removeIf(t -> t.equals(" "));
-                        //         JUnitAssertionType.fromString(tokens.get(0));
-                        //     } catch (IllegalArgumentException e) {
-                        //         String message = "Assertion do not start with JUnit api (do not implemented yet): " + targetAssertion + " - " + e.getMessage();
-                        //         logger.error(message);
-                        //         clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(message);
-                        //         continue;
-                        //     }
-                        // }
-                        // if (String.join("",tokens).contains("assertEquals(\"test\",Ansi.ansi().fg(32).a(\"t\").fgRgb(0).a(\"e\").bg(24).a(\"s\")")) {
+                        // if (targetAssertion.contains("assertEquals(\"\", els.get(5).absUrl(\"href\"))")) {
                         try {
                             // Setup error map for the test class
                             clazzDatapointsErrors.putIfAbsent(testPrefix.getNameAsString(), new HashMap<>());
@@ -457,7 +444,7 @@ public class TokensUtils {
                             logger.error(e.getMessage());
                             clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(e.getMessage());
                         }
-                        // }
+                        //}
                         break;
                     }
                 }
