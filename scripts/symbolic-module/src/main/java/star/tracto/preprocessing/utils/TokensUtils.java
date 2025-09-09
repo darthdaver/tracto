@@ -426,7 +426,7 @@ public class TokensUtils {
                                     tokenStepBuilder.setTarget(Antlr4Utils.getAntlrToken(token) + ":" + token);
                                 }
                                 //tokenStepBuilder.setContextualInfos(tokenIdentifiersStack.stream().map(t -> generateTokenStepContextualInfo(t.getValue1())).collect(Collectors.toList()));
-                                tokenStepBuilder.setContextualInfos(List.of(generateTokenStepContextualInfo(tokenIdentifiersStack.get(tokenIdentifiersStack.size()-1).getValue1())));
+                                tokenStepBuilder.setContextualInfos(List.of(generateTokenStepContextualInfo(tokenIdentifiersStack.get(tokenIdentifiersStack.size()-1).getValue1(), true)));
                                 tokenSteps.add(tokenStepBuilder.build());
                                 // Update the partial snippet
                                 partialSnippet += AntlrToken.isAtomicKeywordToken(Antlr4Utils.getAntlrToken(token)) ? token + " " : token;
@@ -740,7 +740,7 @@ public class TokensUtils {
         }
     }
 
-    public static TokenStep.ContextualInfo generateTokenStepContextualInfo(TokenReferencesCollector tokenReferences) {
+    public static TokenStep.ContextualInfo generateTokenStepContextualInfo(TokenReferencesCollector tokenReferences, boolean light) {
         List<Clazz> currentClasses = new ArrayList<>();
         List<Clazz> returnClasses = new ArrayList<>();
         List<Callable> methods = new ArrayList<>();
@@ -748,21 +748,23 @@ public class TokensUtils {
         List<TokenStep.FieldContextualInfo> fields = new ArrayList<>();
         List<String> enumConstants = new ArrayList<>();
 
-        for (Map.Entry<String,List<Path>> entry: tokenReferences.currentClasses.entrySet()) {
-            String classNameKey = entry.getKey();
-            int lastDotIndex = classNameKey.lastIndexOf('.');
-            int lastDiamondIndex = classNameKey.lastIndexOf('<');
-            String className = lastDiamondIndex == -1 ? classNameKey.substring(lastDotIndex + 1) : classNameKey.substring(lastDotIndex + 1, lastDiamondIndex);
-            List<Path> classPaths = entry.getValue();
-            for (final Path classPath: classPaths) {
-                try {
-                    CompilationUnit cu = JavaParserUtils.getCompilationUnit(classPath);
-                    List<TypeDeclaration> matchedTypeDeclarations = JavaParserUtils.getTypeDeclarationsFromCompilationUnitAndName(cu, className);
-                    for (TypeDeclaration typeDeclaration: matchedTypeDeclarations) {
-                        currentClasses.add(TestUtils.processTypeDeclarationForContextualInfo(typeDeclaration));
+        if (!light) {
+            for (Map.Entry<String, List<Path>> entry : tokenReferences.currentClasses.entrySet()) {
+                String classNameKey = entry.getKey();
+                int lastDotIndex = classNameKey.lastIndexOf('.');
+                int lastDiamondIndex = classNameKey.lastIndexOf('<');
+                String className = lastDiamondIndex == -1 ? classNameKey.substring(lastDotIndex + 1) : classNameKey.substring(lastDotIndex + 1, lastDiamondIndex);
+                List<Path> classPaths = entry.getValue();
+                for (final Path classPath : classPaths) {
+                    try {
+                        CompilationUnit cu = JavaParserUtils.getCompilationUnit(classPath);
+                        List<TypeDeclaration> matchedTypeDeclarations = JavaParserUtils.getTypeDeclarationsFromCompilationUnitAndName(cu, className);
+                        for (TypeDeclaration typeDeclaration : matchedTypeDeclarations) {
+                            currentClasses.add(TestUtils.processTypeDeclarationForContextualInfo(typeDeclaration));
+                        }
+                    } catch (IOException e) {
+                        logger.error("Error reading compilation unit from file: " + classPath);
                     }
-                } catch (IOException e) {
-                    logger.error("Error reading compilation unit from file: " + classPath);
                 }
             }
         }
