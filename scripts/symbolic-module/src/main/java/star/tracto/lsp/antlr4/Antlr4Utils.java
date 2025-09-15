@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 public class Antlr4Utils {
@@ -41,15 +42,13 @@ public class Antlr4Utils {
         }
     }
 
-    public static List<String> parseSnippet(JUnitAssertionType assertionType, String snippet) {
+    public static List<String> parseSnippet(JUnitAssertionType assertionType, String snippet, long timeoutSecs) throws Exception {
         // Initialize lexer and parser
         CharStream input = CharStreams.fromString(snippet);
         JavaLexer lexer = new JavaLexer(input);
         CommonTokenStream tokenStream = new CommonTokenStream(lexer);
         JavaParser parser = new JavaParser(tokenStream);
-
         Optional<ParserRuleContext> ctx = Optional.empty();
-
         switch (assertionType) {
             case ASSERT_ALL:
                 ctx = Optional.of(parser.assertAllMethodCall());
@@ -101,17 +100,26 @@ public class Antlr4Utils {
                 break;
         }
         if (ctx.isPresent()) {
-            // Pass null for preferredRules and ignoredTokens
+            final ParserRuleContext ctxValue = ctx.get();
             CodeCompletionCore core = new CodeCompletionCore(parser, null, null);
-            // Position: index of last token
             int caretTokenIndex = tokenStream.size() - 1;
-            // Collect candidates
-            CodeCompletionCore.CandidatesCollection candidates = core.collectCandidates(caretTokenIndex, ctx.get());
-            // Return the list of token names
-            return candidates.tokens.keySet().stream()
-                    .map(tokenType -> parser.getVocabulary().getDisplayName(tokenType).replace("'", ""))
-                    .flatMap(t -> AntlrTokenMapper.getValuesByName(t).stream())
-                    .collect(Collectors.toCollection(ArrayList::new));
+            // Use ExecutorService to enforce timeout
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            Future<CodeCompletionCore.CandidatesCollection> future = executor.submit(() -> core.collectCandidates(caretTokenIndex, ctxValue));
+            try {
+                // Wait for the result with a timeout
+                CodeCompletionCore.CandidatesCollection candidates = future.get(timeoutSecs, TimeUnit.SECONDS);
+                // Process and return candidates
+                return candidates.tokens.keySet().stream()
+                        .map(tokenType -> parser.getVocabulary().getDisplayName(tokenType).replace("'", ""))
+                        .flatMap(t -> AntlrTokenMapper.getValuesByName(t).stream())
+                        .collect(Collectors.toCollection(ArrayList::new));
+            } catch (TimeoutException e) {
+                future.cancel(true); // Cancel the task
+                throw new TimeoutException("Candidate collection timed out");
+            } finally {
+                executor.shutdownNow(); // Clean up the executor
+            }
         }
         throw new IllegalArgumentException("Unsupported assertion type: " + assertionType);
     }

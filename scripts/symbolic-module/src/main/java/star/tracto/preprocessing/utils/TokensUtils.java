@@ -2,22 +2,16 @@ package star.tracto.preprocessing.utils;
 
 import com.github.javaparser.ast.*;
 import com.github.javaparser.ast.body.*;
-import com.github.javaparser.ast.stmt.Statement;
-import com.github.javaparser.ast.type.ReferenceType;
 import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
-import com.github.javaparser.ast.type.TypeParameter;
 import com.github.javaparser.resolution.MethodUsage;
 import com.github.javaparser.resolution.declarations.ResolvedConstructorDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedMethodDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedTypeParameterDeclaration;
-import com.github.javaparser.resolution.model.typesystem.ReferenceTypeImpl;
-import com.github.javaparser.resolution.types.ResolvedArrayType;
 import com.github.javaparser.resolution.types.ResolvedReferenceType;
 import com.github.javaparser.resolution.types.ResolvedType;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserMethodDeclaration;
-import org.eclipse.xtend.lib.macro.declaration.ParameterDeclaration;
 import org.javatuples.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -291,7 +285,7 @@ public class TokensUtils {
             // Define list of token steps to return
             List<PartialOracleDatapoint> partialOraclesDatapoints = new ArrayList<>();
             // Commented if statement for debug
-            //if (testPrefixClass.getNameAsString().contains("MethodSorterTest")) {
+            //if (testPrefixClass.getNameAsString().contains("MarcFactoryTestSTARSplitTestPrefix")) {
             // Iterate over the oracle datapoints and process each test prefix and associated target assertion
             for (OracleDatapoint datapoint : datapoints) {
                 // Get the test prefix from the datapoint
@@ -309,7 +303,7 @@ public class TokensUtils {
 
                         logger.info("Processing test class " + (testPrefixClass.getFullyQualifiedName().isPresent() ? testPrefixClass.getFullyQualifiedName().get() : testPrefixClass.getNameAsString()) + " - target assertion: " + targetAssertion);
                         // Commented if statement for debug
-                        // if (targetAssertion.contains("assertEquals(\"\", els.get(5).absUrl(\"href\"))")) {
+                        //if (targetAssertion.contains("assertEquals(\"type, Leader, Leader_recordLength, Leader_recordStatus, Leader_typeOfRecord, \" + \"Leader_bibliographicLevel, Leader_typeOfControl, Leader_characterCodingScheme, \" + \"Leader_indicatorCount, Leader_subfieldCodeCount, Leader_baseAddressOfData, \" + \"Leader_encodingLevel, Leader_descriptiveCatalogingForm, Leader_multipartResourceRecordLevel, \" + \"Leader_lengthOfTheLengthOfFieldPortion, Leader_lengthOfTheStartingCharacterPositionPortion, \" + \"Leader_lengthOfTheImplementationDefinedPortion, Leader_undefined, ControlNumber, ControlNumberIdentifier, \" + \"LatestTransactionTime, PhysicalDescription, PhysicalDescription_categoryOfMaterial, \" + \"PhysicalDescription_specificMaterialDesignation, GeneralInformation, \" + \"GeneralInformation_dateEnteredOnFile, GeneralInformation_typeOfDateOrPublicationStatus, \" + \"GeneralInformation_date1, GeneralInformation_date2, \" + \"GeneralInformation_placeOfPublicationProductionOrExecution, GeneralInformation_language, \" + \"GeneralInformation_modifiedRecord, GeneralInformation_catalogingSource, \" + \"GeneralInformation_frequency, GeneralInformation_regularity, \" + \"GeneralInformation_typeOfContinuingResource, GeneralInformation_formOfOriginalItem, \" + \"GeneralInformation_formOfItem, GeneralInformation_natureOfEntireWork, \" + \"GeneralInformation_natureOfContents, GeneralInformation_governmentPublication, \" + \"GeneralInformation_conferencePublication, \" + \"GeneralInformation_originalAlphabetOrScriptOfTitle, GeneralInformation_entryConvention, \" + \"IdIntifiedByLocal_source, IdIntifiedByLocal, IdIntifiedByLocal_agency, \" + \"Issn_levelOfInternationalInterest, Issn, \" + \"SystemControlNumber_organizationCode, \" + \"SystemControlNumber, SystemControlNumber_recordNumber, SystemControlNumber_organization, \" + \"AdminMetadata_languageOfCataloging, \" + \"AdminMetadata_descriptionConventions, AdminMetadata_transcribingAgency, AdminMetadata_catalogingAgency, \" + \"Language_translationIndication, Language, Language_sourceOfCode, Place_country, ClassificationDdc_full, \" + \"ClassificationDdc_editionType, ClassificationDdc_classificationSource, ClassificationDdc, \" + \"Classification_classificationPortion, Classification_classificationPortion_zdbs, \" + \"Classification_source, Classification_full, Title_subtitle, \" + \"Title_responsibilityStatement, Title_mainTitle, Title_titleAddedEntry, \" + \"Title_nonfilingCharacters, Title_partName, ParallelTitle_mainTitle, ParallelTitle_type, \" + \"ParallelTitle_displayText, ParallelTitle_noteAndAddedEntry, \" + \"Publication_sequenceOfPublishingStatements, Publication_agent, Publication_place, \" + \"DatesOfPublication, DatesOfPublication_format, NumberingPeculiarities, \" + \"BemerkungenZurTitelaufnahme, \" + \"RSWKKette_nummerDesKettengliedes, RSWKKette_0, RSWKKette_a, \" + \"RSWKKette_nummerDerRSWKKette, RSWKKette_D, RSWKKette_5, AddedCorporateName, AddedCorporateName_full, \" + \"AddedCorporateName_authorityRecordControlNumber, \" + \"AddedCorporateName_authorityRecordControlNumber_recordNumber, \" + \"AddedCorporateName_authorityRecordControlNumber_organization, \" + \"AddedCorporateName_authorityRecordControlNumber_organizationCode, \" + \"AddedCorporateName_entryType, AddedCorporateName_nameType, PartOf_relation, PartOf_displayConstant, \" + \"PartOf_recordControlNumber, PartOf_noteController, PartOf_recordControlNumber_recordNumber, \" + \"PartOf_recordControlNumber_organization, PartOf_recordControlNumber_organizationCode, PartOf, \" + \"PrecededBy, PrecededBy_relation, PrecededBy_recordControlNumber_organization, \" + \"PrecededBy_recordControlNumber_recordNumber, PrecededBy_typeOfRelationship, \" + \"PrecededBy_recordControlNumber, PrecededBy_recordControlNumber_organizationCode, \" + \"PrecededBy_noteController, Bestandsinformationen, Bestandsinformationen_9, \" + \"Bestandsinformationen_d, \" + \"Bestandsinformationen_artDerRessource, Bestandsinformationen_b, Bestandsinformationen_c, \" + \"Bestandsinformationen_h, Bestandsinformationen_g\", StringUtils.join(keys, \", \"))")) {
                         try {
                             // Setup error map for the test class
                             clazzDatapointsErrors.putIfAbsent(testPrefix.getNameAsString(), new HashMap<>());
@@ -365,7 +359,7 @@ public class TokensUtils {
                                 List<String> adjustedNextConcreteTokens = new ArrayList<>();
                                 List<String> adjustedNextGenericTokens = new ArrayList<>();
                                 // Collect the list of possible raw next tokens using ANTLR4 (they need to be processed afterward)
-                                List<String> nextANTLRTokens = Antlr4Utils.parseSnippet(JUnitAssertionType.fromString(tokens.get(0)), partialSnippet);
+                                List<String> nextANTLRTokens = Antlr4Utils.parseSnippet(JUnitAssertionType.fromString(tokens.get(0)), partialSnippet, 600);
                                 // If ANTLR4 returns an empty list of candidates and the token is not a semicolon
                                 // (terminal symbol in Java statements), raise an exception because the expression
                                 // do not follow the Java syntax imposed by the grammar
