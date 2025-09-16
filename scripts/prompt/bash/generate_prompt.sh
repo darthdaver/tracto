@@ -25,10 +25,15 @@ fi
 
 for config_path in "${PROMPT_DIR}/resources/config"/*/; do
   config_num=$(basename "${config_path}")
-  echo "Generating prompt with configuration ${config_num}"
+  # Define a log file at the top of the script
+  log_file="${OUTPUT_DIR}/logs/prompt_${dataset_type}_config_${config_num}.log"
+  mkdir -p "$(dirname "$log_file")"
+  echo "================================================================" >> "$log_file"
+  echo "Generating prompt for ${dataset_type} dataset with configuration ${config_num}" >> "$log_file"
+  echo "================================================================" >> "$log_file"
   # Generate LLM oracles input
   "${PY_ENV}" "${PROMPT_DIR}/prompt.py" \
       --input "${OUTPUT_DATASET_DIR}" \
       --output "${OUTPUT_DIR}/${config_num}" \
-      --config "${PROMPT_DIR}/resources/config/${config_num}/ewash_config.json"
+      --config "${PROMPT_DIR}/resources/config/${config_num}/ewash_config.json" >> "$log_file"
 done
