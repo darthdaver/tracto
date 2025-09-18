@@ -78,138 +78,146 @@ if __name__ == '__main__':
     datapoints_counter = 0
     # Process each JSON file in the original json dataset
     for filename in raw_dataset_files:
-        logger.log(f'Processing file {filename}', logging.INFO)
-        json_data_list = []
-        file_path = os.path.join(input_path, filename)
-        # Read the JSON file and load the data
-        with open(file_path, 'r') as json_file:
-            test_classes_datapoints = json.load(json_file)
-        output_prompt_path = os.path.join(output_path, 'prompt', os.path.basename(filename).replace(".json", ".csv"))
-        output_stats_path = os.path.join(output_path, 'stats', os.path.basename(filename).replace(".json", "_stats.json"))
-        output_info_path = os.path.join(output_path, 'info', os.path.basename(filename).replace(".json", "_info.json"))
-        # Create the output prompt directory if it does not exist
-        if not os.path.exists(os.path.dirname(output_prompt_path)):
-            os.makedirs(os.path.dirname(output_prompt_path))
-        # Create the output stats directory if it does not exist
-        if not os.path.exists(os.path.dirname(output_stats_path)):
-            os.makedirs(os.path.dirname(output_stats_path))
-        # Create the output info directory if it does not exist
-        if not os.path.exists(os.path.dirname(output_info_path)):
-            os.makedirs(os.path.dirname(output_info_path))
-        # Initialize statistics
-        stats = {'stats': {}, 'errors': {}}
-        # Open the CSV file for writing the dataset
-        with open(output_prompt_path, 'w', newline='') as csv_file:
-            writer = csv.writer(csv_file)
-            # Write the header
-            writer.writerow(["id", "src", "tgt"])
-            # Process each datapoint in the JSON list
-            for tcs_d in test_classes_datapoints:
-                # Initialize the counter of the tokens in the input to the model
-                tokens_counter = 0
-                # Get the information about the test class and the focal class
-                tc = tcs_d['testClass']
-                fc = tcs_d['focalClass']
-                # Get the JUnit version used in the test class to generate the target oracle
-                ju_v = tcs_d['junitVersion']
-                # Normalize sections to conform to the expected format
-                if tc is None or fc is None:
-                    logger.log(f"Test class or focal class is None.", logging.ERROR)
-                    stats_error(stats, tc if not tc is None else 'null', "Test class or focal class is None")
-                    continue
-                tc = EWash.normalize_section(tc)
-                fc = EWash.normalize_section(fc)
-                # Iterate over the datapoints in the test class and create the corresponding input for the model
-                for i_d,d in enumerate(tcs_d['datapoints']):
-                    datapoints_counter += 1
-                    test_prefix_signature = d['testPrefix']['signature']
-                    # Get the test prefix of the datapoint and the target oracle to generate
-                    tp = EWash.normalize_section(d['testPrefix'])
-                    datapoint_id = f"{tc['identifier']}-{tp['identifier']}-{datapoints_counter}"
-                    oracle = d['target']
-                    intros = copy.deepcopy(intros_template)
-                    logger.log(f"Processing datapoint {tp['signature']}, oracle: {oracle}", logging.INFO)
+        try:
+            logger.log(f'Processing file {filename}', logging.INFO)
+            json_data_list = []
+            file_path = os.path.join(input_path, filename)
+            # Read the JSON file and load the data
+            with open(file_path, 'r') as json_file:
+                test_classes_datapoints = json.load(json_file)
+            output_prompt_path = os.path.join(output_path, 'prompt', os.path.basename(filename).replace(".json", ".csv"))
+            output_stats_path = os.path.join(output_path, 'stats', os.path.basename(filename).replace(".json", "_stats.json"))
+            output_info_path = os.path.join(output_path, 'info', os.path.basename(filename).replace(".json", "_info.json"))
+            # Create the output prompt directory if it does not exist
+            if not os.path.exists(os.path.dirname(output_prompt_path)):
+                os.makedirs(os.path.dirname(output_prompt_path))
+            # Create the output stats directory if it does not exist
+            if not os.path.exists(os.path.dirname(output_stats_path)):
+                os.makedirs(os.path.dirname(output_stats_path))
+            # Create the output info directory if it does not exist
+            if not os.path.exists(os.path.dirname(output_info_path)):
+                os.makedirs(os.path.dirname(output_info_path))
+            # Initialize statistics
+            stats = {'stats': {}, 'errors': {}}
+            # Open the CSV file for writing the dataset
+            with open(output_prompt_path, 'w', newline='') as csv_file:
+                writer = csv.writer(csv_file)
+                # Write the header
+                writer.writerow(["id", "src", "tgt"])
+                # Process each datapoint in the JSON list
+                for tcs_d in test_classes_datapoints:
+                    # Initialize the counter of the tokens in the input to the model
+                    tokens_counter = 0
+                    # Get the information about the test class and the focal class
+                    tc = tcs_d['testClass']
+                    fc = tcs_d['focalClass']
+                    # Get the JUnit version used in the test class to generate the target oracle
+                    ju_v = tcs_d['junitVersion']
+                    # Normalize sections to conform to the expected format
+                    if tc is None or fc is None:
+                        logger.log(f"Test class or focal class is None.", logging.ERROR)
+                        stats_error(stats, tc if not tc is None else 'null', "Test class or focal class is None")
+                        continue
+                    tc = EWash.normalize_section(tc)
+                    fc = EWash.normalize_section(fc)
+                    # Iterate over the datapoints in the test class and create the corresponding input for the model
+                    for i_d,d in enumerate(tcs_d['datapoints']):
+                        datapoints_counter += 1
+                        test_prefix_signature = d['testPrefix']['signature']
+                        # Get the test prefix of the datapoint and the target oracle to generate
+                        tp = EWash.normalize_section(d['testPrefix'])
+                        datapoint_id = f"{tc['identifier']}-{tp['identifier']}-{datapoints_counter}"
+                        oracle = d['target']
+                        intros = copy.deepcopy(intros_template)
+                        logger.log(f"Processing datapoint {tp['signature']}, oracle: {oracle}", logging.INFO)
 
-                    if ewash_config['type'] == "oracles":
-                        # Get target (the whole oracle)
-                        tgt = oracle
-                        try:
-                            if i_d == 0:
-                                # Initialize the E-WASH dictionary
-                                ewash = EWash(tp, tc, fc, ju_v, intros, ewash_config)
-                                # Generate the input string for the model using the E-WASH approach
-                                src, exceeded, num_tokens = ewash.run(['test_prefix', 'test_class', 'focal_class'])
-                            else:
-                                ewash.update(intros, tp, ju_v, update_section=True)
-                                src, exceeded, num_tokens = ewash.run(['test_prefix'])
-                            # Write the input and the target oracle to the CSV file
-                            writer.writerow([datapoint_id, src, oracle])
-                            json_data_list.append({
-                                "id": datapoint_id,
-                                "src": src,
-                                "tgt": oracle,
-                                "test_class_path": tcs_d['testClass']['filePath'],
-                                "signature": test_prefix_signature,
-                                "tp_body": tp['body'],
-                                "exceeded": exceeded,
-                                "num_tokens": num_tokens
-                            })
-                            # Update stats
-                            update_stats(stats, tc['identifier'], tp['signature'], tgt, exceeded, num_tokens)
-                        except ValueError as e:
-                            # Update stats
-                            update_stats(stats, tc['identifier'], tp['signature'], tgt, True, -1)
-                    elif ewash_config['type'] == "tokens":
-                        for i_s, s in enumerate(d['tokenSteps']):
-                            if "target" in s:
-                                # Get partial oracle already generated
-                                partial_oracle = s['partialSnippet']
-                                # Get target (next token)
-                                tgt = s['target']
-                                logger.log(f"Processing step. Partial oracle: {partial_oracle}, next token: {tgt}", logging.INFO)
-                                print(f"Processing step. Partial oracle: {partial_oracle}, next token: {tgt}")
-                                tokens = EWash.normalize_section(s)
-                                try:
-                                    if i_d == 0 and i_s == 0:
-                                        # Initialize the E-WASH dictionary
-                                        ewash = EWash(tp, tc, fc, ju_v, intros, ewash_config, partial_oracle, tokens)
-                                        # Generate the input string for the model using the E-WASH approach
-                                        src, exceeded, num_tokens = ewash.run(
-                                            ['test_prefix', 'test_class', 'focal_class'])
-                                    else:
-                                        try:
-                                            if i_s == 0:
-                                                ewash.update(intros, tp, ju_v, partial_oracle, tokens, True)
-                                                src, exceeded, num_tokens = ewash.run(['test_prefix'], True)
-                                            else:
-                                                ewash.update(intros, tp, ju_v, partial_oracle, tokens)
-                                                src, exceeded, num_tokens = ewash.run([], True)
-                                        except ValueError as e:
-                                            logger.log(
-                                                f"Exceeded input limit when updating the input string with the next token: {tgt}. It is necessary to reinitialize the E-WASH dictionary.",
-                                                logging.ERROR)
-                                            # Re-initialize the E-WASH dictionary
-                                            intros = copy.deepcopy(intros_template)
-                                            ewash = EWash(tp, tc, fc, ju_v, intros, ewash_config, partial_oracle,
-                                                          tokens)
+                        if ewash_config['type'] == "oracles":
+                            # Get target (the whole oracle)
+                            tgt = oracle
+                            try:
+                                if i_d == 0:
+                                    # Initialize the E-WASH dictionary
+                                    ewash = EWash(tp, tc, fc, ju_v, intros, ewash_config)
+                                    # Generate the input string for the model using the E-WASH approach
+                                    src, exceeded, num_tokens = ewash.run(['test_prefix', 'test_class', 'focal_class'])
+                                else:
+                                    ewash.update(intros, tp, ju_v, update_section=True)
+                                    src, exceeded, num_tokens = ewash.run(['test_prefix'])
+                                # Write the input and the target oracle to the CSV file
+                                writer.writerow([datapoint_id, src, oracle])
+                                json_data_list.append({
+                                    "id": datapoint_id,
+                                    "src": src,
+                                    "tgt": oracle,
+                                    "test_class_path": tcs_d['testClass']['filePath'],
+                                    "signature": test_prefix_signature,
+                                    "tp_body": tp['body'],
+                                    "exceeded": exceeded,
+                                    "num_tokens": num_tokens
+                                })
+                                # Update stats
+                                update_stats(stats, tc['identifier'], tp['signature'], tgt, exceeded, num_tokens)
+                            except ValueError as e:
+                                # Update stats
+                                update_stats(stats, tc['identifier'], tp['signature'], tgt, True, -1)
+                        elif ewash_config['type'] == "tokens":
+                            for i_s, s in enumerate(d['tokenSteps']):
+                                if "target" in s:
+                                    # Get partial oracle already generated
+                                    partial_oracle = s['partialSnippet']
+                                    # Get target (next token)
+                                    tgt = s['target']
+                                    logger.log(f"Processing step. Partial oracle: {partial_oracle}, next token: {tgt}", logging.INFO)
+                                    print(f"Processing step. Partial oracle: {partial_oracle}, next token: {tgt}")
+                                    tokens = EWash.normalize_section(s)
+                                    try:
+                                        if i_d == 0 and i_s == 0:
+                                            # Initialize the E-WASH dictionary
+                                            ewash = EWash(tp, tc, fc, ju_v, intros, ewash_config, partial_oracle, tokens)
                                             # Generate the input string for the model using the E-WASH approach
-                                            src, exceeded, num_tokens = ewash.run(['test_prefix', 'test_class', 'focal_class'])
-                                    writer.writerow([datapoint_id, src, tgt])
-                                    json_data_list.append({
-                                        "id": datapoint_id,
-                                        "src": src,
-                                        "tgt": tgt,
-                                        "test_class_path": tcs_d['testClass']['filePath'],
-                                        "signature": test_prefix_signature,
-                                        "tp_body": tp['body'],
-                                        "exceeded": exceeded,
-                                        "num_tokens": num_tokens
-                                    })
-                                    # Update stats
-                                    update_stats(stats, tc['identifier'], tp['signature'], tgt, exceeded, num_tokens)
-                                except ValueError as e:
-                                    # Update stats
-                                    update_stats(stats, tc['identifier'], tp['signature'], tgt, True, -1)
+                                            src, exceeded, num_tokens = ewash.run(
+                                                ['test_prefix', 'test_class', 'focal_class'])
+                                        else:
+                                            try:
+                                                if i_s == 0:
+                                                    ewash.update(intros, tp, ju_v, partial_oracle, tokens, True)
+                                                    src, exceeded, num_tokens = ewash.run(['test_prefix'], True)
+                                                else:
+                                                    ewash.update(intros, tp, ju_v, partial_oracle, tokens)
+                                                    src, exceeded, num_tokens = ewash.run([], True)
+                                            except ValueError as e:
+                                                logger.log(
+                                                    f"Exceeded input limit when updating the input string with the next token: {tgt}. It is necessary to reinitialize the E-WASH dictionary.",
+                                                    logging.ERROR)
+                                                # Re-initialize the E-WASH dictionary
+                                                intros = copy.deepcopy(intros_template)
+                                                ewash = EWash(tp, tc, fc, ju_v, intros, ewash_config, partial_oracle,
+                                                              tokens)
+                                                # Generate the input string for the model using the E-WASH approach
+                                                src, exceeded, num_tokens = ewash.run(['test_prefix', 'test_class', 'focal_class'])
+                                        writer.writerow([datapoint_id, src, tgt])
+                                        json_data_list.append({
+                                            "id": datapoint_id,
+                                            "src": src,
+                                            "tgt": tgt,
+                                            "test_class_path": tcs_d['testClass']['filePath'],
+                                            "signature": test_prefix_signature,
+                                            "tp_body": tp['body'],
+                                            "exceeded": exceeded,
+                                            "num_tokens": num_tokens
+                                        })
+                                        # Update stats
+                                        update_stats(stats, tc['identifier'], tp['signature'], tgt, exceeded, num_tokens)
+                                    except ValueError as e:
+                                        # Update stats
+                                        update_stats(stats, tc['identifier'], tp['signature'], tgt, True, -1)
+        except Exception as e:
+            logger.log(
+                f"Unexpected error while processing file: {filename} ({file_path}).",
+                logging.ERROR
+            )
+            # Update stats
+            update_stats(stats, tc['identifier'], tp['signature'], tgt, True, -1)
         # Save statistics
         with open(output_stats_path, 'w') as stats_file:
             json.dump(stats, stats_file)
