@@ -1,0 +1,20 @@
+===== TASK DESCRIPTION =====
+Given a Java test prefix and contextual information such as the javadoc, the signature, and the source code of the methods invoked within the test prefix, as well as the fields and methods declared in the focal class and in the test class, generate the next token to append to the partial oracle under construction, substituting the mask placeholder `<mask_id>` (the final oracle must conform to the API of the given JUnit version).
+The input contains three lists of candidate tokens among which you can select the one to substitute for the mask placeholder:
+    1. Project tokens: tokens specifically related to the project under test (e.g., class names, method names, field names, variable names, literals, keywords, etc.);
+    2. Java tokens: tokens that are part of the Java language and JUnit (e.g., keywords, operators, symbols, punctuation, brackets, JUnit API names, etc.);
+    3. Generic tokens: tokens like strings or numbers that you have to guess without specific suggestions (e.g., STRING_LITERAL, DECIMAL_LITERAL, etc.).
+Put your answer between: [token] and [/token]. The answer must be of this format [token][TOKEN_TYPE]:[TOKEN_VALUE][/token].
+For example:
+    * If the next token should be a method name `methodExample``, the answer should be of the form [token]IDENTIFIER:methodExample[/token].
+    * If the next token should be a left parenthesis, the answer should be of the form [token]LPAREN:)[/token].
+    * If the next token should be a string literal, the answer should be of the form [token]STRING_LITERAL:"example of string you will generate"[/token].
+Do not show me the reasoning behind your answer, but only the answer in the mentioned format.
+
+===== TASK TO EXECUTE =====
+Here is the query for this task:
+
+Query:
+<QUERY_INPUT>
+
+Answer:
