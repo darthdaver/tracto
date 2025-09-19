@@ -27,6 +27,9 @@ if __name__ == '__main__':
     with open(query_path, 'r') as query_file:
         query_template = query_file.read()
 
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+
     # Collect files to process
     if os.path.isdir(input_path):
         prompt_dataset_files = []
@@ -42,7 +45,7 @@ if __name__ == '__main__':
     for filename in prompt_dataset_files:
         df = pd.read_csv(filename)
         #system_prompt = "You are a software tester assistant and you help to generate test oracles, token by token, given a test prefix and additional context information."
-        with open('chatml_dataset.jsonl', 'w') as f_out:
+        with open(os.path.join(output_path, filename.replace(".csv", ".jsonl")), 'w') as f_out:
             for _, row in df.iterrows():
                 query = preprocess_dp(query_template, row['src'])
                 messages = [
