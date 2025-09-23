@@ -358,13 +358,13 @@ if __name__ == "__main__":
                     prompt_dataset_files = [args.input_path]
 
                 # Process each csv file in the original dataset of prompts
-                for filename in prompt_dataset_files:
-                    print(f"Processing {filename}")
+                for input_file_path, output_file_path in prompt_dataset_files:
+                    print(f"Processing {input_file_path}")
                     tokenize_file(
                         workers=args.workers,
                         chunk_size=args.chunk_size,
-                        input_path=args.input_path,
-                        output_path=args.output_path,
+                        input_path=input_file_path,
+                        output_path=output_file_path,
                         tokenizer=tokenizer,
                         max_len=args.max_len,
                         save_format=args.save_format
