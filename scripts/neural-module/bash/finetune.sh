@@ -6,9 +6,9 @@
 # Get current directory
 current_dir=$(realpath "$(dirname "${BASH_SOURCE[@]}")")
 # Setup global & local variables
-source "${current_dir}/../../../utils/bash/global_variables.sh"
-source "${current_dir}/local_variables.sh"
-source "${NEURAL_DIR}/bash/utils/model_variables.sh"
+source "${current_dir}/../../utils/bash/global_variables.sh"
+source "${current_dir}/../local_variables.sh"
+source "${current_dir}/../model_variables.sh"
 
 # "$PY_ENV" "${NEURAL_DIR}/finetuning.py" \
 torchrun --nproc-per-node=2 "${NEURAL_DIR}/finetuning.py" \
