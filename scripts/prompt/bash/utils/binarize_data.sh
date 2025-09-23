@@ -14,7 +14,7 @@ for config_path in "${PROMPT_DIR}/resources/config"/*/; do
   i=$(basename "$config_num")
   "$PY_ENV" "${PROMPT_DIR}/utils/binarize_data.py" \
     -input_path "${OUTPUT_DIR}/${i}/prompt-jsonl" \
-    -output_path "${OUTPUT_DIR}/${i}/prompt-jsonl-binary" \
+    -output_path "${OUTPUT_DIR}/${i}/prompt-binary" \
     -workers 64 \
     -tokenizer_path ${TOKENIZER}
 done

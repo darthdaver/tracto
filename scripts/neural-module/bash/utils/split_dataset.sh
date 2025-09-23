@@ -12,10 +12,10 @@ source "${current_dir}/../../../utils/bash/global_variables.sh"
 source "${current_dir}/local_variables.sh"
 
 "$PY_ENV" "${NEURAL_DIR}/utils/split_dataset.py" \
-  -data-dir              "${OUTPUT_PROMPT_JSONL_DATASET}" \
-  -out_dir               "${OUTPUT_SPLIT_DIR}" \
-  -min-oracles-for-test  "100" \
-  -seed                  "42"  \
-  -train-ratio           "0.65" \
-  -val-ratio             "0.1" \
-  -test-ratio            "0.25"
+  --data-dir              "${OUTPUT_PROMPT_JSONL_DATASET}" \
+  --out-dir               "${OUTPUT_SPLIT_DIR}" \
+  --min-oracles-for-test  "100" \
+  --seed                  "42"  \
+  --train-ratio           "0.65" \
+  --val-ratio             "0.1" \
+  --test-ratio            "0.25"

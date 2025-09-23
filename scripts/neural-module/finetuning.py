@@ -1,3 +1,4 @@
+import csv
 import time
 import logging
 from dataclasses import dataclass, field
@@ -5,7 +6,7 @@ from typing import Dict, Optional, Sequence, List
 import argparse
 import torch
 import transformers
-from transformers import Trainer
+from transformers import Trainer, EarlyStoppingCallback
 import torch.distributed as dist
 import os
 from utils import training_datasets
@@ -25,30 +26,51 @@ class ModelArguments:
 
 @dataclass
 class DataArguments:
-    data_path: str = field(default="/home/coder/project/tracto/scripts/prompt/output/1/prompt_jsonl_binary/oracles-datapoints-3627-0.npy.npy", metadata={"help": "Path to the folder containing the training data."})
+    train_file: Optional[str] = field(default=os.path.join(os.path.dirname(__file__), "..", "output", "split-dataset", "train_projects.csv"))
+    eval_file: Optional[str] = field(default=os.path.join(os.path.dirname(__file__), "..", "output", "split-dataset", "val_projects.csv"))
+    data_dir: Optional[str] = field(default=os.path.join(os.path.dirname(__file__), "..", "prompt", "output", "1", "prompt-binary"))
 
-    def get_file_paths(self) -> List[str]:
-        """Retrieve all file paths in the data directory."""
-        return [os.path.join(self.data_path, filename) for filename in os.listdir(self.data_path) if filename.endswith('.jsonl')]
+    def get_dataset_file_paths(self, dataset_type) -> List[str]:
+        project_ids = []
+        with open(os.path.join(self.data_dir, f"{dataset_type}_projects.csv")) as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                project_ids.append(row["project_id"])
+        return sorted([os.path.join(self.data_dir, f) for f in os.listdir(self.data_dir) if f.endswith('.jsonl') or f.endswith('.npy') and  f.replace("oracles-datapoints-", "").split("-")[0] in project_ids])
+
+
 
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
+    output_dir: Optional[str] = field(default=os.path.join(os.path.dirname(__file__), "..", "output", "finetuning"))
     cache_dir: Optional[str] = field(default=None)
     optim: str = field(default="adamw_torch")
     model_max_length: int = field(
         default=32768,
         metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
     )
+    num_train_epochs: int = field(default=5)
     truncate_source: bool = field(default=False)
-    use_peft: bool = field(default=True) #field(default=True)
+    use_peft: bool = field(default=True)
     peft_config_path: str = field(default=None)
-    per_device_train_batch_size: int = 1   # or appropriate batch size
-    per_device_eval_batch_size: int = 1
-    gradient_accumulation_steps: int = 8   # Adjust as needed
-    fp16: bool = True                      # If you're using float16
-    deepspeed: Optional[str] = None #"/home/coder/project/tracto/scripts/neural-module/ds_config.json"        # Path to deepspeed config if using DS
-    ddp_find_unused_parameters: bool = False  # Needed in some models
+    per_device_train_batch_size: int = 4
+    per_device_eval_batch_size: int = 4
+    gradient_accumulation_steps: int = 8
+    fp16: bool = True
+    deepspeed: Optional[str] = None #"/home/coder/project/tracto/scripts/neural-module/ds_config.json"
+    ddp_find_unused_parameters: bool = False
+    evaluation_strategy: str = field(default="epoch")
+    eval_steps: int = field(default=1000)
+    save_strategy: str = field(default="epoch")
+    save_steps: int = field(default=1000)
+    save_total_limit: int = field(default=1)
+    load_best_model_at_end: bool = field(default=True)
+    metric_for_best_model: str = field(default="eval_loss")
+    greater_is_better: bool = field(default=False)
+    logging_strategy: str = field(default="steps")
+    logging_steps: int = field(default=10000)
+
 
 def smart_tokenizer_and_embedding_resize(
     special_tokens_dict: Dict,
@@ -101,7 +123,6 @@ def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedToken
 @dataclass
 class DataCollatorForSupervisedDataset(object):
     """Collate examples for supervised fine-tuning."""
-
     tokenizer: transformers.PreTrainedTokenizer
 
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
@@ -116,15 +137,23 @@ class DataCollatorForSupervisedDataset(object):
             attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
         )
 
-
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
-    if args.data_path.endswith(".npy") or args.data_path.endswith(".jsonl"):
-        train_dataset = training_datasets.SupervisedDataset(tokenizer=tokenizer, data_path=args.data_path, args=args)
-    elif args.data_path.endswith(".mmap"):
-        train_dataset = training_datasets.MMAPSupervisedDataset(tokenizer=tokenizer, data_path=args.data_path, args=args)
+
+    def load_dataset(file_paths: List[str]):
+        datasets = []
+        for path in file_paths:
+            if path.endswith(".npy") or path.endswith(".jsonl"):
+                datasets.append(training_datasets.SupervisedDataset(tokenizer=tokenizer, data_path=path, args=args))
+            elif path.endswith(".mmap"):
+                datasets.append(training_datasets.MMAPSupervisedDataset(tokenizer=tokenizer, data_path=path, args=args))
+        return torch.utils.data.ConcatDataset(datasets) if len(datasets) > 1 else datasets[0]
+
+    train_dataset = load_dataset(args.get_dataset_file_paths("train"))
+    eval_dataset = load_dataset(args.get_dataset_file_paths("val"))
     data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
-    return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
+    return dict(train_dataset=train_dataset, eval_dataset=eval_dataset, data_collator=data_collator)
+
 
 
 # def is_master():
@@ -281,7 +310,12 @@ def train():
         tokenizer=tokenizer,
         args=training_args,
         **data_module,
-        callbacks=[LoggingCallback, SaveModelCallback]
+        callbacks=[LoggingCallback, SaveModelCallback, EarlyStoppingCallback(early_stopping_patience=2)],
+        evaluation_strategy="epoch",
+        eval_steps = 1000,
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",  # or another metric like "eval_accuracy"
+        greater_is_better=False,  # because lower loss is better
     )
     trainer.train()
     trainer.save_state()

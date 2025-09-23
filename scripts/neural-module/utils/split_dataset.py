@@ -113,8 +113,16 @@ def read_counts(data_dir: Path) -> List[Dict]:
         except Exception as e:
             print(f"Warning: failed to count rows in {f}: {e}", file=sys.stderr)
             n = 0
-        out.append({"project_id": pid, "path": str(f), "ext": ext, "num_oracles": n})
-    return out
+        out.append({"project_id": pid, "ext": ext, "num_oracles": n})
+    res = {}
+    for row in out:
+        if row["project_id"] not in res:
+            res[row["project_id"]] = row
+            res[row["project_id"]]["num_files"] = 1
+        else:
+            res[row["project_id"]]["num_oracles"] += row["num_oracles"]
+            res[row["project_id"]]["num_files"] += 1
+    return list(res.values())
 
 def tertile_bins(projects: List[Dict]) -> Tuple[List[int], List[int]]:
     """Return thresholds values for tertiles and assign each project a bin label: 0=Small,1=Medium,2=Large."""
@@ -292,10 +300,10 @@ def write_lists(out_dir: Path, splits: Dict[str, List[dict]]):
         with out_path.open("w", encoding="utf-8", newline="") as f:
             writer = csv.writer(f)
             # header
-            writer.writerow(["project_id", "path", "num_oracles", "size_bin"])
+            writer.writerow(["project_id", "num_oracles", "size_bin"])
             # rows
             for p in splits[name]:
-                writer.writerow([p["project_id"], p["path"], p["num_oracles"], p["size_bin"]])
+                writer.writerow([p["project_id"], p["num_oracles"], p["size_bin"]])
 
 def write_summary(out_dir: Path, all_projects: List[Dict], splits: Dict[str, List[Dict]]):
     summary = {
@@ -307,7 +315,7 @@ def write_summary(out_dir: Path, all_projects: List[Dict], splits: Dict[str, Lis
             "Large": sum(1 for p in all_projects if p["size_bin"] == "Large"),
         },
         "splits": {
-            k: [{"project_id": p["project_id"], "num_oracles": p["num_oracles"], "size_bin": p["size_bin"]}]
+            k: [{"project_id": p["project_id"], "num_oracles": p["num_oracles"], "num_files": p["num_files"],"size_bin": p["size_bin"]}]
             for k, lst in splits.items() for p in lst
         }
     }
@@ -371,37 +379,6 @@ def main():
     # 4) Persist project lists and summary
     write_lists(out_dir, splits)
     write_summary(out_dir, projects, splits)
-
-    # 5) For each test project, compute time-aware indices and optionally materialize subset
-    # for p in splits["test"]:
-    #     path = Path(p["path"])
-    #     indices = select_time_aware_indices(
-    #         path=path,
-    #         ext=p["ext"],
-    #         timestamp_field=args.timestamp_field,
-    #         tail_frac=args.test_tail_frac,
-    #         min_k=args.min_test_per_project,
-    #     )
-    #     # Save selection metadata
-    #     meta = {
-    #         "project_id": p["project_id"],
-    #         "path": p["path"],
-    #         "ext": p["ext"],
-    #         "num_oracles": p["num_oracles"],
-    #         "selected_indices": indices,
-    #         "selected_count": len(indices),
-    #         "tail_frac": args.test_tail_frac,
-    #         "min_test_per_project": args.min_test_per_project,
-    #         "timestamp_field": args.timestamp_field,
-    #     }
-    #     with (out_dir / "test_selection" / f"{p['project_id']}.json").open("w", encoding="utf-8") as fh:
-    #         json.dump(meta, fh, indent=2)
-    #
-    #     if args.materialize_test:
-    #         subset_dir = out_dir / "test_subsets"
-    #         safe_mkdir(subset_dir)
-    #         dest = subset_dir / f"{p['project_id']}{path.suffix}"
-    #         materialize_test_subset(path, dest, indices, p["ext"])
 
     print("Done.")
     print(f"- Train projects: {len(splits['train'])}")
