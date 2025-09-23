@@ -10,7 +10,8 @@ source "${current_dir}/../../../utils/bash/global_variables.sh"
 source "${current_dir}/local_variables.sh"
 source "${NEURAL_DIR}/bash/utils/model_variables.sh"
 
-"$PY_ENV" "${NEURAL_DIR}/finetuning.py" \
+# "$PY_ENV" "${NEURAL_DIR}/finetuning.py" \
+torchrun --nproc-per-node=2 "${NEURAL_DIR}/finetuning.py" \
     --model_name_or_path "Qwen/Qwen2.5-Coder-7B-Instruct" \
     --use_flash_attention "False" \
     --train_file "${OUTPUT_SPLIT_DIR}/train_projects.csv" \
