@@ -3,6 +3,7 @@ import os
 import numpy as np
 import transformers
 import tqdm
+import traceback
 import multiprocessing as mp
 from typing import Dict
 import argparse
@@ -358,6 +359,7 @@ if __name__ == "__main__":
 
                 # Process each csv file in the original dataset of prompts
                 for filename in prompt_dataset_files:
+                    print(f"Processing {filename}")
                     tokenize_file(
                         workers=args.workers,
                         chunk_size=args.chunk_size,
