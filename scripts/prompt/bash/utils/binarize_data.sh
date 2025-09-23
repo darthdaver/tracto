@@ -12,7 +12,7 @@ query_path=${1:-$QUERY_STD_PATH}
 for config_path in "${PROMPT_DIR}/resources/config"/*/; do
   config_num=$(basename "${config_path}")
   i=$(basename "$config_num")
-  "PY_ENV" "${PROMPT_DIR}/utils/binarize_data.py" \
+  "$PY_ENV" "${PROMPT_DIR}/utils/binarize_data.py" \
     -input_path "${OUTPUT_DIR}/${i}/prompt-jsonl" \
     -output_path "${OUTPUT_DIR}/${i}/prompt-jsonl-binary" \
     -workers 64 \

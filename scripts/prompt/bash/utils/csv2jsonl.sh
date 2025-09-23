@@ -11,5 +11,5 @@ query_path=${1:-$QUERY_STD_PATH}
 for config_path in "${PROMPT_DIR}/resources/config"/*/; do
   config_num=$(basename "${config_path}")
   i=$(basename "$config_num")
-  "PY_ENV" "${PROMPT_DIR}/utils/csv2jsonl.py" "${OUTPUT_DIR}/${i}/prompt" "${OUTPUT_DIR}/${i}/prompt-jsonl" "${query_path}"
+  "$PY_ENV" "${PROMPT_DIR}/utils/csv2jsonl.py" "${OUTPUT_DIR}/${i}/prompt" "${OUTPUT_DIR}/${i}/prompt-jsonl" "${query_path}"
 done

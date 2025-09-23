@@ -11,7 +11,7 @@ current_dir=$(realpath "$(dirname "${BASH_SOURCE[@]}")")
 source "${current_dir}/../../../utils/bash/global_variables.sh"
 source "${current_dir}/local_variables.sh"
 
-"${PY_ENV}" "${NEURAL_DIR}/utils/split_dataset.py" \
+"$PY_ENV" "${NEURAL_DIR}/utils/split_dataset.py" \
   -data-dir              "${OUTPUT_PROMPT_JSONL_DATASET}" \
   -out_dir               "${OUTPUT_SPLIT_DIR}" \
   -min-oracles-for-test  "100" \
