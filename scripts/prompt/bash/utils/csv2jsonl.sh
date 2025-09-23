@@ -3,8 +3,8 @@
 # Get current directory
 current_dir=$(realpath "$(dirname "${BASH_SOURCE[@]}")")
 # Setup global & local variables
-source "${current_dir}/../../utils/bash/global_variables.sh"
-source "${current_dir}/utils/local_variables.sh"
+source "${current_dir}/../../../utils/bash/global_variables.sh"
+source "${current_dir}/local_variables.sh"
 
 query_path=${1:-$QUERY_STD_PATH}
 
