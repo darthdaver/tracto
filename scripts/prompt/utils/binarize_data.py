@@ -331,8 +331,8 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    if not os.path.exists(os.path.dirname(args.output_path)):
-        os.makedirs(os.path.dirname(args.output_path))
+    if not os.path.exists(args.output_path):
+        os.makedirs(args.output_path)
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         args.tokenizer_path,
         add_eos_token=False,
