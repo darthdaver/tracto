@@ -1,6 +1,6 @@
 PyDriller==2.7
 torch==2.6.0
-transformers==4.51.2
+transformers==4.56.2
 tree-sitter==0.24.0
 tree-sitter-java==0.23.5
 pandas==2.2.3
@@ -11,3 +11,6 @@ javalang==0.13.0
 litellm==1.70.0
 matplotlib==3.10.3
 seaborn==0.13.2
+jsonlines==4.0.0
+peft==0.17.1
+accelerate==1.10.1

@@ -23,6 +23,11 @@ if __name__ == '__main__':
     output_path = sys.argv[2]
     query_path = sys.argv[3]
 
+    print(f"Input path: {input_path}")
+    print(f"Output path: {output_path}")
+    print(f"Query path: {query_path}")
+    print("Converting CSV to JSONL...")
+
     # Get query text
     with open(query_path, 'r') as query_file:
         query_template = query_file.read()
@@ -40,13 +45,16 @@ if __name__ == '__main__':
     else:
         prompt_dataset_files = [input_path]
 
-    datapoints_counter = 0
     # Process each csv file in the original dataset of prompts
     for filename in prompt_dataset_files:
+        print(f"Processing file: {filename}")
         df = pd.read_csv(filename)
         #system_prompt = "You are a software tester assistant and you help to generate test oracles, token by token, given a test prefix and additional context information."
-        with open(os.path.join(output_path, filename.replace(".csv", ".jsonl")), 'w') as f_out:
+        print(f"Output file: {os.path.join(output_path, os.path.basename(filename.replace('.csv', '.jsonl')))}")
+        with open(os.path.join(output_path, os.path.basename(filename.replace('.csv', '.jsonl'))), 'w') as f_out:
+            dp_counter = 0
             for _, row in df.iterrows():
+                print(f"Processing datapoint {dp_counter}/{len(df)}", end='\r')
                 query = preprocess_dp(query_template, row['src'])
                 messages = [
                     #{"role": "system", "content": system_prompt},
@@ -55,3 +63,4 @@ if __name__ == '__main__':
                 ]
                 json.dump({"messages": messages, "format": "chatml"}, f_out)
                 f_out.write("\n")
+                dp_counter += 1

@@ -42,6 +42,11 @@ while IFS=, read -r repo_id repo_name; do
     cd "$ROOT_DIR"
     # Clean repo_name string from undesired white-spaces/line-breaks introduced with the CSV parsing
     repo_name="${repo_name//[$'\t\r\n ']/}"
+    echo "=============================="
+    echo "Repo: $repo_name  ID: $repo_id"
+    echo "=============================="
+    # Clean repo_name string from undesired white-spaces/line-breaks introduced with the CSV parsing
+    repo_name="${repo_name//[$'\t\r\n ']/}"
     echo "Processing project: ${repo_name}."
     repo_url="${GITHUB_BASE_URL}/${repo_name}.git"
     if [ ! -d "${GITHUB_REPOS_DIR}/${repo_name}" ]; then
@@ -60,10 +65,13 @@ while IFS=, read -r repo_id repo_name; do
       # Check if the project uses JUnit as plugin to run the tests
       if grep -qE '<artifactId>(junit|junit-jupiter)' pom.xml || grep -qE '<groupId>(junit|org\.junit\.jupiter)' pom.xml; then
         junit_plugin=true
+      else
+        echo "No JUnit plugin detected"
       fi
     fi
     # Check if the project is a Maven project and if it has only one pom.xml file and uses JUnit as plugin
-    if [[ "$project_type" == "maven" && "$pom_count" -eq 1 && "$junit_plugin" == true ]]; then
+    #if [[ "$project_type" == "maven" && "$pom_count" -eq 1 && "$junit_plugin" == true ]]; then
+    if [[ "$project_type" == "maven" && "$junit_plugin" == true ]]; then
       echo "Maven project detected"
       # Mine the Maven project
       "${PY_ENV}" "${TEST_MINER_DIR}/mine.py" \
@@ -71,7 +79,7 @@ while IFS=, read -r repo_id repo_name; do
         --output_path "${OUTPUT_DIR}" \
         --repo_name "${repo_name}" \
         --repo_url "${repo_url}" \
-        --since "01/09/2024 00:00:00" \
+        --since "01/08/2025 00:00:00" \
         --operation "added"
     else
       echo "Unprocessed project"
