@@ -1,7 +1,7 @@
 import time
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Sequence
+from typing import Dict, Optional, Sequence, List
 import argparse
 import torch
 import transformers
@@ -10,18 +10,27 @@ import torch.distributed as dist
 import os
 from utils import training_datasets
 from peft import get_peft_model, PeftConfig
+from transformers.trainer_utils import is_main_process
+from peft import PeftConfig
+from transformers import BitsAndBytesConfig
+from peft import get_peft_model, LoraConfig
 IGNORE_INDEX = -100 #default ignore_index = 100 in transformers
 logging.basicConfig(level=logging.DEBUG)
 
 
 @dataclass
 class ModelArguments:
-    model_name_or_path: Optional[str] = field(default="Qwen/Qwen2.5-Coder-32B-Instruct")
+    model_name_or_path: Optional[str] = field(default="Qwen/Qwen2.5-Coder-7B-Instruct")
     use_flash_attention: bool = field(default=False, metadata={"help": "Whether to use Flash Attention."})
 
 @dataclass
 class DataArguments:
-    data_path: str = field(default=None, metadata={"help": "Path to the training data."})
+    data_path: str = field(default="/home/coder/project/tracto/scripts/prompt/output/1/prompt_jsonl_binary/oracles-datapoints-3627-0.npy.npy", metadata={"help": "Path to the folder containing the training data."})
+
+    def get_file_paths(self) -> List[str]:
+        """Retrieve all file paths in the data directory."""
+        return [os.path.join(self.data_path, filename) for filename in os.listdir(self.data_path) if filename.endswith('.jsonl')]
+
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -32,8 +41,14 @@ class TrainingArguments(transformers.TrainingArguments):
         metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
     )
     truncate_source: bool = field(default=False)
-    use_peft: bool = field(default=False)
+    use_peft: bool = field(default=True) #field(default=True)
     peft_config_path: str = field(default=None)
+    per_device_train_batch_size: int = 1   # or appropriate batch size
+    per_device_eval_batch_size: int = 1
+    gradient_accumulation_steps: int = 8   # Adjust as needed
+    fp16: bool = True                      # If you're using float16
+    deepspeed: Optional[str] = None #"/home/coder/project/tracto/scripts/neural-module/ds_config.json"        # Path to deepspeed config if using DS
+    ddp_find_unused_parameters: bool = False  # Needed in some models
 
 def smart_tokenizer_and_embedding_resize(
     special_tokens_dict: Dict,
@@ -112,8 +127,11 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, arg
     return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
 
 
+# def is_master():
+#     return dist.get_rank() == 0
+
 def is_master():
-    return dist.get_rank() == 0
+    return is_main_process()
 
 
 class SaveModelCallback(transformers.TrainerCallback):
@@ -201,18 +219,49 @@ def train():
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
     args = {**model_args.__dict__, **data_args.__dict__, **training_args.__dict__}
     args = argparse.Namespace(**args)
-    #logging.info(args)
+
+    # Configure quantization
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.float16,  # or bfloat16 if your GPU supports it
+    )
+
+    # Load model in 4-bit with device_map
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
-        cache_dir=training_args.cache_dir,
-        attn_implementation="flash_attention_2" if model_args.use_flash_attention else None,
-        trust_remote_code = True
+        quantization_config=bnb_config,
+        #device_map="auto",  # allow model to split across 2 GPUs
+        trust_remote_code=True
     )
+
     if training_args.use_peft:
-        peft_config = PeftConfig.from_pretrained(training_args.peft_config_path)
+        # Define LoRA config inline
+        peft_config = LoraConfig(
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.1,
+            bias="none",
+            task_type="CAUSAL_LM"
+        )
         model.enable_input_require_grads()
         model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()
+
+
+    #logging.info(args)
+    # model = transformers.AutoModelForCausalLM.from_pretrained(
+    #     model_args.model_name_or_path,
+    #     cache_dir=training_args.cache_dir,
+    #     attn_implementation="flash_attention_2" if model_args.use_flash_attention else None,
+    #     trust_remote_code = True
+    # )
+    # if training_args.use_peft:
+    #     peft_config = PeftConfig.from_pretrained(training_args.peft_config_path)
+    #     model.enable_input_require_grads()
+    #     model = get_peft_model(model, peft_config)
+    #     model.print_trainable_parameters()
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
         pad_token = '<|endoftext|>',
@@ -223,6 +272,7 @@ def train():
         padding_side = "right",
         trust_remote_code = True
     )
+
     tokenizer.add_special_tokens({"additional_special_tokens": ["<|im_end|>", "<|im_start|>"]})
     data_module = make_supervised_data_module(tokenizer=tokenizer, args=args)
     #trainer = CustomTrainer(
@@ -236,6 +286,7 @@ def train():
     trainer.train()
     trainer.save_state()
     trainer.save_model(output_dir=training_args.output_dir)
+    model.save_pretrained(training_args.output_dir + "_lora")
 
 if __name__ == "__main__":
     train()
