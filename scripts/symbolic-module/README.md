@@ -2,18 +2,18 @@
 The symbolic module is responsible for all the symbolic tasks of the oracle generation process.
 
 At development time, it processes the source code, the test code, and the dependencies (if available) of a set of Java projects 
-to generate the raw dataset of oracles. The program: (i) splits the **test cases** present in the **test classes**, at any occurrence of 
-an assertion statement, generating the corresponding **test prefixes**; (ii) attempts to match the **test classes** with the 
-corresponding source classes (**focal classes**); (iii) processes the **test prefixes** individually to collect all the contextual 
-information required to generate the final set of oracles datapoints (e.g. the **target oracle**, the javadoc, the signature 
-and the body of the methods invoked within the test prefix, the javadoc, the signature and the body of the test class and 
-the focal class).
+to generate the raw dataset of oracles. The program: 
+
+1. splits the **test cases** present in the **test classes**, at any occurrence of an assertion statement, generating the corresponding **test prefixes**; 
+2. attempts to match the **test classes** with the corresponding source classes (**focal classes**); 
+3. processes the **test prefixes** individually to collect all the contextual information required to generate the final set of oracles datapoints (e.g. the **target oracle**, the javadoc, the signature and the body of the methods invoked within the test prefix, the javadoc, the signature and the body of the test class and the focal class).
+
 Successively, another component handles the oracles datapoints to generate the raw dataset of tokens. For each datapoint,
 the target oracle is divided into the corresponding Java **tokens**. Each token is associated with the contextual information 
 collected in the previous step, the partial oracle (i.e. the string concatenating the tokens that precede the current token), 
 and the complete list of all the other possible candidate tokens that can follow the partial oracle. The reference tokens 
 extracted from the target oracle represent the target tokens that the neural model should predict at training time. 
-The new datapoints generated from the dataset of oracles constitute the raw dataset of tokens.
+The new datapoints generated from the dataset of oracles constitutes the raw dataset of tokens.
 
 At inference time, given a new Java project and a test prefix of a test class, the symbolic module operates
 iteratively in conjunction with the neural module to generate an oracle from scratch. Starting from an empty oracle, the
@@ -25,7 +25,7 @@ which predicts the next token. The predicted token is added to the oracle, and t
 The folder contains bash scripts to install the required dependencies and to run the symbolic module as a standalone application,
 both to generate the raw datasets at development time and to generate oracles at inference time.
 
-In order to run the scripts, it is necesary to run the following commands:
+In order to run the scripts, it is necessary to run the following commands, from the root of the repository:
 
 ```shell
 bash scripts/bash/utils/init.sh
@@ -35,7 +35,7 @@ to install the dependencies required to compile and run the symbolic module.
 
 In particular, the script installs:
 - A local version of `SDKman`, an SDK manager to effortlessly manage multiple Java versions on Unix systems.
-- A local version of the JDK `8`, `11`, `17`, and `21` used within the other scripts to process the Java projects and run the symbolic module both at development and inference time.
+- A local version of the JDK `8`, `11`, `17`, `21`, and `24` used within the other scripts to process the Java projects and run the symbolic module both at development and inference time.
 - A local version of `Maven` to compile the symbolic module
 
 The script does not install anything globally, but only local versions within the project.
@@ -49,9 +49,9 @@ The script does not install anything globally, but only local versions within th
 To replicate the generation of the raw dataset of oracles or generate a new oracles dataset, it is necessary to run the following command:
 
 ```shell
-bash scripts/bash/dataset/generate-raw-oracles-dataset.sh [path-to-csv-file]
+bash scripts/bash/dataset/oracles-dataset-mvn.sh [path-to-csv-file]
 ```
-By default, the script downloads and processes the Java projects listed in the `csv` file stored in `scr/main/resources/dataset/m2t_repos.csv`
+By default, the script downloads and processes the Java projects listed in the `csv` file stored in `tracto/resources/seart-github-repos.csv`
 corresponding to the Java projects used in [Method2Test](https://github.com/microsoft/methods2test), a related work published [here](https://arxiv.org/pdf/2009.05617).
 
 However, it is possible to specify a path to a different `csv` file (as first parameter), containing the list of 
@@ -64,15 +64,46 @@ project-identifier,project-url,commit-sha
 (No header is required)
 
 ### Tokens dataset
-To generate the token dataset, it is necessary to follow the following steps:
+To replicate the generation of the raw dataset of tokens or generate a new tokens dataset, it is necessary to run the following command:
 
-- Copy at least one datapoint of the Oracle Dataset in json format in: 
-    ```symbolic-module/src/main/resources/dataset/partial-oracles/input```
-- Run the file: 
-    ```symbolic-module/src/main/java/star/tracto/preprocessing/PartialOracleDataset.java```
-- You will find the generated token dataset in the folder: 
-    ```symbolic-module/src/main/resources/dataset/partial-oracles/output/```
+```shell
+bash scripts/bash/dataset/tokens-dataset.sh [path-to-csv-file]
+```
+By default, the script will process the Java projects listed in the `csv` file stored in `tracto/resources/seart-github-repos.csv`.
 
+However, it is possible to specify a path to a different `csv` file (as first parameter), containing the list of 
+Java projects to process. The content of the `csv` file must be a list of rows, where each row is in the following format:
+
+```csv
+project-identifier,project-url,commit-sha
+```
+
+(No header is required)
+
+**Note:** Before to run the script to generate the dataset of tokens it is necessary to generate the oracles dataset.
+
+
+### Speed up dataset generation
+
+To speed up the process, you can run multiple scripts in parallel. To do so, you can use the following command:
+
+```shell
+bash scripts/bash/dataset/dataset-parallel.sh [number_of_processes] [resolve-dependencies] [script-to-run]
+```
+
+where:
+
+* `number_of_processes` - is the number of processes to run in parallel. The default value is 100.
+* `resolve-dependencies` - if the script should download the source code of the external dependencies of the repositories to acquire more data as contextual information to generate the oracles.
+* `script-to-run` - `oracles-dataset-mvn.sh` or `tokens-dataset.sh` depending on the type of dataset to generate.
+
+**Note:** Before to run the script make sure to run the script in the `root` folder to split the original list of repositories
+into smaller chunks. The script will create a folder named `github-repos-split` in the `resources` folder containing the files with the
+repositories to mine. The command to run from the root of the current repository is:
+
+```shell
+python scripts/utils/bash/split-github-repos.sh
+```
 
 ## Conventions
 * JDK Version: `21`

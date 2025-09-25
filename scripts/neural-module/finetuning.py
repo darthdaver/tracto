@@ -1,20 +1,15 @@
-import csv
-import time
-import logging
-from dataclasses import dataclass, field
-from typing import Dict, Optional, Sequence, List
-import argparse
-import torch
-import transformers
-from transformers import Trainer, EarlyStoppingCallback
+import csv, time, logging, argparse, torch, transformers, os, json, io
 import torch.distributed as dist
-import os
-from utils import training_datasets
-from peft import get_peft_model, PeftConfig
+from torch.utils.data import IterableDataset, get_worker_info
+from transformers import Trainer, EarlyStoppingCallback
 from transformers.trainer_utils import is_main_process
-from peft import PeftConfig
 from transformers import BitsAndBytesConfig
+from dataclasses import dataclass, field
+from typing import Dict, Optional, Sequence, List, Iterator
+from peft import prepare_model_for_kbit_training
 from peft import get_peft_model, LoraConfig
+
+
 IGNORE_INDEX = -100 #default ignore_index = 100 in transformers
 logging.basicConfig(level=logging.DEBUG)
 
@@ -30,16 +25,6 @@ class DataArguments:
     eval_file: Optional[str] = field(default=os.path.join(os.path.dirname(__file__), "..", "output", "split-dataset", "val_projects.csv"))
     data_dir: Optional[str] = field(default=os.path.join(os.path.dirname(__file__), "..", "prompt", "output", "1", "prompt-binary"))
 
-    def get_dataset_file_paths(self, dataset_type) -> List[str]:
-        project_ids = []
-        with open(os.path.join(self.data_dir, f"{dataset_type}_projects.csv")) as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                project_ids.append(row["project_id"])
-        return sorted([os.path.join(self.data_dir, f) for f in os.listdir(self.data_dir) if f.endswith('.jsonl') or f.endswith('.npy') and  f.replace("oracles-datapoints-", "").split("-")[0] in project_ids])
-
-
-
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -54,22 +39,162 @@ class TrainingArguments(transformers.TrainingArguments):
     truncate_source: bool = field(default=False)
     use_peft: bool = field(default=True)
     peft_config_path: str = field(default=None)
-    per_device_train_batch_size: int = 4
-    per_device_eval_batch_size: int = 4
-    gradient_accumulation_steps: int = 8
-    fp16: bool = True
-    deepspeed: Optional[str] = None #"/home/coder/project/tracto/scripts/neural-module/ds_config.json"
+    deepspeed: Optional[str] = None #"./tracto/scripts/neural-module/ds_config.json"
+    dataloader_num_workers = 4
+    dataloader_persistent_workers = True
+    dataloader_pin_memory = True
+    gradient_checkpointing: bool = True
+    bf16: bool = True  # A100
+    fp16: bool = False  # avoid mixed bf16/fp16 confusion
+    per_device_train_batch_size: int = 1
+    per_device_eval_batch_size: int = 1
+    gradient_accumulation_steps: int = 16  # raise to hit target tokens/step
+    group_by_length: bool = True
     ddp_find_unused_parameters: bool = False
-    evaluation_strategy: str = field(default="epoch")
-    eval_steps: int = field(default=1000)
-    save_strategy: str = field(default="epoch")
-    save_steps: int = field(default=1000)
-    save_total_limit: int = field(default=1)
-    load_best_model_at_end: bool = field(default=True)
-    metric_for_best_model: str = field(default="eval_loss")
-    greater_is_better: bool = field(default=False)
-    logging_strategy: str = field(default="steps")
-    logging_steps: int = field(default=10000)
+    eval_accumulation_steps: int = 1  # prevents CPU RAM blowup
+    prediction_loss_only: bool = True  # don’t store logits by default
+    max_grad_norm: float = 0.3
+    report_to: Optional[str] = "none"
+    torch_compile: bool = False  # leave off unless you’ve profiled it
+
+@dataclass
+class DataCollatorForSupervisedDataset:
+    tokenizer: transformers.PreTrainedTokenizer
+    pad_to_multiple_of: int = 8
+
+    def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
+        input_ids = [inst["input_ids"] for inst in instances]
+        labels    = [inst["labels"]    for inst in instances]
+
+        input_ids = torch.nn.utils.rnn.pad_sequence(
+            input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
+        )
+        labels = torch.nn.utils.rnn.pad_sequence(
+            labels, batch_first=True, padding_value=IGNORE_INDEX
+        )
+        # pad to multiple of 8 if needed
+        if self.pad_to_multiple_of:
+            m = self.pad_to_multiple_of
+            to = ((input_ids.size(1) + m - 1) // m) * m
+            if to != input_ids.size(1):
+                pad = to - input_ids.size(1)
+                input_ids = torch.nn.functional.pad(input_ids, (0, pad), value=self.tokenizer.pad_token_id)
+                labels    = torch.nn.functional.pad(labels,    (0, pad), value=IGNORE_INDEX)
+        return {
+            "input_ids": input_ids,
+            "labels": labels,
+            "attention_mask": input_ids.ne(self.tokenizer.pad_token_id),
+        }
+
+class JsonlIterable(IterableDataset):
+    def __init__(
+        self,
+        files: List[str],
+        tokenizer,
+        max_length: int,
+        only_last_turn_loss: bool = True,
+        drop_long: bool = False,   # if False, truncate to max_length
+    ):
+        self.files = files
+        self.tok = tokenizer
+        self.maxlen = max_length
+        self.only_last = only_last_turn_loss
+        self.drop_long = drop_long
+        # cache special IDs
+        self.im_start_id = self.tok("<|im_start|>").input_ids[0]
+        self.im_end_id   = self.tok("<|im_end|>").input_ids[0]
+        self.nl_id       = self.tok("\n", add_special_tokens=False).input_ids[-1:]
+        # pre-encode role tokens once
+        self._sys_tok = self.tok("system", add_special_tokens=False).input_ids + self.nl_id
+        self._usr_tok = self.tok("user",    add_special_tokens=False).input_ids + self.nl_id
+        self._asst_tok= self.tok("assistant", add_special_tokens=False).input_ids + self.nl_id
+
+    def _encode_dialog(self, msgs: List[Dict]) -> Optional[Dict]:
+        roles_map = {"user": self._usr_tok, "assistant": self._asst_tok, "system": self._sys_tok}
+        # system header
+        system_message = "You are a testing developer assistant. You must help to automatize the process of generating test oracles, token-by-token."
+        if msgs and msgs[0].get("role") == "system" and msgs[0].get("content"):
+            system_message = msgs[0]["content"]
+
+        ids = []
+        lbl = []
+
+        sys_ids = [self.im_start_id] + roles_map["system"] + \
+                  self.tok(system_message, add_special_tokens=False).input_ids + \
+                  [self.im_end_id] + self.nl_id
+        ids += sys_ids
+        lbl += [self.im_start_id] + [IGNORE_INDEX]*(len(sys_ids)-3) + [self.im_end_id] + self.nl_id
+
+        turns = msgs[1:] if msgs and msgs[0].get("role") == "system" else msgs
+        for j, s in enumerate(turns):
+            role = s["role"]
+            if role not in roles_map:
+                raise ValueError(f"Unknown role: {role}")
+
+            content_ids = self.tok(s["content"], add_special_tokens=False).input_ids
+            seg = self.tok.convert_tokens_to_ids("<|im_start|>")  # not used; we have im_start_id
+            _ids = roles_map[role]
+            full = [self.im_start_id] + _ids + content_ids + [self.im_end_id] + self.nl_id
+            ids += full
+
+            if role == "user" or (self.only_last and j < len(turns) - 1):
+                tgt = [self.im_start_id] + [IGNORE_INDEX]*(len(full)-3) + [self.im_end_id] + self.nl_id
+            elif role == "assistant":
+                # mask role tokens only; supervise the assistant content
+                prefix_len = 1 + len(_ids)  # <|im_start|> + role + \n
+                tgt = [self.im_start_id] + [IGNORE_INDEX]*prefix_len + full[prefix_len+1:-2] + [self.im_end_id] + self.nl_id
+            else:  # system in the middle
+                tgt = [self.im_start_id] + [IGNORE_INDEX]*(len(full)-3) + [self.im_end_id] + self.nl_id
+            lbl += tgt
+        # length control
+        if len(ids) > self.maxlen:
+            if self.drop_long:
+                return None
+            # truncate from the right (labels must match)
+            ids  = ids[:self.maxlen]
+            lbl  = lbl[:self.maxlen]
+        return {
+            "input_ids": torch.tensor(ids, dtype=torch.long),
+            "labels": torch.tensor(lbl, dtype=torch.long),
+        }
+
+    def __iter__(self) -> Iterator[Dict[str, torch.Tensor]]:
+        # figure out global sharding factor
+        if dist.is_available() and dist.is_initialized():
+            world_size = dist.get_world_size()
+            rank = dist.get_rank()
+        else:
+            world_size = 1
+            rank = 0
+
+        winfo = get_worker_info()
+        if winfo is None:
+            num_workers = 1
+            worker_id = 0
+        else:
+            num_workers = winfo.num_workers
+            worker_id = winfo.id
+
+        shards = world_size * num_workers
+        my_shard = rank * num_workers + worker_id
+        counter = 0
+
+        for path in self.files:
+            with io.open(path, "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    # shard by line index across all files
+                    if (counter % shards) != my_shard:
+                        counter += 1
+                        continue
+                    counter += 1
+                    try:
+                        obj = json.loads(line)
+                    except Exception:
+                        continue
+                    msgs = obj["messages"] if "messages" in obj else obj
+                    out = self._encode_dialog(msgs)
+                    if out is not None:
+                        yield out
 
 
 def smart_tokenizer_and_embedding_resize(
@@ -118,97 +243,97 @@ def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedToken
         labels_lens=labels_lens,
     )
 
-
-
-@dataclass
-class DataCollatorForSupervisedDataset(object):
-    """Collate examples for supervised fine-tuning."""
-    tokenizer: transformers.PreTrainedTokenizer
-
-    def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
-        input_ids, labels = tuple([instance[key] for instance in instances] for key in ("input_ids", "labels"))
-        input_ids = torch.nn.utils.rnn.pad_sequence(
-            input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
-        )
-        labels = torch.nn.utils.rnn.pad_sequence(labels, batch_first=True, padding_value=IGNORE_INDEX)
-        return dict(
-            input_ids=input_ids,
-            labels=labels,
-            attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
-        )
-
 def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
+    def get_jsonl_paths_for_split(data_dir: str, split_csv: str) -> List[str]:
+        project_ids = set()
+        with open(split_csv) as f:
+            for row in csv.DictReader(f):
+                project_ids.add(row["project_id"])
+        paths = []
+        for f in os.listdir(data_dir):
+            if not f.endswith(".jsonl"):
+                continue
+            pid = f.replace("oracles-datapoints-", "").split("-")[0]
+            if pid in project_ids:
+                paths.append(os.path.join(data_dir, f))
+        return sorted(paths)
 
-    def load_dataset(file_paths: List[str]):
-        datasets = []
-        for path in file_paths:
-            if path.endswith(".npy") or path.endswith(".jsonl"):
-                datasets.append(training_datasets.SupervisedDataset(tokenizer=tokenizer, data_path=path, args=args))
-            elif path.endswith(".mmap"):
-                datasets.append(training_datasets.MMAPSupervisedDataset(tokenizer=tokenizer, data_path=path, args=args))
-        return torch.utils.data.ConcatDataset(datasets) if len(datasets) > 1 else datasets[0]
-
-    train_dataset = load_dataset(args.get_dataset_file_paths("train"))
-    eval_dataset = load_dataset(args.get_dataset_file_paths("val"))
-    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
+    train_files = get_jsonl_paths_for_split(args.data_dir, args.train_file)
+    eval_files = get_jsonl_paths_for_split(args.data_dir, args.eval_file)
+    train_dataset = JsonlIterable(train_files, tokenizer, args.model_max_length, only_last_turn_loss=True, drop_long=False)
+    eval_dataset  = JsonlIterable(eval_files,  tokenizer, args.model_max_length, only_last_turn_loss=True, drop_long=False)
+    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer, pad_to_multiple_of=8)
     return dict(train_dataset=train_dataset, eval_dataset=eval_dataset, data_collator=data_collator)
 
-
-
-# def is_master():
-#     return dist.get_rank() == 0
-
-def is_master():
-    return is_main_process()
+def is_master(args):
+    return is_main_process(args.local_rank)
 
 
 class SaveModelCallback(transformers.TrainerCallback):
     def on_save(self, args, state, control, **kwargs):
-        output_dir = args.output_dir
-        step = state.global_step
-        if is_master():
-            print(f"Model saved at: {output_dir}/checkpoint-{step}/")
+        if is_master(args):
+            print(f"[save] {args.output_dir}/checkpoint-{state.global_step}/")
         return control
 
+
 class LoggingCallback(transformers.TrainerCallback):
-    def __init__(self):
+    def __init__(self, log_memory: bool = True):
         self.start_time = None
         self.last_time = None
         self.last_step = 0
-        self.total_tokens = 0
+        self.total_tokens_seen = 0
+        self.log_memory = log_memory
 
     def on_log(self, args, state, control, logs=None, **kwargs):
-        if logs is not None:
-            current_time = time.time()
-            world_size = args.world_size
-            current_step = state.global_step
-            if self.start_time is None:
-                self.start_time = current_time
-                self.last_time = current_time
-            if args.include_num_input_tokens_seen:
-                tokens_processed = (state.num_input_tokens_seen - self.total_tokens) * world_size
-                self.total_tokens = state.num_input_tokens_seen
-            else:
-                batch_size = args.per_device_train_batch_size
-                max_seq_length = args.model_max_length
-                steps_elapsed = current_step - self.last_step
-                tokens_processed = batch_size * max_seq_length * steps_elapsed * world_size
-                self.last_step = current_step
-            time_elapsed = current_time - self.last_time
-            tokens_per_second = tokens_processed / time_elapsed if time_elapsed > 0 else 0
-            self.last_time = current_time
-            log_message = {
-                "loss": logs.get("loss", None),
-                "learning_rate": logs.get("learning_rate", None),
-                "epoch": logs.get("epoch", None),
-                "step": current_step,
-                "grad_norm": logs.get("grad_norm", None),
-                "world_size": world_size,
-                "tokens_per_second": int(tokens_per_second)
-            }
-            if is_master():
-                print(log_message)
+        if logs is None:
+            return
+        now = time.time()
+        world = getattr(args, "world_size", 1)
+
+        if self.start_time is None:
+            self.start_time = now
+            self.last_time = now
+
+        # Prefer Trainer's running token counter if available (>= 4.41)
+        include_tok_seen = getattr(args, "include_num_input_tokens_seen", False)
+        if include_tok_seen and hasattr(state, "num_input_tokens_seen") and state.num_input_tokens_seen is not None:
+            delta_tokens = (state.num_input_tokens_seen - self.total_tokens_seen) * world
+            self.total_tokens_seen = state.num_input_tokens_seen
+        else:
+            # fallback: estimate
+            steps_elapsed = state.global_step - self.last_step
+            est_tokens_per_step = args.per_device_train_batch_size * args.model_max_length * world
+            delta_tokens = est_tokens_per_step * max(0, steps_elapsed)
+            self.last_step = state.global_step
+
+        dt = max(1e-6, now - self.last_time)
+        tps = int(delta_tokens / dt)
+
+        log_message = {
+            "step": state.global_step,
+            "epoch": state.epoch,
+            "loss": logs.get("loss"),
+            "eval_loss": logs.get("eval_loss"),
+            "lr": logs.get("learning_rate"),
+            "grad_norm": logs.get("grad_norm"),
+            "tokens_per_sec": tps,
+        }
+
+        if self.log_memory and torch.cuda.is_available():
+            try:
+                mem = torch.cuda.max_memory_allocated() // 1_000_000
+                log_message["gpu_mem_MiB"] = int(mem)
+                torch.cuda.reset_peak_memory_stats()
+            except Exception:
+                pass
+
+        if is_main_process(args.local_rank):
+            print("\n------------------")
+            print(log_message)
+            print("------------------")
+
+        self.last_time = now
 
 
 def find_latest_checkpoint(output_dir):
@@ -224,22 +349,28 @@ def find_latest_checkpoint(output_dir):
 
 class CustomTrainer(Trainer):
     def log(self, logs: Dict[str, float]) -> None:
-        """
-        Log `logs` on the various objects watching training.
-
-        Subclass and override this method to inject custom behavior.
-
-        Args:
-            logs (`Dict[str, float]`):
-                The values to log.
-        """
         if self.state.epoch is not None:
             logs["epoch"] = self.state.epoch
         if self.args.include_num_input_tokens_seen:
             logs["num_input_tokens_seen"] = self.state.num_input_tokens_seen
 
-        output = {**logs, **{"step": self.state.global_step}}
+        # Safely move logs off GPU
+        output = {
+            k: (
+                v.item() if isinstance(v, torch.Tensor) and v.numel() == 1
+                else v.detach().cpu().tolist() if isinstance(v, torch.Tensor)
+                else v
+            )
+            for k, v in {**logs, "step": self.state.global_step}.items()
+        }
+
+        # Optional: truncate history if needed
+        # if len(self.state.log_history) > 1000:
+        #     self.state.log_history.pop(0)
+
         self.state.log_history.append(output)
+
+        # Must keep this
         self.control = self.callback_handler.on_log(self.args, self.state, self.control, logs)
 
 
@@ -250,72 +381,71 @@ def train():
     args = argparse.Namespace(**args)
 
     # Configure quantization
+
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_use_double_quant=True,
         bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.float16,  # or bfloat16 if your GPU supports it
+        bnb_4bit_compute_dtype=torch.bfloat16,  # A100: prefer BF16 for stability
     )
 
-    # Load model in 4-bit with device_map
+    attn_impl = "flash_attention_2" if model_args.use_flash_attention else "sdpa"
+
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         quantization_config=bnb_config,
-        #device_map="auto",  # allow model to split across 2 GPUs
-        trust_remote_code=True
+        attn_implementation=attn_impl,  # <- enable Flash-2 or SDPA
+        trust_remote_code=True,
     )
 
+    # QLoRA prep (does layernorm casting, gradients on inputs, etc.)
+    model = prepare_model_for_kbit_training(
+        model,
+        use_gradient_checkpointing=True
+    )
+    model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    model.config.use_cache = False  # MUST be False during training (saves memory)
+
     if training_args.use_peft:
-        # Define LoRA config inline
         peft_config = LoraConfig(
-            r=8,
-            lora_alpha=16,
-            lora_dropout=0.1,
+            r=16,  # r=8→16 modest memory bump, usually better quality
+            lora_alpha=32,  # scale with r
+            lora_dropout=0.05,
             bias="none",
-            task_type="CAUSAL_LM"
+            task_type="CAUSAL_LM",
+            target_modules=None,  # let PEFT pick defaults for Qwen; or list attention/MLP proj
         )
-        model.enable_input_require_grads()
         model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()
 
-
-    #logging.info(args)
-    # model = transformers.AutoModelForCausalLM.from_pretrained(
-    #     model_args.model_name_or_path,
-    #     cache_dir=training_args.cache_dir,
-    #     attn_implementation="flash_attention_2" if model_args.use_flash_attention else None,
-    #     trust_remote_code = True
-    # )
-    # if training_args.use_peft:
-    #     peft_config = PeftConfig.from_pretrained(training_args.peft_config_path)
-    #     model.enable_input_require_grads()
-    #     model = get_peft_model(model, peft_config)
-    #     model.print_trainable_parameters()
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
-        pad_token = '<|endoftext|>',
-        eos_token = '<|im_end|>', #<|endoftext|>
-        cache_dir = None,
-        model_max_length = training_args.model_max_length,
-        truncation = True,
-        padding_side = "right",
-        trust_remote_code = True
+        cache_dir=None,
+        model_max_length=training_args.model_max_length,
+        truncation=True,
+        padding_side="right",
+        trust_remote_code=True,
     )
 
-    tokenizer.add_special_tokens({"additional_special_tokens": ["<|im_end|>", "<|im_start|>"]})
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    num_new = tokenizer.add_special_tokens({"additional_special_tokens": ["<|im_start|>", "<|im_end|>"]})
+    if num_new > 0:
+        model.resize_token_embeddings(len(tokenizer), pad_to_multiple_of=8)
+
     data_module = make_supervised_data_module(tokenizer=tokenizer, args=args)
-    #trainer = CustomTrainer(
-    trainer = Trainer(
+
+    trainer = CustomTrainer(
         model=model,
         tokenizer=tokenizer,
         args=training_args,
         **data_module,
-        callbacks=[LoggingCallback, SaveModelCallback, EarlyStoppingCallback(early_stopping_patience=2)],
-        evaluation_strategy="epoch",
-        eval_steps = 1000,
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",  # or another metric like "eval_accuracy"
-        greater_is_better=False,  # because lower loss is better
+        callbacks=[
+            LoggingCallback(log_memory=True),   # <-- instantiate
+            SaveModelCallback(),                # <-- instantiate
+            transformers.EarlyStoppingCallback(early_stopping_patience=2),
+        ]
     )
     trainer.train()
     trainer.save_state()

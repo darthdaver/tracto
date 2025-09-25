@@ -9,12 +9,13 @@ data leakage and bias in the results.
 
 ## Setup
 
-The scripts require `Python ≥ 3.10` and exploit the dependencies installed in the root of the project `llm-prompts-empirical-study`.
+The scripts require `Python ≥ 3.12` and exploit the dependencies installed in the root of the project `tracto`.
 
 Before to continue, please, follow the instructions in the section `Setup` of the corresponding [README.md](../../README.md) file
-in the root `llm-prompts-empirical-study` folder.
+in the root `tracto` folder.
 
-If you are in a new terminal session, remember to activate the venv or conda environment. Move to the `scripts/test-miner` folder and run the following command:
+If you are in a new terminal session, remember to activate the `.venv` or `conda` environment. 
+Move to the `scripts/miner` folder and run the following command:
 
 ```shell
 source ../../.venv/bin/activate
@@ -22,7 +23,7 @@ source ../../.venv/bin/activate
 
 ## Run
 
-To run the test miner, move to the `scripts/test-miner` folder and execute the following command:
+To run the test miner, move to the `scripts/miner` folder and execute the following command:
 
 ```shell
 bash bash/mine.sh
@@ -43,5 +44,5 @@ into smaller chunks. The script will create a folder named `github-repos-split` 
 repositories to mine. The command to run from the root of the current repository is:
 
 ```shell
-python3 scripts/utils/bash/split-github-repos.sh
+python scripts/utils/bash/split-github-repos.sh
 ```
