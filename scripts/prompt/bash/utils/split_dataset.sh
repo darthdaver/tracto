@@ -11,11 +11,21 @@ current_dir=$(realpath "$(dirname "${BASH_SOURCE[@]}")")
 source "${current_dir}/../../../utils/bash/global_variables.sh"
 source "${current_dir}/local_variables.sh"
 
-"$PY_ENV" "${NEURAL_DIR}/utils/split_dataset.py" \
-  --data-dir              "${OUTPUT_PROMPT_JSONL_DATASET}" \
-  --out-dir               "${OUTPUT_SPLIT_DIR}" \
-  --min-oracles-for-test  "100" \
-  --seed                  "42"  \
-  --train-ratio           "0.65" \
-  --val-ratio             "0.1" \
-  --test-ratio            "0.25"
+if [ $# -eq 1 ]; then
+    config_paths=("$1")
+else
+    config_paths=("${PROMPT_DIR}/resources/config/"*/)
+fi
+
+for config_path in "${config_paths[@]}"; do
+  config_num=$(basename "${config_path}")
+  i=$(basename "$config_num")
+  "$PY_ENV" "${PROMPT_DIR}/utils/split_dataset.py" \
+    --data-dir              "${OUTPUT_DIR}/${i}/prompt-jsonl" \
+    --out-dir               "${OUTPUT_DIR}/${i}/split-dataset" \
+    --min-oracles-for-test  "100" \
+    --seed                  "42"  \
+    --train-ratio           "0.65" \
+    --val-ratio             "0.1" \
+    --test-ratio            "0.25"
+done

@@ -6,7 +6,7 @@ from transformers.trainer_utils import is_main_process
 from transformers import BitsAndBytesConfig
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Sequence, List, Iterator
-from peft import prepare_model_for_kbit_training
+from peft.utils import prepare_model_for_kbit_training
 from peft import get_peft_model, LoraConfig
 
 
@@ -49,7 +49,7 @@ class TrainingArguments(transformers.TrainingArguments):
     per_device_train_batch_size: int = 1
     per_device_eval_batch_size: int = 1
     gradient_accumulation_steps: int = 16  # raise to hit target tokens/step
-    group_by_length: bool = True
+    group_by_length: bool = False
     ddp_find_unused_parameters: bool = False
     eval_accumulation_steps: int = 1  # prevents CPU RAM blowup
     prediction_loss_only: bool = True  # don’t store logits by default
@@ -61,29 +61,44 @@ class TrainingArguments(transformers.TrainingArguments):
 class DataCollatorForSupervisedDataset:
     tokenizer: transformers.PreTrainedTokenizer
     pad_to_multiple_of: int = 8
+    static_pad_to: Optional[int] = None  # <- NEW: force a fixed seq length
 
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
-        input_ids = [inst["input_ids"] for inst in instances]
-        labels    = [inst["labels"]    for inst in instances]
+        # gather
+        input_ids = [inst["input_ids"] for inst in instances if inst and "input_ids" in inst]
+        labels    = [inst["labels"]    for inst in instances if inst and "labels" in inst]
+        if not input_ids:
+            raise RuntimeError("Empty batch in collator")
 
-        input_ids = torch.nn.utils.rnn.pad_sequence(
+        # first pass: pad to longest in this mini-batch
+        ids = torch.nn.utils.rnn.pad_sequence(
             input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
         )
-        labels = torch.nn.utils.rnn.pad_sequence(
+        lbl = torch.nn.utils.rnn.pad_sequence(
             labels, batch_first=True, padding_value=IGNORE_INDEX
         )
-        # pad to multiple of 8 if needed
-        if self.pad_to_multiple_of:
-            m = self.pad_to_multiple_of
-            to = ((input_ids.size(1) + m - 1) // m) * m
-            if to != input_ids.size(1):
-                pad = to - input_ids.size(1)
-                input_ids = torch.nn.functional.pad(input_ids, (0, pad), value=self.tokenizer.pad_token_id)
-                labels    = torch.nn.functional.pad(labels,    (0, pad), value=IGNORE_INDEX)
+
+        # decide target length: static_pad_to if set, otherwise round up to multiple-of-8
+        if self.static_pad_to is not None:
+            target_len = int(self.static_pad_to)
+        else:
+            m = int(self.pad_to_multiple_of) if self.pad_to_multiple_of else 1
+            target_len = ((ids.size(1) + m - 1) // m) * m
+
+        # second pass: pad (or no-op) to target_len
+        if ids.size(1) != target_len:
+            pad = target_len - ids.size(1)
+            if pad < 0:
+                ids = ids[:, :target_len]
+                lbl = lbl[:, :target_len]
+            else:
+                ids = torch.nn.functional.pad(ids, (0, pad), value=self.tokenizer.pad_token_id)
+                lbl = torch.nn.functional.pad(lbl, (0, pad), value=IGNORE_INDEX)
+
         return {
-            "input_ids": input_ids,
-            "labels": labels,
-            "attention_mask": input_ids.ne(self.tokenizer.pad_token_id),
+            "input_ids": ids,
+            "labels": lbl,
+            "attention_mask": ids.ne(self.tokenizer.pad_token_id),
         }
 
 class JsonlIterable(IterableDataset):
@@ -263,7 +278,11 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, arg
     eval_files = get_jsonl_paths_for_split(args.data_dir, args.eval_file)
     train_dataset = JsonlIterable(train_files, tokenizer, args.model_max_length, only_last_turn_loss=True, drop_long=False)
     eval_dataset  = JsonlIterable(eval_files,  tokenizer, args.model_max_length, only_last_turn_loss=True, drop_long=False)
-    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer, pad_to_multiple_of=8)
+    data_collator = DataCollatorForSupervisedDataset(
+        tokenizer=tokenizer,
+        pad_to_multiple_of=8,
+        static_pad_to=args.model_max_length,  # <- key
+    )
     return dict(train_dataset=train_dataset, eval_dataset=eval_dataset, data_collator=data_collator)
 
 def is_master(args):
@@ -348,7 +367,7 @@ def find_latest_checkpoint(output_dir):
 
 
 class CustomTrainer(Trainer):
-    def log(self, logs: Dict[str, float]) -> None:
+    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
         if self.state.epoch is not None:
             logs["epoch"] = self.state.epoch
         if self.args.include_num_input_tokens_seen:
@@ -438,7 +457,7 @@ def train():
 
     trainer = CustomTrainer(
         model=model,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         args=training_args,
         **data_module,
         callbacks=[

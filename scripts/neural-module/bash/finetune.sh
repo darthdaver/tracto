@@ -10,13 +10,15 @@ source "${current_dir}/../../utils/bash/global_variables.sh"
 source "${current_dir}/utils/local_variables.sh"
 source "${current_dir}/utils/model_variables.sh"
 
+target_config=${1}
+
 # "$PY_ENV" "${NEURAL_DIR}/finetuning.py" \
-torchrun --nproc-per-node=2 "${NEURAL_DIR}/finetuning.py" \
-  --model_name_or_path "Qwen/Qwen2.5-Coder-14B-Instruct" \
-  --use_flash_attention True \
-  --train_file "${OUTPUT_SPLIT_DIR}/train_projects.csv" \
-  --eval_file  "${OUTPUT_SPLIT_DIR}/val_projects.csv" \
-  --data_dir   "${OUTPUT_PROMPT_BINARY_DATASET}" \
+"$PY_ENV" -m torch.distributed.run --nproc-per-node=2 "${NEURAL_DIR}/finetuning.py" \
+  --model_name_or_path "${MODEL_NAME}" \
+  --use_flash_attention False \
+  --train_file "${OUTPUT_PROMPT_DIR}/${target_config}/split-dataset/train_projects.csv" \
+  --eval_file  "${OUTPUT_PROMPT_DIR}/${target_config}/split-dataset/val_projects.csv" \
+  --data_dir   "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-jsonl" \
   --output_dir "${OUTPUT_FINE_TUNING_DIR}" \
   --model_max_length 8192 \
   --per_device_train_batch_size 1 \
@@ -24,7 +26,7 @@ torchrun --nproc-per-node=2 "${NEURAL_DIR}/finetuning.py" \
   --gradient_accumulation_steps 16 \
   --bf16 True --fp16 False \
   --gradient_checkpointing True \
-  --group_by_length True \
+  --group_by_length False \
   --dataloader_num_workers 4 \
   --dataloader_persistent_workers True \
   --dataloader_pin_memory True \
@@ -36,8 +38,8 @@ torchrun --nproc-per-node=2 "${NEURAL_DIR}/finetuning.py" \
   --max_grad_norm 0.3 \
   --use_peft True \
   --num_train_epochs 2 \
-  --max_steps 3500 \
-  --evaluation_strategy steps --eval_steps 1000 \
+  --max_steps 100000 \
+  --eval_strategy steps --eval_steps 1000 \
   --prediction_loss_only True \
   --eval_accumulation_steps 1 \
   --save_strategy steps --save_steps 1000 --save_total_limit 1 \
@@ -46,4 +48,6 @@ torchrun --nproc-per-node=2 "${NEURAL_DIR}/finetuning.py" \
   --logging_strategy steps --logging_steps 100 \
   --report_to "none" \
   --ddp_find_unused_parameters False \
-  --include_num_input_tokens_seen True
+  --include_num_input_tokens_seen True \
+  --no_remove_unused_columns \
+  --dataloader_drop_last

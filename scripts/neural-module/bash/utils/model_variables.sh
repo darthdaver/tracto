@@ -1,5 +1,5 @@
-TOKENIZER="Qwen/Qwen2.5-Coder-32B-Instruct"
-MODEL_NAME="Qwen/Qwen2.5-Coder-32B-Instruct"
+TOKENIZER="Qwen/Qwen2.5-Coder-16B-Instruct"
+MODEL_NAME="Qwen/Qwen2.5-Coder-16B-Instruct"
 CUDA_VISIBLE_DEVICES=0,1
 TOKENIZERS_PARALLELISM=false
 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True

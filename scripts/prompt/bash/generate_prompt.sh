@@ -23,7 +23,19 @@ elif [ "${dataset_type}" == "tokens" ]; then
     OUTPUT_DATASET_DIR="${OUTPUT_TOKENS_DATASET}-${target_dir}"
 fi
 
-for config_path in "${PROMPT_DIR}/resources/config"/*/; do
+# Create an array to hold the config paths
+declare -a config_paths
+
+# Check if an argument is passed
+if [ $# -eq 1 ]; then
+    # If an argument is provided, add it to the array
+    config_paths=("$1")
+else
+    # Otherwise, populate the array with all subfolder paths
+    config_paths=("${PROMPT_DIR}/resources/config/"*/)
+fi
+
+for config_path in "${config_paths[@]}"; do
   config_num=$(basename "${config_path}")
   # Define a log file at the top of the script
   log_file="${OUTPUT_DIR}/logs/prompt_${dataset_type}_config_${config_num}.log"

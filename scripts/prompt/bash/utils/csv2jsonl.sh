@@ -8,7 +8,13 @@ source "${current_dir}/local_variables.sh"
 
 query_path=${1:-$QUERY_STD_PATH}
 
-for config_path in "${PROMPT_DIR}/resources/config"/*/; do
+if [ $# -eq 1 ]; then
+    config_paths=("$1")
+else
+    config_paths=("${PROMPT_DIR}/resources/config/"*/)
+fi
+
+for config_path in "${config_paths[@]}"; do
   config_num=$(basename "${config_path}")
   i=$(basename "$config_num")
   "$PY_ENV" "${PROMPT_DIR}/utils/csv2jsonl.py" "${OUTPUT_DIR}/${i}/prompt" "${OUTPUT_DIR}/${i}/prompt-jsonl" "${query_path}"
