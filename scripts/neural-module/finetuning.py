@@ -9,13 +9,17 @@ try:
 except RuntimeError:
     pass
 import numpy as np
-import torch, torch.distributed as dist
+import inspect, torch, torch.distributed as dist
 from torch.utils.data import Dataset, get_worker_info
 import transformers
 from transformers import Trainer
 from transformers.trainer_utils import is_main_process
 from transformers import BitsAndBytesConfig
-from transformers.trainer_pt_utils import LengthGroupedSampler, DistributedLengthGroupedSampler
+from transformers.trainer_pt_utils import LengthGroupedSampler
+try:
+    from transformers.trainer_pt_utils import DistributedLengthGroupedSampler
+except Exception:
+    DistributedLengthGroupedSampler = None
 from torch.utils.data import DataLoader
 
 from peft.utils import prepare_model_for_kbit_training
@@ -271,18 +275,50 @@ def is_master(local_rank):
 class CustomTrainer(Trainer):
     def get_train_dataloader(self):
         dataset = self.train_dataset
-        # per-process batch size
         bsz = self.args.per_device_train_batch_size
-        if self.args.world_size > 1:
-            sampler = DistributedLengthGroupedSampler(
-                batch_size=bsz,
-                lengths=dataset.lengths,
-                world_size=self.args.world_size,
-                rank=self.args.process_index,
-                generator=None
-            )
+
+        # Resolve DDP world size / rank
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            ws = torch.distributed.get_world_size()
+            rk = torch.distributed.get_rank()
         else:
-            sampler = LengthGroupedSampler(batch_size=bsz, lengths=dataset.lengths, generator=None)
+            ws, rk = 1, 0
+
+        if ws > 1 and DistributedLengthGroupedSampler is not None:
+            # Build kwargs only with params the sampler actually supports
+            sig = inspect.signature(DistributedLengthGroupedSampler)
+            kwargs = {}
+            if "batch_size" in sig.parameters:
+                kwargs["batch_size"] = bsz
+            if "lengths" in sig.parameters:
+                kwargs["lengths"] = dataset.lengths
+            if "world_size" in sig.parameters:
+                kwargs["world_size"] = ws
+            if "num_replicas" in sig.parameters:
+                kwargs["num_replicas"] = ws
+            if "rank" in sig.parameters:
+                kwargs["rank"] = rk
+            if "model_input_name" in sig.parameters:
+                kwargs["model_input_name"] = "input_ids"
+            # only pass generator if accepted
+            if "generator" in sig.parameters:
+                kwargs["generator"] = None
+
+            sampler = DistributedLengthGroupedSampler(**kwargs)
+        else:
+            # Same treatment for non-distributed variant (older HF may also not accept generator)
+            sig = inspect.signature(LengthGroupedSampler)
+            kwargs = {}
+            if "batch_size" in sig.parameters:
+                kwargs["batch_size"] = bsz
+            if "lengths" in sig.parameters:
+                kwargs["lengths"] = dataset.lengths
+            if "model_input_name" in sig.parameters:
+                kwargs["model_input_name"] = "input_ids"
+            if "generator" in sig.parameters:
+                kwargs["generator"] = None
+
+            sampler = LengthGroupedSampler(**kwargs)
 
         return DataLoader(
             dataset,
@@ -293,7 +329,9 @@ class CustomTrainer(Trainer):
             pin_memory=self.args.dataloader_pin_memory,
             persistent_workers=self.args.dataloader_persistent_workers,
             drop_last=self.args.dataloader_drop_last,
+            prefetch_factor=8,  # safe to keep; ignored if unsupported
         )
+
 
 class SaveModelCallback(transformers.TrainerCallback):
     def on_save(self, args, state, control, **kwargs):

@@ -19,7 +19,6 @@ import transformers
 from transformers import Trainer
 from transformers.trainer_utils import is_main_process
 from transformers import BitsAndBytesConfig
-from transformers.trainer_pt_utils import LengthGroupedSampler, DistributedLengthGroupedSampler
 from torch.utils.data import DataLoader
 
 from peft.utils import prepare_model_for_kbit_training

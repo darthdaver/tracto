@@ -24,10 +24,10 @@ rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary" 
 #   containing: train.*.{bin,idx}, train.meta.json, val.*.{bin,idx}, val.meta.json
 # - We evaluate/save at end of each epoch so early stopping can't trigger before epoch 1.
 
-"$PY_ENV" -m torch.distributed.run --nproc-per-node=2 "${NEURAL_DIR}/finetuning.py" \
+"$PY_ENV" -m torch.distributed.run --nproc-per-node=2 "${NEURAL_DIR}/finetuning-speed.py" \
   --model_name_or_path "${MODEL_NAME}" \
   --use_flash_attention False \
-  --tokenized_dir "${LOCAL_TOKENIZED}" \
+  --tokenized_dir "${LOCAL_TOKENIZED}/prompt-binary" \
   --output_dir "${OUTPUT_FINE_TUNING_DIR}" \
   --model_max_length 8192 \
   --per_device_train_batch_size 1 \
