@@ -20,7 +20,7 @@ target_config=${1}
 "$PY_ENV" -m torch.distributed.run --nproc-per-node=2 "${NEURAL_DIR}/finetuning.py" \
   --model_name_or_path "${MODEL_NAME}" \
   --use_flash_attention False \
-  --tokenized_dir "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary/tokenizer" \
+  --tokenized_dir "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary" \
   --output_dir "${OUTPUT_FINE_TUNING_DIR}" \
   --model_max_length 8192 \
   --per_device_train_batch_size 1 \
