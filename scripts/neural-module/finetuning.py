@@ -1,7 +1,13 @@
 import os, time, json, argparse, logging
 from dataclasses import dataclass, field
 from typing import Dict, Optional, List, Tuple
-
+import os, multiprocessing as mp
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+os.environ.setdefault("HF_DATASETS_DISABLE_PARALLELISM", "1")
+try:
+    mp.set_start_method("spawn", force=True)
+except RuntimeError:
+    pass
 import numpy as np
 import torch, torch.distributed as dist
 from torch.utils.data import Dataset, get_worker_info
@@ -205,9 +211,12 @@ class MemmapShardDataset(Dataset):
         shard_idx, j = self._locate(i)
         self._open_mm(shard_idx)
         off = self.shards[shard_idx]["offsets"]
-        a = int(off[j]); b = int(off[j+1])
-        ids = torch.from_numpy(np.asarray(self._ids_mm[shard_idx][a:b], dtype=np.int32))
-        lbl = torch.from_numpy(np.asarray(self._lbl_mm[shard_idx][a:b], dtype=np.int32))
+        a = int(off[j]);
+        b = int(off[j + 1])
+
+        # Copy + cast to torch.long (int64)
+        ids = torch.tensor(self._ids_mm[shard_idx][a:b], dtype=torch.long)
+        lbl = torch.tensor(self._lbl_mm[shard_idx][a:b], dtype=torch.long)
         return {"input_ids": ids, "labels": lbl}
 
 # -------------------------
@@ -387,7 +396,12 @@ def train():
 
     # Ensure model embeddings match tokenizer (in case additional specials were added)
     model.resize_token_embeddings(len(tokenizer), pad_to_multiple_of=8)
+    model.config.pad_token_id = tokenizer.pad_token_id
+    model.config.eos_token_id = tokenizer.eos_token_id
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    if hasattr(model, "generation_config"):
+        model.generation_config.pad_token_id = tokenizer.pad_token_id
+        model.generation_config.eos_token_id = tokenizer.eos_token_id
     model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     model.config.use_cache = False
 

@@ -10,6 +10,9 @@ source "${current_dir}/../../utils/bash/global_variables.sh"
 source "${current_dir}/utils/local_variables.sh"
 source "${current_dir}/utils/model_variables.sh"
 
+export TOKENIZERS_PARALLELISM
+export HF_DATASETS_DISABLE_PARALLELISM
+
 target_config=${1}
 
 # NOTE
