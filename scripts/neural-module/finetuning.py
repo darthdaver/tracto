@@ -1,76 +1,229 @@
-import csv, time, logging, argparse, torch, transformers, os, json, io
-import torch.distributed as dist
-from torch.utils.data import IterableDataset, get_worker_info
-from transformers import Trainer, EarlyStoppingCallback
+import os, time, json, argparse, logging
+from dataclasses import dataclass, field
+from typing import Dict, Optional, List, Tuple
+
+import numpy as np
+import torch, torch.distributed as dist
+from torch.utils.data import Dataset, get_worker_info
+import transformers
+from transformers import Trainer
 from transformers.trainer_utils import is_main_process
 from transformers import BitsAndBytesConfig
-from dataclasses import dataclass, field
-from typing import Dict, Optional, Sequence, List, Iterator
+from transformers.trainer_pt_utils import LengthGroupedSampler, DistributedLengthGroupedSampler
+from torch.utils.data import DataLoader
+
 from peft.utils import prepare_model_for_kbit_training
 from peft import get_peft_model, LoraConfig
 
+IGNORE_INDEX = -100
+logging.basicConfig(level=logging.INFO)
 
-IGNORE_INDEX = -100 #default ignore_index = 100 in transformers
-logging.basicConfig(level=logging.DEBUG)
-
+# -------------------------
+# Args
+# -------------------------
 
 @dataclass
 class ModelArguments:
-    model_name_or_path: Optional[str] = field(default="Qwen/Qwen2.5-Coder-7B-Instruct")
+    model_name_or_path: Optional[str] = field(default="Qwen/Qwen2.5-Coder-14B-Instruct")
     use_flash_attention: bool = field(default=False, metadata={"help": "Whether to use Flash Attention."})
 
 @dataclass
 class DataArguments:
-    train_file: Optional[str] = field(default=os.path.join(os.path.dirname(__file__), "..", "output", "split-dataset", "train_projects.csv"))
-    eval_file: Optional[str] = field(default=os.path.join(os.path.dirname(__file__), "..", "output", "split-dataset", "val_projects.csv"))
-    data_dir: Optional[str] = field(default=os.path.join(os.path.dirname(__file__), "..", "prompt", "output", "1", "prompt-binary"))
-
+    # Root directory containing train.* and val.* shards + meta JSONs (output of the builder)
+    tokenized_dir: str = field(default=None, metadata={"help": "Folder with pre-tokenized shards: train.*.{bin,idx}, val.*.{bin,idx}, and meta JSONs."})
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
-    output_dir: Optional[str] = field(default=os.path.join(os.path.dirname(__file__), "..", "output", "finetuning"))
+    output_dir: Optional[str] = field(default=os.path.join(os.path.dirname(__file__), "output", "ft"))
     cache_dir: Optional[str] = field(default=None)
     optim: str = field(default="adamw_torch")
-    model_max_length: int = field(
-        default=32768,
-        metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
-    )
-    num_train_epochs: int = field(default=5)
-    truncate_source: bool = field(default=False)
+    model_max_length: int = field(default=8192)
+    num_train_epochs: int = field(default=3)
     use_peft: bool = field(default=True)
-    peft_config_path: str = field(default=None)
-    deepspeed: Optional[str] = None #"./tracto/scripts/neural-module/ds_config.json"
-    dataloader_num_workers = 4
-    dataloader_persistent_workers = True
-    dataloader_pin_memory = True
+    deepspeed: Optional[str] = None
+    dataloader_num_workers: int = 8
+    dataloader_persistent_workers: bool = True
+    dataloader_pin_memory: bool = True
     gradient_checkpointing: bool = True
-    bf16: bool = True  # A100
-    fp16: bool = False  # avoid mixed bf16/fp16 confusion
+    bf16: bool = True
+    fp16: bool = False
     per_device_train_batch_size: int = 1
     per_device_eval_batch_size: int = 1
-    gradient_accumulation_steps: int = 16  # raise to hit target tokens/step
-    group_by_length: bool = False
+    gradient_accumulation_steps: int = 16
+    group_by_length: bool = False   # not used with plain PyTorch Dataset
     ddp_find_unused_parameters: bool = False
-    eval_accumulation_steps: int = 1  # prevents CPU RAM blowup
-    prediction_loss_only: bool = True  # don’t store logits by default
+    eval_accumulation_steps: int = 1
+    prediction_loss_only: bool = True
     max_grad_norm: float = 0.3
     report_to: Optional[str] = "none"
-    torch_compile: bool = False  # leave off unless you’ve profiled it
+    torch_compile: bool = False
+
+    # Early stopping guard: don't allow stop before at least N full epochs
+    min_early_stopping_epochs: int = 1
+    early_stopping_patience: int = 2  # pass via CLI in bash
+
+# -------------------------
+# Tokenizer helpers
+# -------------------------
+
+def load_tokenizer_consistent(model_name: str, model_max_length: int, tokenized_dir: str):
+    """
+    Load the tokenizer in the exact same way as the builder did.
+    If a saved tokenizer exists under tokenized_dir/tokenizer/, prefer that.
+    Else load from model hub and add the same special tokens.
+    """
+    saved_tok_dir = os.path.join(tokenized_dir, "tokenizer")
+    if os.path.isdir(saved_tok_dir):
+        tok = transformers.AutoTokenizer.from_pretrained(saved_tok_dir, trust_remote_code=True)
+    else:
+        tok = transformers.AutoTokenizer.from_pretrained(
+            model_name, trust_remote_code=True, padding_side="right"
+        )
+        if tok.pad_token_id is None:
+            tok.pad_token = tok.eos_token
+        # Suppress "longer than max length" warnings; we enforce our own cap in data
+        tok.model_max_length = 1_000_000_000
+        tok.add_special_tokens({"additional_special_tokens": ["<|im_start|>", "<|im_end|>"]})
+    # Set runtime cap for attention mask creation/padding
+    tok.model_max_length = model_max_length
+    return tok
+
+def assert_meta_compatible(tokenized_dir: str, tok: transformers.PreTrainedTokenizer, split: str):
+    """
+    Basic sanity checks between meta and the runtime tokenizer.
+    """
+    meta_path = os.path.join(tokenized_dir, f"{split}.meta.json")
+    if not os.path.isfile(meta_path):
+        logging.warning(f"{meta_path} not found; skipping tokenizer/meta consistency checks for split={split}.")
+        return
+    with open(meta_path, "r") as f:
+        meta = json.load(f)
+    # pad/eos should match; special tokens should exist
+    if "vocab_size" in meta:
+        assert len(tok) == meta["vocab_size"], f"vocab size mismatch: {len(tok)} vs {meta['vocab_size']}"
+    sti = meta.get("special_token_ids")
+    if sti:
+        assert tok("<|im_start|>").input_ids[0] == sti["<|im_start|>"]
+        assert tok("<|im_end|>").input_ids[0] == sti["<|im_end|>"]
+    if "pad_token_id" in meta and meta["pad_token_id"] is not None:
+        assert tok.pad_token_id == meta["pad_token_id"], \
+            f"pad_token_id mismatch: tokenizer={tok.pad_token_id}, meta={meta['pad_token_id']}"
+    if "eos_token_id" in meta and meta["eos_token_id"] is not None:
+        assert tok.eos_token_id == meta["eos_token_id"], \
+            f"eos_token_id mismatch: tokenizer={tok.eos_token_id}, meta={meta['eos_token_id']}"
+    for t in ["<|im_start|>", "<|im_end|>"]:
+        tid = tok(t).input_ids[0]
+        if tid < 0:
+            raise RuntimeError(f"Token {t} missing in tokenizer.")
+
+# -------------------------
+# Data: memmap shards
+# -------------------------
+
+class MemmapShardDataset(Dataset):
+    """
+    Map-style dataset over pre-tokenized variable-length sequences, with random/shuffled
+    sampling handled by Trainer's (Distributed)Sampler. This ensures each epoch traverses
+    the entire dataset exactly once per process.
+
+    Directory layout (tokenized_dir):
+      train.00000.input_ids.bin
+      train.00000.labels.bin
+      train.00000.idx
+      train.00001.input_ids.bin
+      ...
+      train.meta.json
+      val.00000.input_ids.bin
+      ...
+      val.meta.json
+      [optional] tokenizer/  (saved tokenizer from builder)
+    """
+    def __init__(self, root: str, split: str):
+        self.root = root
+        self.split = split
+
+        # Discover shard bases
+        import glob
+        idx_paths = sorted(glob.glob(os.path.join(root, f"{split}.*.idx")))
+        if not idx_paths:
+            raise FileNotFoundError(f"No {split} shards (.idx) found in {root}")
+        self.shards: List[Dict] = []
+        self.cum_counts: List[int] = []
+        lengths_chunks: List[np.ndarray] = []
+        total = 0
+        for idx_path in idx_paths:
+            base = os.path.splitext(idx_path)[0]
+            ids_path = base + ".input_ids.bin"
+            lbl_path = base + ".labels.bin"
+            # Load offsets (N+1 entries)
+            offsets = np.fromfile(idx_path, dtype=np.uint64)
+            if offsets.size < 2:
+                continue
+            n_samples = offsets.size - 1
+            self.shards.append({
+                "base": base,
+                "ids_path": ids_path,
+                "lbl_path": lbl_path,
+                "idx_path": idx_path,
+                "offsets": offsets,   # small; keep in RAM
+                "n": n_samples,
+            })
+            # ---- length computation (tokens per sample) ----
+            lengths = np.diff(offsets).astype(np.int32)  # safe since max_length <= 8192
+            lengths_chunks.append(lengths)
+            total += n_samples
+            self.cum_counts.append(total)
+
+        if total == 0:
+            raise RuntimeError(f"{split}: zero samples found in {root}")
+
+        # Concatenate all per-shard lengths into one array aligned with global indices
+        self.lengths: np.ndarray = np.concatenate(lengths_chunks, axis=0)  # shape = [__len__()]
+        # Per-worker cache for memmaps (opened lazily)
+        self._ids_mm = [None] * len(self.shards)
+        self._lbl_mm = [None] * len(self.shards)
+
+    def __len__(self) -> int:
+        return self.cum_counts[-1]
+
+    def _open_mm(self, shard_idx: int):
+        if self._ids_mm[shard_idx] is None:
+            ids_path = self.shards[shard_idx]["ids_path"]
+            lbl_path = self.shards[shard_idx]["lbl_path"]
+            self._ids_mm[shard_idx] = np.memmap(ids_path, mode="r", dtype=np.int32)
+            self._lbl_mm[shard_idx] = np.memmap(lbl_path, mode="r", dtype=np.int32)
+
+    def _locate(self, i: int) -> Tuple[int, int]:
+        # map global index -> (shard_idx, local_idx)
+        import bisect
+        shard_idx = bisect.bisect_right(self.cum_counts, i)
+        prev_total = 0 if shard_idx == 0 else self.cum_counts[shard_idx-1]
+        local_idx = i - prev_total
+        return shard_idx, local_idx
+
+    def __getitem__(self, i: int) -> Dict[str, torch.Tensor]:
+        shard_idx, j = self._locate(i)
+        self._open_mm(shard_idx)
+        off = self.shards[shard_idx]["offsets"]
+        a = int(off[j]); b = int(off[j+1])
+        ids = torch.from_numpy(np.asarray(self._ids_mm[shard_idx][a:b], dtype=np.int32))
+        lbl = torch.from_numpy(np.asarray(self._lbl_mm[shard_idx][a:b], dtype=np.int32))
+        return {"input_ids": ids, "labels": lbl}
+
+# -------------------------
+# Collator (dynamic pad)
+# -------------------------
 
 @dataclass
 class DataCollatorForSupervisedDataset:
     tokenizer: transformers.PreTrainedTokenizer
     pad_to_multiple_of: int = 8
-    static_pad_to: Optional[int] = None  # <- NEW: force a fixed seq length
+    static_pad_to: Optional[int] = None  # keep None for dynamic lengths
 
-    def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
-        # gather
-        input_ids = [inst["input_ids"] for inst in instances if inst and "input_ids" in inst]
-        labels    = [inst["labels"]    for inst in instances if inst and "labels" in inst]
-        if not input_ids:
-            raise RuntimeError("Empty batch in collator")
+    def __call__(self, instances: List[Dict]) -> Dict[str, torch.Tensor]:
+        input_ids = [ex["input_ids"] for ex in instances]
+        labels    = [ex["labels"]    for ex in instances]
 
-        # first pass: pad to longest in this mini-batch
         ids = torch.nn.utils.rnn.pad_sequence(
             input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
         )
@@ -78,14 +231,12 @@ class DataCollatorForSupervisedDataset:
             labels, batch_first=True, padding_value=IGNORE_INDEX
         )
 
-        # decide target length: static_pad_to if set, otherwise round up to multiple-of-8
         if self.static_pad_to is not None:
             target_len = int(self.static_pad_to)
         else:
             m = int(self.pad_to_multiple_of) if self.pad_to_multiple_of else 1
             target_len = ((ids.size(1) + m - 1) // m) * m
 
-        # second pass: pad (or no-op) to target_len
         if ids.size(1) != target_len:
             pad = target_len - ids.size(1)
             if pad < 0:
@@ -101,226 +252,64 @@ class DataCollatorForSupervisedDataset:
             "attention_mask": ids.ne(self.tokenizer.pad_token_id),
         }
 
-class JsonlIterable(IterableDataset):
-    def __init__(
-        self,
-        files: List[str],
-        tokenizer,
-        max_length: int,
-        only_last_turn_loss: bool = True,
-        drop_long: bool = False,   # if False, truncate to max_length
-    ):
-        self.files = files
-        self.tok = tokenizer
-        self.maxlen = max_length
-        self.only_last = only_last_turn_loss
-        self.drop_long = drop_long
-        # cache special IDs
-        self.im_start_id = self.tok("<|im_start|>").input_ids[0]
-        self.im_end_id   = self.tok("<|im_end|>").input_ids[0]
-        self.nl_id       = self.tok("\n", add_special_tokens=False).input_ids[-1:]
-        # pre-encode role tokens once
-        self._sys_tok = self.tok("system", add_special_tokens=False).input_ids + self.nl_id
-        self._usr_tok = self.tok("user",    add_special_tokens=False).input_ids + self.nl_id
-        self._asst_tok= self.tok("assistant", add_special_tokens=False).input_ids + self.nl_id
+# -------------------------
+# Logging + delayed early stop
+# -------------------------
 
-    def _encode_dialog(self, msgs: List[Dict]) -> Optional[Dict]:
-        roles_map = {"user": self._usr_tok, "assistant": self._asst_tok, "system": self._sys_tok}
-        # system header
-        system_message = "You are a testing developer assistant. You must help to automatize the process of generating test oracles, token-by-token."
-        if msgs and msgs[0].get("role") == "system" and msgs[0].get("content"):
-            system_message = msgs[0]["content"]
+def is_master(local_rank):
+    return is_main_process(local_rank)
 
-        ids = []
-        lbl = []
-
-        sys_ids = [self.im_start_id] + roles_map["system"] + \
-                  self.tok(system_message, add_special_tokens=False).input_ids + \
-                  [self.im_end_id] + self.nl_id
-        ids += sys_ids
-        lbl += [self.im_start_id] + [IGNORE_INDEX]*(len(sys_ids)-3) + [self.im_end_id] + self.nl_id
-
-        turns = msgs[1:] if msgs and msgs[0].get("role") == "system" else msgs
-        for j, s in enumerate(turns):
-            role = s["role"]
-            if role not in roles_map:
-                raise ValueError(f"Unknown role: {role}")
-
-            content_ids = self.tok(s["content"], add_special_tokens=False).input_ids
-            seg = self.tok.convert_tokens_to_ids("<|im_start|>")  # not used; we have im_start_id
-            _ids = roles_map[role]
-            full = [self.im_start_id] + _ids + content_ids + [self.im_end_id] + self.nl_id
-            ids += full
-
-            if role == "user" or (self.only_last and j < len(turns) - 1):
-                tgt = [self.im_start_id] + [IGNORE_INDEX]*(len(full)-3) + [self.im_end_id] + self.nl_id
-            elif role == "assistant":
-                # mask role tokens only; supervise the assistant content
-                prefix_len = 1 + len(_ids)  # <|im_start|> + role + \n
-                tgt = [self.im_start_id] + [IGNORE_INDEX]*prefix_len + full[prefix_len+1:-2] + [self.im_end_id] + self.nl_id
-            else:  # system in the middle
-                tgt = [self.im_start_id] + [IGNORE_INDEX]*(len(full)-3) + [self.im_end_id] + self.nl_id
-            lbl += tgt
-        # length control
-        if len(ids) > self.maxlen:
-            if self.drop_long:
-                return None
-            # truncate from the right (labels must match)
-            ids  = ids[:self.maxlen]
-            lbl  = lbl[:self.maxlen]
-        return {
-            "input_ids": torch.tensor(ids, dtype=torch.long),
-            "labels": torch.tensor(lbl, dtype=torch.long),
-        }
-
-    def __iter__(self) -> Iterator[Dict[str, torch.Tensor]]:
-        # figure out global sharding factor
-        if dist.is_available() and dist.is_initialized():
-            world_size = dist.get_world_size()
-            rank = dist.get_rank()
+class CustomTrainer(Trainer):
+    def get_train_dataloader(self):
+        dataset = self.train_dataset
+        # per-process batch size
+        bsz = self.args.per_device_train_batch_size
+        if self.args.world_size > 1:
+            sampler = DistributedLengthGroupedSampler(
+                batch_size=bsz,
+                lengths=dataset.lengths,
+                world_size=self.args.world_size,
+                rank=self.args.process_index,
+                generator=None
+            )
         else:
-            world_size = 1
-            rank = 0
+            sampler = LengthGroupedSampler(batch_size=bsz, lengths=dataset.lengths, generator=None)
 
-        winfo = get_worker_info()
-        if winfo is None:
-            num_workers = 1
-            worker_id = 0
-        else:
-            num_workers = winfo.num_workers
-            worker_id = winfo.id
-
-        shards = world_size * num_workers
-        my_shard = rank * num_workers + worker_id
-        counter = 0
-
-        for path in self.files:
-            with io.open(path, "r", encoding="utf-8", errors="replace") as f:
-                for line in f:
-                    # shard by line index across all files
-                    if (counter % shards) != my_shard:
-                        counter += 1
-                        continue
-                    counter += 1
-                    try:
-                        obj = json.loads(line)
-                    except Exception:
-                        continue
-                    msgs = obj["messages"] if "messages" in obj else obj
-                    out = self._encode_dialog(msgs)
-                    if out is not None:
-                        yield out
-
-
-def smart_tokenizer_and_embedding_resize(
-    special_tokens_dict: Dict,
-    tokenizer: transformers.PreTrainedTokenizer,
-    model: transformers.PreTrainedModel
-):
-    """Resize tokenizer and embedding.
-
-    Note: This is the unoptimized version that may make your embedding size not be divisible by 64.
-    """
-    num_new_tokens = tokenizer.add_special_tokens(special_tokens_dict)
-    model.resize_token_embeddings(len(tokenizer))
-
-    if num_new_tokens > 0:
-        input_embeddings = model.get_input_embeddings().weight.data
-        output_embeddings = model.get_output_embeddings().weight.data
-
-        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
-        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
-
-        input_embeddings[-num_new_tokens:] = input_embeddings_avg
-        output_embeddings[-num_new_tokens:] = output_embeddings_avg
-
-
-def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedTokenizer) -> Dict:
-    """Tokenize a list of strings."""
-    tokenized_list = [
-        tokenizer(
-            text,
-            return_tensors="pt",
-            padding="longest",
-            max_length=tokenizer.model_max_length,
-            truncation=True,
+        return DataLoader(
+            dataset,
+            batch_size=bsz,
+            sampler=sampler,
+            collate_fn=self.data_collator,
+            num_workers=self.args.dataloader_num_workers,
+            pin_memory=self.args.dataloader_pin_memory,
+            persistent_workers=self.args.dataloader_persistent_workers,
+            drop_last=self.args.dataloader_drop_last,
         )
-        for text in strings
-    ]
-    input_ids = labels = [tokenized.input_ids[0] for tokenized in tokenized_list]
-    input_ids_lens = labels_lens = [
-        tokenized.input_ids.ne(tokenizer.pad_token_id).sum().item() for tokenized in tokenized_list
-    ]
-    return dict(
-        input_ids=input_ids,
-        labels=labels,
-        input_ids_lens=input_ids_lens,
-        labels_lens=labels_lens,
-    )
-
-def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
-    """Make dataset and collator for supervised fine-tuning."""
-    def get_jsonl_paths_for_split(data_dir: str, split_csv: str) -> List[str]:
-        project_ids = set()
-        with open(split_csv) as f:
-            for row in csv.DictReader(f):
-                project_ids.add(row["project_id"])
-        paths = []
-        for f in os.listdir(data_dir):
-            if not f.endswith(".jsonl"):
-                continue
-            pid = f.replace("oracles-datapoints-", "").split("-")[0]
-            if pid in project_ids:
-                paths.append(os.path.join(data_dir, f))
-        return sorted(paths)
-
-    train_files = get_jsonl_paths_for_split(args.data_dir, args.train_file)
-    eval_files = get_jsonl_paths_for_split(args.data_dir, args.eval_file)
-    train_dataset = JsonlIterable(train_files, tokenizer, args.model_max_length, only_last_turn_loss=True, drop_long=False)
-    eval_dataset  = JsonlIterable(eval_files,  tokenizer, args.model_max_length, only_last_turn_loss=True, drop_long=False)
-    data_collator = DataCollatorForSupervisedDataset(
-        tokenizer=tokenizer,
-        pad_to_multiple_of=8,
-        static_pad_to=args.model_max_length,  # <- key
-    )
-    return dict(train_dataset=train_dataset, eval_dataset=eval_dataset, data_collator=data_collator)
-
-def is_master(args):
-    return is_main_process(args.local_rank)
-
 
 class SaveModelCallback(transformers.TrainerCallback):
     def on_save(self, args, state, control, **kwargs):
-        if is_master(args):
+        if is_master(args.local_rank):
             print(f"[save] {args.output_dir}/checkpoint-{state.global_step}/")
         return control
 
-
 class LoggingCallback(transformers.TrainerCallback):
     def __init__(self, log_memory: bool = True):
-        self.start_time = None
         self.last_time = None
         self.last_step = 0
         self.total_tokens_seen = 0
         self.log_memory = log_memory
 
     def on_log(self, args, state, control, logs=None, **kwargs):
-        if logs is None:
-            return
+        if logs is None: return
         now = time.time()
         world = getattr(args, "world_size", 1)
+        if self.last_time is None: self.last_time = now
 
-        if self.start_time is None:
-            self.start_time = now
-            self.last_time = now
-
-        # Prefer Trainer's running token counter if available (>= 4.41)
         include_tok_seen = getattr(args, "include_num_input_tokens_seen", False)
-        if include_tok_seen and hasattr(state, "num_input_tokens_seen") and state.num_input_tokens_seen is not None:
+        if include_tok_seen and getattr(state, "num_input_tokens_seen", None) is not None:
             delta_tokens = (state.num_input_tokens_seen - self.total_tokens_seen) * world
             self.total_tokens_seen = state.num_input_tokens_seen
         else:
-            # fallback: estimate
             steps_elapsed = state.global_step - self.last_step
             est_tokens_per_step = args.per_device_train_batch_size * args.model_max_length * world
             delta_tokens = est_tokens_per_step * max(0, steps_elapsed)
@@ -329,69 +318,46 @@ class LoggingCallback(transformers.TrainerCallback):
         dt = max(1e-6, now - self.last_time)
         tps = int(delta_tokens / dt)
 
-        log_message = {
-            "step": state.global_step,
-            "epoch": state.epoch,
-            "loss": logs.get("loss"),
-            "eval_loss": logs.get("eval_loss"),
-            "lr": logs.get("learning_rate"),
-            "grad_norm": logs.get("grad_norm"),
-            "tokens_per_sec": tps,
-        }
-
+        msg = {"step": state.global_step, "epoch": state.epoch,
+               "loss": logs.get("loss"), "eval_loss": logs.get("eval_loss"),
+               "lr": logs.get("learning_rate"), "tokens_per_sec": tps}
         if self.log_memory and torch.cuda.is_available():
             try:
                 mem = torch.cuda.max_memory_allocated() // 1_000_000
-                log_message["gpu_mem_MiB"] = int(mem)
+                msg["gpu_mem_MiB"] = int(mem)
                 torch.cuda.reset_peak_memory_stats()
             except Exception:
                 pass
-
-        if is_main_process(args.local_rank):
+        if is_master(args.local_rank):
             print("\n------------------")
-            print(log_message)
+            print(msg)
             print("------------------")
-
         self.last_time = now
 
+class DelayedEarlyStopping(transformers.EarlyStoppingCallback):
+    """
+    Wraps Hugging Face EarlyStopping but ignores evaluate calls until epoch >= min_early_stopping_epochs.
+    """
+    def __init__(self, min_early_stopping_epochs: int = 1, early_stopping_patience: int = 2,
+                 early_stopping_threshold: float = 0.0):
+        super().__init__(early_stopping_patience=early_stopping_patience,
+                         early_stopping_threshold=early_stopping_threshold)
+        self._min_epochs = min_early_stopping_epochs
 
-def find_latest_checkpoint(output_dir):
-    """Find the latest checkpoint in the output directory."""
-    if not os.path.exists(output_dir):
-        return None
-    checkpoints = [d for d in os.listdir(output_dir) if d.startswith("checkpoint-")]
-    if not checkpoints:
-        return None
-    latest_checkpoint = max(checkpoints, key=lambda x: int(x.split("-")[-1]))
-    return os.path.join(output_dir, latest_checkpoint)
+    def on_evaluate(self, args, state, control, **kwargs):
+        # Defer early stopping decisions until after min epochs are finished
+        if state.epoch is not None and state.epoch < self._min_epochs:
+            return control
+        return super().on_evaluate(args, state, control, **kwargs)
 
+# -------------------------
+# Train
+# -------------------------
 
-class CustomTrainer(Trainer):
-    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
-        if self.state.epoch is not None:
-            logs["epoch"] = self.state.epoch
-        if self.args.include_num_input_tokens_seen:
-            logs["num_input_tokens_seen"] = self.state.num_input_tokens_seen
-
-        # Safely move logs off GPU
-        output = {
-            k: (
-                v.item() if isinstance(v, torch.Tensor) and v.numel() == 1
-                else v.detach().cpu().tolist() if isinstance(v, torch.Tensor)
-                else v
-            )
-            for k, v in {**logs, "step": self.state.global_step}.items()
-        }
-
-        # Optional: truncate history if needed
-        # if len(self.state.log_history) > 1000:
-        #     self.state.log_history.pop(0)
-
-        self.state.log_history.append(output)
-
-        # Must keep this
-        self.control = self.callback_handler.on_log(self.args, self.state, self.control, logs)
-
+def make_datasets(tokenized_dir: str):
+    train_ds = MemmapShardDataset(tokenized_dir, "train")
+    eval_ds  = MemmapShardDataset(tokenized_dir, "val")
+    return train_ds, eval_ds
 
 def train():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
@@ -399,73 +365,72 @@ def train():
     args = {**model_args.__dict__, **data_args.__dict__, **training_args.__dict__}
     args = argparse.Namespace(**args)
 
-    # Configure quantization
+    assert data_args.tokenized_dir, "--tokenized_dir is required and must point to the pre-tokenized shards."
 
+    # Load tokenizer (matching the builder)
+    tokenizer = load_tokenizer_consistent(model_args.model_name_or_path,
+                                          training_args.model_max_length,
+                                          data_args.tokenized_dir)
+
+    # Model (QLoRA 4-bit)
     bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.bfloat16,  # A100: prefer BF16 for stability
+        load_in_4bit=True, bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16
     )
-
     attn_impl = "flash_attention_2" if model_args.use_flash_attention else "sdpa"
-
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         quantization_config=bnb_config,
-        attn_implementation=attn_impl,  # <- enable Flash-2 or SDPA
+        attn_implementation=attn_impl,
         trust_remote_code=True,
     )
 
-    # QLoRA prep (does layernorm casting, gradients on inputs, etc.)
-    model = prepare_model_for_kbit_training(
-        model,
-        use_gradient_checkpointing=True
-    )
+    # Ensure model embeddings match tokenizer (in case additional specials were added)
+    model.resize_token_embeddings(len(tokenizer), pad_to_multiple_of=8)
+    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
     model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
-    model.config.use_cache = False  # MUST be False during training (saves memory)
+    model.config.use_cache = False
 
     if training_args.use_peft:
         peft_config = LoraConfig(
-            r=16,  # r=8→16 modest memory bump, usually better quality
-            lora_alpha=32,  # scale with r
-            lora_dropout=0.05,
-            bias="none",
-            task_type="CAUSAL_LM",
-            target_modules=None,  # let PEFT pick defaults for Qwen; or list attention/MLP proj
+            r=16, lora_alpha=32, lora_dropout=0.05,
+            bias="none", task_type="CAUSAL_LM",
+            target_modules=None,
         )
         model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()
 
-    tokenizer = transformers.AutoTokenizer.from_pretrained(
-        model_args.model_name_or_path,
-        cache_dir=None,
-        model_max_length=training_args.model_max_length,
-        truncation=True,
-        padding_side="right",
-        trust_remote_code=True,
-    )
+    # Sanity-check tokenizer vs meta
+    try:
+        assert_meta_compatible(data_args.tokenized_dir, tokenizer, "train")
+        assert_meta_compatible(data_args.tokenized_dir, tokenizer, "val")
+    except AssertionError as e:
+        raise RuntimeError(f"Tokenizer/meta mismatch: {e}")
 
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    # Datasets
+    train_ds, eval_ds = make_datasets(data_args.tokenized_dir)
 
-    num_new = tokenizer.add_special_tokens({"additional_special_tokens": ["<|im_start|>", "<|im_end|>"]})
-    if num_new > 0:
-        model.resize_token_embeddings(len(tokenizer), pad_to_multiple_of=8)
+    # Collator (dynamic padding to multiple of 8)
+    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer, pad_to_multiple_of=8, static_pad_to=None)
 
-    data_module = make_supervised_data_module(tokenizer=tokenizer, args=args)
+    # Trainer
+    callbacks = [
+        LoggingCallback(log_memory=True),
+        SaveModelCallback(),
+        DelayedEarlyStopping(min_early_stopping_epochs=training_args.min_early_stopping_epochs,
+                             early_stopping_patience=training_args.early_stopping_patience),
+    ]
 
-    trainer = CustomTrainer(
+    trainer = Trainer(
         model=model,
-        processing_class=tokenizer,
         args=training_args,
-        **data_module,
-        callbacks=[
-            LoggingCallback(log_memory=True),   # <-- instantiate
-            SaveModelCallback(),                # <-- instantiate
-            transformers.EarlyStoppingCallback(early_stopping_patience=2),
-        ]
+        processing_class=tokenizer,
+        train_dataset=train_ds,
+        eval_dataset=eval_ds,
+        data_collator=data_collator,
+        callbacks=callbacks,
     )
+
     trainer.train()
     trainer.save_state()
     trainer.save_model(output_dir=training_args.output_dir)

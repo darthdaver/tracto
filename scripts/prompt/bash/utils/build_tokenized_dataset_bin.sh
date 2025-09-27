@@ -19,7 +19,7 @@ fi
 for config_path in "${config_paths[@]}"; do
   config_num=$(basename "${config_path}")
   i=$(basename "$config_num")
-  python build_tokenized_dataset_bins.py \
+  python "${PROMPT_DIR}/utils/build_tokenized_dataset_bin.py" \
       --model_name "${MODEL_NAME}" \
       --data_dir   "${OUTPUT_DIR}/${i}/prompt-jsonl" \
       --train_csv  "${OUTPUT_DIR}/${i}/split-dataset/train_projects.csv" \

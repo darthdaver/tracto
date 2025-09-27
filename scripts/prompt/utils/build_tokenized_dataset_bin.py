@@ -328,8 +328,16 @@ def build_split(split_name: str,
         "pad_token_id": tok.pad_token_id,
         "eos_token_id": tok.eos_token_id,
         "special_tokens_map": tok.special_tokens_map,
+        "vocab_size": len(tok),
+        "special_token_ids": {
+            "<|im_start|>": tok("<|im_start|>").input_ids[0],
+            "<|im_end|>": tok("<|im_end|>").input_ids[0],
+        }
     }
+    tok_dir = os.path.join(out_dir, "tokenizer")
     os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(tok_dir, exist_ok=True)
+    tok.save_pretrained(tok_dir)
     with open(os.path.join(out_dir, f"{split_name}.meta.json"), "w") as f:
         json.dump(meta_out, f, indent=2)
 
