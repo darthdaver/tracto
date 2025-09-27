@@ -398,10 +398,12 @@ def train():
     model.resize_token_embeddings(len(tokenizer), pad_to_multiple_of=8)
     model.config.pad_token_id = tokenizer.pad_token_id
     model.config.eos_token_id = tokenizer.eos_token_id
+    model.config.bos_token_id = tokenizer.bos_token_id
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
     if hasattr(model, "generation_config"):
         model.generation_config.pad_token_id = tokenizer.pad_token_id
         model.generation_config.eos_token_id = tokenizer.eos_token_id
+        model.config.bos_token_id = tokenizer.bos_token_id
     model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     model.config.use_cache = False
 
@@ -435,7 +437,7 @@ def train():
                              early_stopping_patience=training_args.early_stopping_patience),
     ]
 
-    trainer = Trainer(
+    trainer = CustomTrainer(
         model=model,
         args=training_args,
         processing_class=tokenizer,
