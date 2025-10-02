@@ -2,7 +2,8 @@ import os, time, json, argparse, logging
 from dataclasses import dataclass, field
 from typing import Dict, Optional, List, Tuple
 from torch.utils.data import Sampler
-import math, numpy as np, torch, random
+from itertools import chain
+import math, numpy as np, random
 import os, multiprocessing as mp
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 os.environ.setdefault("HF_DATASETS_DISABLE_PARALLELISM", "1")
@@ -66,6 +67,8 @@ class TrainingArguments(transformers.TrainingArguments):
     max_grad_norm: float = 0.3
     report_to: Optional[str] = "none"
     torch_compile: bool = False
+    remove_unused_columns: bool = False
+    include_num_input_tokens_seen: bool = False
 
     # Early stopping guard: don't allow stop before at least N full epochs
     min_early_stopping_epochs: int = 1
@@ -73,66 +76,86 @@ class TrainingArguments(transformers.TrainingArguments):
 
 class BlockDistributedSampler(Sampler):
     """
-    Makes training I/O-friendly:
-      - Split each shard's indices into contiguous blocks (size=B, e.g., 512)
-      - Shuffle the blocks, not the samples inside the block
-      - Evenly distribute blocks across ranks
-    Optionally: sort indices inside each block by length to reduce padding.
+    Deterministic block sampler for DDP:
+      • Same shuffle on every rank per epoch (uses seed+epoch)
+      • Drops partial blocks so all blocks have identical size
+      • Trims to a multiple of world_size, then partitions by striding
+      • Drops tail to a multiple of batch_size so all ranks have identical steps
     """
-    def __init__(self, dataset, batch_size:int, world_size:int=1, rank:int=0,
-                 block_size:int=512, sort_within_block:bool=True, seed:int=42):
+    def __init__(
+        self,
+        dataset,
+        batch_size: int,
+        world_size: int = 1,
+        rank: int = 0,
+        block_size: int = 512,
+        sort_within_block: bool = True,
+        seed: int = 42,
+    ):
         self.ds = dataset
-        self.bs = batch_size
-        self.ws = world_size
-        self.rank = rank
-        self.block_size = block_size
-        self.sort_within_block = sort_within_block
-        self.seed = seed
+        self.bs = int(batch_size)
+        self.ws = int(world_size)
+        self.rank = int(rank)
+        self.block_size = int(block_size)
+        self.sort_within_block = bool(sort_within_block)
+        self.seed = int(seed)
+        self.epoch = 0
 
-        # Build global index ranges per shard
-        self.blocks = []  # list of arrays of global indices
+        # Build full-size blocks of global indices across shards
+        self.blocks = []
         start = 0
         for shard in dataset.shards:
-            n = shard["n"]
-            # global indices [start, start+n)
-            gidx = np.arange(start, start+n, dtype=np.int64)
-            # split into blocks
-            for i in range(0, n, block_size):
-                blk = gidx[i:i+block_size]
-                if sort_within_block:
-                    # small sort by length desc to reduce padding
-                    lens = dataset.lengths[blk]
-                    blk = blk[np.argsort(-lens, kind="mergesort")]
-                self.blocks.append(blk)
+            n = int(shard["n"])
+            gidx = np.arange(start, start + n, dtype=np.int64)
+            full_n = (n // self.block_size) * self.block_size  # drop tail
+            if full_n > 0:
+                for i in range(0, full_n, self.block_size):
+                    blk = gidx[i : i + self.block_size]
+                    if self.sort_within_block:
+                        lens = dataset.lengths[blk]
+                        blk = blk[np.argsort(-lens, kind="mergesort")]  # longest→shortest
+                    self.blocks.append(blk)
             start += n
 
-        # shuffle blocks
-        rng = random.Random(seed)
-        rng.shuffle(self.blocks)
+        if len(self.blocks) == 0:
+            raise RuntimeError(
+                "BlockDistributedSampler: no full blocks were constructed. "
+                "Decrease block_size or check dataset."
+            )
 
-        # distribute blocks to ranks
-        self.rank_blocks = self.blocks[rank::world_size]
-        # flatten to a single list of indices
-        self.indices = np.concatenate(self.rank_blocks, axis=0)
+        # Pre-compute per-rank length (stable across epochs)
+        usable_blocks = (len(self.blocks) // self.ws) * self.ws
+        per_rank_blocks = usable_blocks // self.ws
+        per_rank_samples = per_rank_blocks * self.block_size
+        # After drop_last at batch granularity
+        self._len = (per_rank_samples // self.bs) * self.bs
 
-        # drop last to keep complete batches if desired (Trainer handles drop_last via DataLoader)
-        if len(self.indices) % self.bs != 0:
-            cut = (len(self.indices) // self.bs) * self.bs
-            self.indices = self.indices[:cut]
+    def set_epoch(self, epoch: int):
+        # HF/Accelerate calls this each epoch; used to vary the shuffle deterministically.
+        self.epoch = int(epoch)
 
     def __iter__(self):
-        # reshuffle blocks every epoch
-        rng = random.Random(self.seed + torch.distributed.get_rank() if torch.distributed.is_initialized() else self.seed)
-        rng.shuffle(self.blocks)
-        rank_blocks = self.blocks[self.rank::self.ws]
+        # Same permutation on every rank for this epoch
+        rng = random.Random(self.seed + self.epoch)
+        blocks = list(self.blocks)
+        rng.shuffle(blocks)
+
+        # Trim to multiple of world_size; then deterministic partition by striding
+        usable = (len(blocks) // self.ws) * self.ws
+        blocks = blocks[:usable]
+        rank_blocks = blocks[self.rank :: self.ws]
+
+        # Flatten indices for this rank
         idx = np.concatenate(rank_blocks, axis=0)
-        if len(idx) % self.bs != 0:
-            cut = (len(idx) // self.bs) * self.bs
-            idx = idx[:cut]
+
+        # Ensure equal number of batches on every rank
+        if self.bs > 1:
+            idx = idx[: (len(idx) // self.bs) * self.bs]
+
         return iter(idx.tolist())
 
-    def __len__(self):
-        return len(self.indices)
+    def __len__(self) -> int:
+        return self._len
 
 # -------------------------
 # Tokenizer helpers
@@ -277,13 +300,14 @@ class MemmapShardDataset(Dataset):
         shard_idx, j = self._locate(i)
         self._open_mm(shard_idx)
         off = self.shards[shard_idx]["offsets"]
-        a = int(off[j]);
+        a = int(off[j])
         b = int(off[j + 1])
 
         # Copy + cast to torch.long (int64)
         ids = torch.tensor(self._ids_mm[shard_idx][a:b], dtype=torch.long)
         lbl = torch.tensor(self._lbl_mm[shard_idx][a:b], dtype=torch.long)
         return {"input_ids": ids, "labels": lbl}
+
 
 # -------------------------
 # Collator (dynamic pad)
@@ -335,14 +359,112 @@ def is_master(local_rank):
     return is_main_process(local_rank)
 
 class LocalityTrainer(Trainer):
+    @staticmethod
+    def _num_items_from_batch(batch):
+        # ... (your existing robust implementation unchanged) ...
+        if isinstance(batch, dict):
+            for k in ("labels", "input_ids", "pixel_values", "input_values"):
+                v = batch.get(k)
+                if isinstance(v, torch.Tensor):
+                    return int(v.shape[0])
+                if isinstance(v, (list, tuple)) and v and isinstance(v[0], torch.Tensor):
+                    return int(v[0].shape[0])
+            for v in batch.values():
+                if isinstance(v, torch.Tensor):
+                    return int(v.shape[0])
+                if isinstance(v, (list, tuple)) and v and isinstance(v[0], torch.Tensor):
+                    return int(v[0].shape[0])
+        elif isinstance(batch, (list, tuple)) and batch and isinstance(batch[0], torch.Tensor):
+            return int(batch[0].shape[0])
+        return 1
+
+    def get_num_items(self, batch):
+        # Prefer HF's implementation if present; otherwise use our fallback.
+        if hasattr(super(), "get_num_items"):
+            try:
+                return super().get_num_items(batch)
+            except Exception:
+                pass
+        return self._num_items_from_batch(batch)
+
+    def get_batch_samples(self, epoch_iterator, num_batches, device: torch.device | None = None):
+        """
+        HF-compatible: returns (batch_samples: List[batch_dict], num_items_in_batch: int)
+        Works with both signatures: with or without the 'device' arg.
+        """
+        batch_samples = []
+        for _ in range(num_batches):
+            try:
+                batch_samples.append(next(epoch_iterator))
+            except StopIteration:
+                break
+
+        # Prefer token count if labels exist; else fall back to item count
+        num_items = None
+        if batch_samples and isinstance(batch_samples[0], dict) and "labels" in batch_samples[0]:
+            try:
+                num_items = sum((b["labels"].ne(IGNORE_INDEX)).sum() for b in batch_samples)
+            except Exception:
+                num_items = None
+
+        if num_items is None:
+            per_mb = [self.get_num_items(b) for b in batch_samples]
+            num_items = torch.tensor(sum(per_mb))
+
+        # Ensure CUDA + dense before any gather
+        if device is None:
+            device = getattr(self, "accelerator", None).device if hasattr(self, "accelerator") else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        if not torch.is_tensor(num_items):
+            num_items = torch.tensor(num_items, device=device)
+        else:
+            num_items = num_items.to(device=device)
+        if getattr(num_items, "is_sparse", False):
+            num_items = num_items.to_dense()
+
+        if getattr(self.args, "average_tokens_across_devices", False):
+            num_items = self.accelerator.gather(num_items).sum().item()
+        else:
+            num_items = int(num_items.item())
+
+        return batch_samples, num_items
+
+    # def get_batch_samples(self, epoch_iterator, num_batches, device):
+    #     batch = next(epoch_iterator)
+    #     # Get batch size robustly
+    #     if hasattr(super(), "get_num_items"):
+    #         try:
+    #             num_items = super().get_num_items(batch)  # HF provides this
+    #         except Exception:
+    #             num_items = None
+    #     else:
+    #         num_items = None
+    #     if num_items is None:
+    #         # fallback: look for any tensor and take its first dim
+    #         if isinstance(batch, dict):
+    #             for v in batch.values():
+    #                 if isinstance(v, torch.Tensor):
+    #                     num_items = int(v.shape[0]);
+    #                     break
+    #         if num_items is None: num_items = 1
+    #
+    #     num_items = torch.tensor(num_items, device=device)  # <-- CUDA
+    #     return batch, num_items
+
     def get_train_dataloader(self):
         ds = self.train_dataset
         bsz = self.args.per_device_train_batch_size
-        ws  = self.args.world_size
-        rk  = self.args.process_index
+        ws = torch.distributed.get_world_size() if torch.distributed.is_initialized() else 1
+        rk = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
+
         sampler = BlockDistributedSampler(
-            dataset=ds, batch_size=bsz, world_size=ws, rank=rk,
-            block_size=512, sort_within_block=True, seed=42
+            dataset=ds,
+            batch_size=bsz,
+            world_size=ws,
+            rank=rk,
+            block_size=self.args.per_device_train_batch_size,  # adjust 256–2048 based on storage
+            sort_within_block=True,
+            seed=42,
         )
         return DataLoader(
             ds,
@@ -360,6 +482,9 @@ class SaveModelCallback(transformers.TrainerCallback):
     def on_save(self, args, state, control, **kwargs):
         if is_master(args.local_rank):
             print(f"[save] {args.output_dir}/checkpoint-{state.global_step}/")
+        # Make all ranks wait until save on rank0 is done.
+        if dist.is_available() and dist.is_initialized():
+            dist.barrier()
         return control
 
 class LoggingCallback(transformers.TrainerCallback):

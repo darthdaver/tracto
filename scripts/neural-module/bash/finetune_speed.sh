@@ -56,9 +56,8 @@ rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary" 
   --logging_strategy steps --logging_steps 200 \
   --report_to "none" \
   --ddp_find_unused_parameters False \
-  --include_num_input_tokens_seen True \
-  --no_remove_unused_columns \
+  --include_num_input_tokens_seen False \
   --dataloader_drop_last \
   --min_early_stopping_epochs 1 \
   --early_stopping_patience 2 \
-  --group_by_length True
+  --remove_unused_columns False
