@@ -88,7 +88,7 @@ class BlockDistributedSampler(Sampler):
         batch_size: int,
         world_size: int = 1,
         rank: int = 0,
-        block_size: int = 512,
+        block_size: int = 1024,
         sort_within_block: bool = True,
         seed: int = 42,
     ):
@@ -456,27 +456,33 @@ class LocalityTrainer(Trainer):
         bsz = self.args.per_device_train_batch_size
         ws = torch.distributed.get_world_size() if torch.distributed.is_initialized() else 1
         rk = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
-
+        # Use a real block size (number of samples per block), not the batch size
         sampler = BlockDistributedSampler(
             dataset=ds,
             batch_size=bsz,
             world_size=ws,
             rank=rk,
-            block_size=self.args.per_device_train_batch_size,  # adjust 256–2048 based on storage
+            block_size=512,            # try 512; tune 256–2048 based on storage
             sort_within_block=True,
             seed=42,
         )
-        return DataLoader(
-            ds,
+        num_workers = int(self.args.dataloader_num_workers)
+        # Build kwargs so we only pass prefetch_factor/persistent_workers if legal
+        loader_kwargs = dict(
             batch_size=bsz,
             sampler=sampler,
             collate_fn=self.data_collator,
-            num_workers=self.args.dataloader_num_workers,
+            num_workers=num_workers,
             pin_memory=self.args.dataloader_pin_memory,
-            persistent_workers=self.args.dataloader_persistent_workers,
-            prefetch_factor=8,
             drop_last=self.args.dataloader_drop_last,
         )
+        if num_workers > 0:
+            loader_kwargs["persistent_workers"] = bool(self.args.dataloader_persistent_workers)
+            loader_kwargs["prefetch_factor"] = 8  # or 2–4 if you want it lighter in the smoke run
+        else:
+            # Must be False when num_workers == 0, and DO NOT pass prefetch_factor at all
+            loader_kwargs["persistent_workers"] = False
+        return DataLoader(ds, **loader_kwargs)
 
 class SaveModelCallback(transformers.TrainerCallback):
     def on_save(self, args, state, control, **kwargs):
