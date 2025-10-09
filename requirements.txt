@@ -14,3 +14,4 @@ seaborn==0.13.2
 jsonlines==4.0.0
 peft==0.17.1
 accelerate==1.10.1
+flask==3.1.2

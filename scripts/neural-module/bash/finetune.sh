@@ -15,15 +15,20 @@ export HF_DATASETS_DISABLE_PARALLELISM
 
 target_config=${1}
 
+LOCAL_TOKENIZED="${OUTPUT_PROMPT_DIR}/${target_config}/local_nvme"
+mkdir -p "$LOCAL_TOKENIZED"
+rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary" "$LOCAL_TOKENIZED/"
+
 # NOTE
 # - --tokenized_dir must point to the directory produced by the builder,
 #   containing: train.*.{bin,idx}, train.meta.json, val.*.{bin,idx}, val.meta.json
 # - We evaluate/save at end of each epoch so early stopping can't trigger before epoch 1.
 
-"$PY_ENV" -m torch.distributed.run --nproc-per-node=2 "${NEURAL_DIR}/finetuning.py" \
+"$PY_ENV" -m torch.distributed.run --nproc-per-node=2 "${NEURAL_DIR}/finetuning-speed.py" \
   --model_name_or_path "${MODEL_NAME}" \
+  --model_revision "${MODEL_REVISION}" \
   --use_flash_attention False \
-  --tokenized_dir "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary" \
+  --tokenized_dir "${LOCAL_TOKENIZED}/prompt-binary" \
   --output_dir "${OUTPUT_FINE_TUNING_DIR}" \
   --model_max_length 8192 \
   --per_device_train_batch_size 1 \
@@ -44,7 +49,7 @@ target_config=${1}
   --use_peft True \
   --num_train_epochs 3 \
   --eval_strategy epoch \
-  --save_strategy epoch --save_total_limit 1 \
+  --save_strategy steps --save_steps 200 --save_total_limit 3 \
   --prediction_loss_only True \
   --eval_accumulation_steps 1 \
   --load_best_model_at_end True \
@@ -52,9 +57,8 @@ target_config=${1}
   --logging_strategy steps --logging_steps 200 \
   --report_to "none" \
   --ddp_find_unused_parameters False \
-  --include_num_input_tokens_seen True \
-  --no_remove_unused_columns \
+  --include_num_input_tokens_seen False \
   --dataloader_drop_last \
   --min_early_stopping_epochs 1 \
   --early_stopping_patience 2 \
-  --group_by_length True
+  --remove_unused_columns False

@@ -21,6 +21,7 @@ for config_path in "${config_paths[@]}"; do
   i=$(basename "$config_num")
   python "${PROMPT_DIR}/utils/build_tokenized_dataset_bin.py" \
       --model_name "${MODEL_NAME}" \
+      --model_revision "${MODEL_REVISION}" \
       --data_dir   "${OUTPUT_DIR}/${i}/prompt-jsonl" \
       --train_csv  "${OUTPUT_DIR}/${i}/split-dataset/train_projects.csv" \
       --val_csv    "${OUTPUT_DIR}/${i}/split-dataset/val_projects.csv" \

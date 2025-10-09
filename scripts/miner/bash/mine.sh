@@ -57,31 +57,39 @@ while IFS=, read -r repo_id repo_name; do
       git clone "${repo_url}" "${GITHUB_REPOS_DIR}/${repo_name}"|| echo "Error cloning repository: ${repo_url}" >&2
     fi
     project_type=$(scan_projects "${GITHUB_REPOS_DIR}/${repo_name}")
-    # Check how many pom.xml files are in the project
-    cd "${GITHUB_REPOS_DIR}/${repo_name}"
-    pom_count=$(find . -name "pom.xml" | wc -l)
-    junit_plugin=false
-    if [ "$pom_count" -eq 1 ]; then
+    if [ "$project_type" == "maven" ]; then
+      # Check how many pom.xml files are in the project
+      cd "${GITHUB_REPOS_DIR}/${repo_name}"
+      pom_count=$(find . -name "pom.xml" | wc -l)
+      junit_plugin=false
+      #if [ "$pom_count" -eq 1 ]; then
       # Check if the project uses JUnit as plugin to run the tests
-      if grep -qE '<artifactId>(junit|junit-jupiter)' pom.xml || grep -qE '<groupId>(junit|org\.junit\.jupiter)' pom.xml; then
-        junit_plugin=true
+      if grep -qE '<artifactId>junit|junit-jupiter' pom.xml || grep -qE '<groupId>junit|org.junit.jupiter' pom.xml; then
+          echo "JUnit plugin detected"
+          junit_plugin=true
       else
-        echo "No JUnit plugin detected"
+          echo "No JUnit plugin detected"
+          junit_plugin=false
       fi
-    fi
-    # Check if the project is a Maven project and if it has only one pom.xml file and uses JUnit as plugin
-    #if [[ "$project_type" == "maven" && "$pom_count" -eq 1 && "$junit_plugin" == true ]]; then
-    if [[ "$project_type" == "maven" && "$junit_plugin" == true ]]; then
-      echo "Maven project detected"
-      # Mine the Maven project
-      "${PY_ENV}" "${TEST_MINER_DIR}/mine.py" \
-        --input_path "${GITHUB_REPOS_DIR}" \
-        --output_path "${OUTPUT_DIR}" \
-        --repo_name "${repo_name}" \
-        --repo_url "${repo_url}" \
-        --since "01/08/2025 00:00:00" \
-        --operation "added"
+      #fi
+      # Check if the project is a Maven project and if it has only one pom.xml file and uses JUnit as plugin
+      #if [[ "$project_type" == "maven" && "$pom_count" -eq 1 && "$junit_plugin" == true ]]; then
+      #if [[ "$project_type" == "maven" && "$junit_plugin" == true ]]; then
+      echo "Maven processing code: ${repo_id}-${repo_name}-${project_type}-${pom_count}-${junit_plugin}"
+
+      if [ "$junit_plugin" == true ]; then
+        # Mine the Maven project
+        "${PY_ENV}" "${TEST_MINER_DIR}/mine.py" \
+          --input_path "${GITHUB_REPOS_DIR}" \
+          --output_path "${OUTPUT_DIR}" \
+          --repo_name "${repo_name}" \
+          --repo_url "${repo_url}" \
+          --since "01/08/2024 00:00:00" \
+          --operation "added"
+      else
+        echo "Project ${repo_name} do not use JUnit library to test, skipping."
+      fi
     else
-      echo "Unprocessed project"
+      echo "Project ${repo_name} is not a Maven project, skipping."
     fi
 done < "$GITHUB_REPOS_LIST_FILE"

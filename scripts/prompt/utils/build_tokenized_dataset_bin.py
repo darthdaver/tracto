@@ -32,14 +32,16 @@ from typing import Dict, List, Tuple, Iterable
 import numpy as np
 import orjson
 import transformers
+from huggingface_hub import snapshot_download
+from pathlib import Path
 
 IGNORE_INDEX = -100
 
 # ---------------- Tokenizer & encoding identical to training ---------------- #
 
-def build_tokenizer(model_name: str, model_max_length: int):
+def build_tokenizer(model_path: str, model_max_length: int):
     tok = transformers.AutoTokenizer.from_pretrained(
-        model_name,
+        model_path,                    # resolved snapshot dir or local model dir
         trust_remote_code=True,
         model_max_length=model_max_length,
         padding_side="right",
@@ -287,6 +289,7 @@ def build_split(split_name: str,
                 data_dir: str,
                 out_dir: str,
                 model_name: str,
+                model_revision: str,
                 max_length: int,
                 total_token_budget: int,
                 bin_allocation: str,
@@ -319,6 +322,7 @@ def build_split(split_name: str,
     meta_out = {
         "split": split_name,
         "model_name": model_name,
+        "model_revision": model_revision,
         "max_length": max_length,
         "bin_allocation": bin_allocation,
         "alpha": alpha,
@@ -340,6 +344,9 @@ def build_split(split_name: str,
     tok.save_pretrained(tok_dir)
     with open(os.path.join(out_dir, f"{split_name}.meta.json"), "w") as f:
         json.dump(meta_out, f, indent=2)
+    with open(os.path.join(out_dir, "base_model.json"), "w") as bf:
+        json.dump({"base_model_name_or_path": model_name,
+                   "base_model_revision": model_revision or "main"}, bf, indent=2)
 
     writer = ShardWriter(out_dir, split_name, tokens_per_shard=tokens_per_shard)
 
@@ -369,6 +376,7 @@ def build_split(split_name: str,
 def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model_name", required=True)
+    ap.add_argument("--model_revision", type=str, default=None, help="HF revision (commit hash or tag) to pin the base tokenizer.")
     ap.add_argument("--data_dir", required=True)
     ap.add_argument("--train_csv", required=True)
     ap.add_argument("--val_csv", required=True)
@@ -394,15 +402,27 @@ def main():
     mix = tuple(float(x) for x in args.target_mix.split(","))
     assert len(mix) == 3 and abs(sum(mix) - 1.0) < 1e-6, "--target_mix must have 3 values summing to 1.0"
 
+    # Resolve snapshot once (commit SHA) for reproducibility
+    if os.path.isdir(args.model_name):
+        resolved_path = os.path.abspath(args.model_name)
+        used_revision = "local"
+    else:
+        resolved_path = snapshot_download(repo_id=args.model_name, revision=args.model_revision)
+        used_revision = Path(resolved_path).name  # commit
+
     build_split(
-        "train", args.train_csv, args.data_dir, args.out_dir, args.model_name, args.max_length,
-        args.train_token_budget, args.bin_allocation, args.alpha, args.train_drop_long,
-        args.tokens_per_shard, mix, args.short_cut_frac, args.med_cut_frac, args.seed
+        "train", args.train_csv, args.data_dir, args.out_dir,
+        resolved_path, used_revision,  # <-- note: path, then commit
+        args.max_length, args.train_token_budget, args.bin_allocation, args.alpha,
+        args.train_drop_long, args.tokens_per_shard, mix, args.short_cut_frac,
+        args.med_cut_frac, args.seed
     )
     build_split(
-        "val", args.val_csv, args.data_dir, args.out_dir, args.model_name, args.max_length,
-        args.val_token_budget, args.bin_allocation, args.alpha, args.val_drop_long,
-        max(10_000_000, args.tokens_per_shard//5), mix, args.short_cut_frac, args.med_cut_frac, args.seed+1
+        "val", args.val_csv, args.data_dir, args.out_dir,
+        resolved_path, used_revision,  # <-- same here
+        args.max_length, args.val_token_budget, args.bin_allocation, args.alpha,
+        args.val_drop_long, max(10_000_000, args.tokens_per_shard // 5), mix,
+        args.short_cut_frac, args.med_cut_frac, args.seed + 1
     )
 
 if __name__ == "__main__":

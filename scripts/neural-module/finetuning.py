@@ -1,6 +1,10 @@
-import os, time, json, argparse, logging
+import time, json, argparse, logging
 from dataclasses import dataclass, field
 from typing import Dict, Optional, List, Tuple
+from torch.utils.data import Sampler
+from huggingface_hub import snapshot_download
+from pathlib import Path
+import random
 import os, multiprocessing as mp
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 os.environ.setdefault("HF_DATASETS_DISABLE_PARALLELISM", "1")
@@ -9,17 +13,14 @@ try:
 except RuntimeError:
     pass
 import numpy as np
-import inspect, torch, torch.distributed as dist
-from torch.utils.data import Dataset, get_worker_info
+import torch, torch.distributed as dist
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+from torch.utils.data import Dataset
 import transformers
 from transformers import Trainer
 from transformers.trainer_utils import is_main_process
 from transformers import BitsAndBytesConfig
-from transformers.trainer_pt_utils import LengthGroupedSampler
-try:
-    from transformers.trainer_pt_utils import DistributedLengthGroupedSampler
-except Exception:
-    DistributedLengthGroupedSampler = None
 from torch.utils.data import DataLoader
 
 from peft.utils import prepare_model_for_kbit_training
@@ -35,6 +36,10 @@ logging.basicConfig(level=logging.INFO)
 @dataclass
 class ModelArguments:
     model_name_or_path: Optional[str] = field(default="Qwen/Qwen2.5-Coder-14B-Instruct")
+    model_revision: Optional[str] = field(
+        default=None,
+        metadata={"help": "HF revision (commit hash or tag) of the base model to pin."}
+    )
     use_flash_attention: bool = field(default=False, metadata={"help": "Whether to use Flash Attention."})
 
 @dataclass
@@ -67,16 +72,101 @@ class TrainingArguments(transformers.TrainingArguments):
     max_grad_norm: float = 0.3
     report_to: Optional[str] = "none"
     torch_compile: bool = False
+    remove_unused_columns: bool = False
+    include_num_input_tokens_seen: bool = False
 
     # Early stopping guard: don't allow stop before at least N full epochs
     min_early_stopping_epochs: int = 1
     early_stopping_patience: int = 2  # pass via CLI in bash
 
+class BlockDistributedSampler(Sampler):
+    """
+    Deterministic block sampler for DDP:
+      • Same shuffle on every rank per epoch (uses seed+epoch)
+      • Drops partial blocks so all blocks have identical size
+      • Trims to a multiple of world_size, then partitions by striding
+      • Drops tail to a multiple of batch_size so all ranks have identical steps
+    """
+    def __init__(
+        self,
+        dataset,
+        batch_size: int,
+        world_size: int = 1,
+        rank: int = 0,
+        block_size: int = 1024,
+        sort_within_block: bool = True,
+        seed: int = 42,
+    ):
+        self.ds = dataset
+        self.bs = int(batch_size)
+        self.ws = int(world_size)
+        self.rank = int(rank)
+        self.block_size = int(block_size)
+        self.sort_within_block = bool(sort_within_block)
+        self.seed = int(seed)
+        self.epoch = 0
+
+        # Build full-size blocks of global indices across shards
+        self.blocks = []
+        start = 0
+        for shard in dataset.shards:
+            n = int(shard["n"])
+            gidx = np.arange(start, start + n, dtype=np.int64)
+            full_n = (n // self.block_size) * self.block_size  # drop tail
+            if full_n > 0:
+                for i in range(0, full_n, self.block_size):
+                    blk = gidx[i : i + self.block_size]
+                    if self.sort_within_block:
+                        lens = dataset.lengths[blk]
+                        blk = blk[np.argsort(-lens, kind="mergesort")]  # longest→shortest
+                    self.blocks.append(blk)
+            start += n
+
+        if len(self.blocks) == 0:
+            raise RuntimeError(
+                "BlockDistributedSampler: no full blocks were constructed. "
+                "Decrease block_size or check dataset."
+            )
+
+        # Pre-compute per-rank length (stable across epochs)
+        usable_blocks = (len(self.blocks) // self.ws) * self.ws
+        per_rank_blocks = usable_blocks // self.ws
+        per_rank_samples = per_rank_blocks * self.block_size
+        # After drop_last at batch granularity
+        self._len = (per_rank_samples // self.bs) * self.bs
+
+    def set_epoch(self, epoch: int):
+        # HF/Accelerate calls this each epoch; used to vary the shuffle deterministically.
+        self.epoch = int(epoch)
+
+    def __iter__(self):
+        # Same permutation on every rank for this epoch
+        rng = random.Random(self.seed + self.epoch)
+        blocks = list(self.blocks)
+        rng.shuffle(blocks)
+
+        # Trim to multiple of world_size; then deterministic partition by striding
+        usable = (len(blocks) // self.ws) * self.ws
+        blocks = blocks[:usable]
+        rank_blocks = blocks[self.rank :: self.ws]
+
+        # Flatten indices for this rank
+        idx = np.concatenate(rank_blocks, axis=0)
+
+        # Ensure equal number of batches on every rank
+        if self.bs > 1:
+            idx = idx[: (len(idx) // self.bs) * self.bs]
+
+        return iter(idx.tolist())
+
+    def __len__(self) -> int:
+        return self._len
+
 # -------------------------
 # Tokenizer helpers
 # -------------------------
 
-def load_tokenizer_consistent(model_name: str, model_max_length: int, tokenized_dir: str):
+def load_tokenizer_consistent(model_name: str, model_max_length: int, tokenized_dir: str, revision: Optional[str] = None):
     """
     Load the tokenizer in the exact same way as the builder did.
     If a saved tokenizer exists under tokenized_dir/tokenizer/, prefer that.
@@ -87,7 +177,7 @@ def load_tokenizer_consistent(model_name: str, model_max_length: int, tokenized_
         tok = transformers.AutoTokenizer.from_pretrained(saved_tok_dir, trust_remote_code=True)
     else:
         tok = transformers.AutoTokenizer.from_pretrained(
-            model_name, trust_remote_code=True, padding_side="right"
+            model_name, revision=revision, trust_remote_code=True, padding_side="right"
         )
         if tok.pad_token_id is None:
             tok.pad_token = tok.eos_token
@@ -215,13 +305,14 @@ class MemmapShardDataset(Dataset):
         shard_idx, j = self._locate(i)
         self._open_mm(shard_idx)
         off = self.shards[shard_idx]["offsets"]
-        a = int(off[j]);
+        a = int(off[j])
         b = int(off[j + 1])
 
         # Copy + cast to torch.long (int64)
         ids = torch.tensor(self._ids_mm[shard_idx][a:b], dtype=torch.long)
         lbl = torch.tensor(self._lbl_mm[shard_idx][a:b], dtype=torch.long)
         return {"input_ids": ids, "labels": lbl}
+
 
 # -------------------------
 # Collator (dynamic pad)
@@ -272,71 +363,145 @@ class DataCollatorForSupervisedDataset:
 def is_master(local_rank):
     return is_main_process(local_rank)
 
-class CustomTrainer(Trainer):
+class LocalityTrainer(Trainer):
+    @staticmethod
+    def _num_items_from_batch(batch):
+        # ... (your existing robust implementation unchanged) ...
+        if isinstance(batch, dict):
+            for k in ("labels", "input_ids", "pixel_values", "input_values"):
+                v = batch.get(k)
+                if isinstance(v, torch.Tensor):
+                    return int(v.shape[0])
+                if isinstance(v, (list, tuple)) and v and isinstance(v[0], torch.Tensor):
+                    return int(v[0].shape[0])
+            for v in batch.values():
+                if isinstance(v, torch.Tensor):
+                    return int(v.shape[0])
+                if isinstance(v, (list, tuple)) and v and isinstance(v[0], torch.Tensor):
+                    return int(v[0].shape[0])
+        elif isinstance(batch, (list, tuple)) and batch and isinstance(batch[0], torch.Tensor):
+            return int(batch[0].shape[0])
+        return 1
+
+    def get_num_items(self, batch):
+        # Prefer HF's implementation if present; otherwise use our fallback.
+        if hasattr(super(), "get_num_items"):
+            try:
+                return super().get_num_items(batch)
+            except Exception:
+                pass
+        return self._num_items_from_batch(batch)
+
+    def get_batch_samples(self, epoch_iterator, num_batches, device: torch.device | None = None):
+        """
+        HF-compatible: returns (batch_samples: List[batch_dict], num_items_in_batch: int)
+        Works with both signatures: with or without the 'device' arg.
+        """
+        batch_samples = []
+        for _ in range(num_batches):
+            try:
+                batch_samples.append(next(epoch_iterator))
+            except StopIteration:
+                break
+
+        # Prefer token count if labels exist; else fall back to item count
+        num_items = None
+        if batch_samples and isinstance(batch_samples[0], dict) and "labels" in batch_samples[0]:
+            try:
+                num_items = sum((b["labels"].ne(IGNORE_INDEX)).sum() for b in batch_samples)
+            except Exception:
+                num_items = None
+
+        if num_items is None:
+            per_mb = [self.get_num_items(b) for b in batch_samples]
+            num_items = torch.tensor(sum(per_mb))
+
+        # Ensure CUDA + dense before any gather
+        if device is None:
+            device = getattr(self, "accelerator", None).device if hasattr(self, "accelerator") else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        if not torch.is_tensor(num_items):
+            num_items = torch.tensor(num_items, device=device)
+        else:
+            num_items = num_items.to(device=device)
+        if getattr(num_items, "is_sparse", False):
+            num_items = num_items.to_dense()
+
+        if getattr(self.args, "average_tokens_across_devices", False):
+            num_items = self.accelerator.gather(num_items).sum().item()
+        else:
+            num_items = int(num_items.item())
+
+        return batch_samples, num_items
+
+    # def get_batch_samples(self, epoch_iterator, num_batches, device):
+    #     batch = next(epoch_iterator)
+    #     # Get batch size robustly
+    #     if hasattr(super(), "get_num_items"):
+    #         try:
+    #             num_items = super().get_num_items(batch)  # HF provides this
+    #         except Exception:
+    #             num_items = None
+    #     else:
+    #         num_items = None
+    #     if num_items is None:
+    #         # fallback: look for any tensor and take its first dim
+    #         if isinstance(batch, dict):
+    #             for v in batch.values():
+    #                 if isinstance(v, torch.Tensor):
+    #                     num_items = int(v.shape[0]);
+    #                     break
+    #         if num_items is None: num_items = 1
+    #
+    #     num_items = torch.tensor(num_items, device=device)  # <-- CUDA
+    #     return batch, num_items
+
     def get_train_dataloader(self):
-        dataset = self.train_dataset
+        ds = self.train_dataset
         bsz = self.args.per_device_train_batch_size
-
-        # Resolve DDP world size / rank
-        if torch.distributed.is_available() and torch.distributed.is_initialized():
-            ws = torch.distributed.get_world_size()
-            rk = torch.distributed.get_rank()
-        else:
-            ws, rk = 1, 0
-
-        if ws > 1 and DistributedLengthGroupedSampler is not None:
-            # Build kwargs only with params the sampler actually supports
-            sig = inspect.signature(DistributedLengthGroupedSampler)
-            kwargs = {}
-            if "batch_size" in sig.parameters:
-                kwargs["batch_size"] = bsz
-            if "lengths" in sig.parameters:
-                kwargs["lengths"] = dataset.lengths
-            if "world_size" in sig.parameters:
-                kwargs["world_size"] = ws
-            if "num_replicas" in sig.parameters:
-                kwargs["num_replicas"] = ws
-            if "rank" in sig.parameters:
-                kwargs["rank"] = rk
-            if "model_input_name" in sig.parameters:
-                kwargs["model_input_name"] = "input_ids"
-            # only pass generator if accepted
-            if "generator" in sig.parameters:
-                kwargs["generator"] = None
-
-            sampler = DistributedLengthGroupedSampler(**kwargs)
-        else:
-            # Same treatment for non-distributed variant (older HF may also not accept generator)
-            sig = inspect.signature(LengthGroupedSampler)
-            kwargs = {}
-            if "batch_size" in sig.parameters:
-                kwargs["batch_size"] = bsz
-            if "lengths" in sig.parameters:
-                kwargs["lengths"] = dataset.lengths
-            if "model_input_name" in sig.parameters:
-                kwargs["model_input_name"] = "input_ids"
-            if "generator" in sig.parameters:
-                kwargs["generator"] = None
-
-            sampler = LengthGroupedSampler(**kwargs)
-
-        return DataLoader(
-            dataset,
+        ws = torch.distributed.get_world_size() if torch.distributed.is_initialized() else 1
+        rk = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
+        # Use a real block size (number of samples per block), not the batch size
+        sampler = BlockDistributedSampler(
+            dataset=ds,
+            batch_size=bsz,
+            world_size=ws,
+            rank=rk,
+            block_size=512,            # try 512; tune 256–2048 based on storage
+            sort_within_block=True,
+            seed=42,
+        )
+        num_workers = int(self.args.dataloader_num_workers)
+        # Build kwargs so we only pass prefetch_factor/persistent_workers if legal
+        loader_kwargs = dict(
             batch_size=bsz,
             sampler=sampler,
             collate_fn=self.data_collator,
-            num_workers=self.args.dataloader_num_workers,
+            num_workers=num_workers,
             pin_memory=self.args.dataloader_pin_memory,
-            persistent_workers=self.args.dataloader_persistent_workers,
             drop_last=self.args.dataloader_drop_last,
-            prefetch_factor=8,  # safe to keep; ignored if unsupported
         )
-
+        if num_workers > 0:
+            loader_kwargs["persistent_workers"] = bool(self.args.dataloader_persistent_workers)
+            loader_kwargs["prefetch_factor"] = 8  # or 2–4 if you want it lighter in the smoke run
+        else:
+            # Must be False when num_workers == 0, and DO NOT pass prefetch_factor at all
+            loader_kwargs["persistent_workers"] = False
+        return DataLoader(ds, **loader_kwargs)
 
 class SaveModelCallback(transformers.TrainerCallback):
     def on_save(self, args, state, control, **kwargs):
         if is_master(args.local_rank):
             print(f"[save] {args.output_dir}/checkpoint-{state.global_step}/")
+        if dist.is_available() and dist.is_initialized():
+            try:
+                if dist.get_backend() == "nccl" and torch.cuda.is_available():
+                    dist.barrier(device_ids=[torch.cuda.current_device()])
+                else:
+                    dist.barrier()
+            except Exception:
+                # don't let a barrier issue crash training
+                pass
         return control
 
 class LoggingCallback(transformers.TrainerCallback):
@@ -401,6 +566,17 @@ class DelayedEarlyStopping(transformers.EarlyStoppingCallback):
 # Train
 # -------------------------
 
+def _resolve_snapshot(repo_or_path: str, revision: Optional[str]) -> tuple[str, str]:
+    """
+    Return (load_path, used_revision). If local directory, returns ('/abs/path', 'local').
+    Otherwise downloads/uses cached snapshot and returns its directory and commit sha.
+    """
+    if os.path.isdir(repo_or_path):
+        return os.path.abspath(repo_or_path), "local"
+    snap_dir = snapshot_download(repo_id=repo_or_path, revision=revision)
+    used_rev = Path(snap_dir).name  # snapshots/<sha>
+    return snap_dir, used_rev
+
 def make_datasets(tokenized_dir: str):
     train_ds = MemmapShardDataset(tokenized_dir, "train")
     eval_ds  = MemmapShardDataset(tokenized_dir, "val")
@@ -412,12 +588,26 @@ def train():
     args = {**model_args.__dict__, **data_args.__dict__, **training_args.__dict__}
     args = argparse.Namespace(**args)
 
+    # Resolve exact base snapshot (even if --model_revision is None)
+    base_load_path, used_revision = _resolve_snapshot(model_args.model_name_or_path, model_args.model_revision)
+
+    os.makedirs(training_args.output_dir, exist_ok=True)
+    if is_main_process(training_args.local_rank):
+        info = {
+            "base_model_name_or_path": model_args.model_name_or_path,
+            "base_model_revision": used_revision,  # <-- commit SHA / 'local'
+            "resolved_load_path": base_load_path,  # <-- snapshot dir or local path
+        }
+        with open(os.path.join(training_args.output_dir, "BASE_MODEL.json"), "w") as f:
+            json.dump(info, f, indent=2)
+
     assert data_args.tokenized_dir, "--tokenized_dir is required and must point to the pre-tokenized shards."
 
     # Load tokenizer (matching the builder)
     tokenizer = load_tokenizer_consistent(model_args.model_name_or_path,
                                           training_args.model_max_length,
-                                          data_args.tokenized_dir)
+                                          data_args.tokenized_dir,
+                                          revision=model_args.model_revision)
 
     # Model (QLoRA 4-bit)
     bnb_config = BitsAndBytesConfig(
@@ -426,7 +616,7 @@ def train():
     )
     attn_impl = "flash_attention_2" if model_args.use_flash_attention else "sdpa"
     model = transformers.AutoModelForCausalLM.from_pretrained(
-        model_args.model_name_or_path,
+        base_load_path,
         quantization_config=bnb_config,
         attn_implementation=attn_impl,
         trust_remote_code=True,
@@ -475,7 +665,7 @@ def train():
                              early_stopping_patience=training_args.early_stopping_patience),
     ]
 
-    trainer = CustomTrainer(
+    trainer = LocalityTrainer(
         model=model,
         args=training_args,
         processing_class=tokenizer,
@@ -488,7 +678,19 @@ def train():
     trainer.train()
     trainer.save_state()
     trainer.save_model(output_dir=training_args.output_dir)
-    model.save_pretrained(training_args.output_dir + "_lora")
+
+    # Save LoRA adapter folder and embed the revision inside adapter_config.json (optional, recommended)
+    lora_dir = training_args.output_dir + "_lora"
+    model.save_pretrained(lora_dir)
+    if is_main_process(training_args.local_rank):
+        try:
+            ac_path = os.path.join(lora_dir, "adapter_config.json")
+            cfg = json.load(open(ac_path))
+            cfg["base_model_name_or_path"] = model_args.model_name_or_path
+            cfg["base_model_revision"] = used_revision  # <-- commit SHA / 'local'
+            json.dump(cfg, open(ac_path, "w"), indent=2)
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     train()
