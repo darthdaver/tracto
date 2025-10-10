@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import argparse
-import json
-import os
-import threading
+import argparse, json, os, threading, subprocess, sys
 from queue import Queue
 
 import torch
@@ -13,6 +10,9 @@ from huggingface_hub import snapshot_download
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+import predictor
+from predictor import TokenNotFoundException
+
 # Optional: safetensors for quick shape probing
 try:
     from safetensors.torch import load_file as safetensors_load_file
@@ -20,8 +20,8 @@ except Exception:
     safetensors_load_file = None
 
 # Your project modules
-import predictor
-from predictor import TokenNotFoundException
+import predictor_legacy
+from predictor_legacy import TokenNotFoundException
 
 
 # -------------------------
@@ -41,23 +41,40 @@ class Server:
         self.setup_routes()
 
     def next_token(self):
-        filename = request.args.get('filename')
-        if not filename:
-            return 'Missing filename parameter', 400
+        filepath = request.args.get('filepath')
+        prompt_config = request.args.get('config')
+        if not filepath:
+            return 'Missing filepath parameter', 400
 
         # Optional: restrict to SAFE_JSON_DIR if provided
         if self._safe_dir:
             try:
-                real = os.path.realpath(filename)
+                real = os.path.realpath(filepath)
                 root = os.path.realpath(self._safe_dir)
                 if not real.startswith(root + os.sep):
-                    return 'Forbidden filename path', 403
+                    return 'Forbidden filepath path', 403
             except Exception:
-                return 'Invalid filename', 400
+                return 'Invalid filepath', 400
+
+        script_prompt = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "prompt.py")
+        script_csv2jsonl = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "utils", "csv2jsonl.py")
+        output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "output-tracto")
+        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "resources", "config", prompt_config, "ewash_config.json")
+        query_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "resources", "queries", "query-std.txt")
+
+        subprocess.run(
+            [sys.executable, script_prompt, "--input", filepath, "--output", output_path, "--config", config_path],
+            check=True  # raise CalledProcessError if the script exits non-zero
+        )
+
+        subprocess.run(
+            [sys.executable, script_csv2jsonl, f"{output_path}/prompt/token-step.csv", f"{output_path}/jsonl", query_path],
+            check=True  # raise CalledProcessError if the script exits non-zero
+        )
 
         # Enqueue and wait
         task_event = threading.Event()
-        self._request_queue.put({'filename': filename, 'event': task_event})
+        self._request_queue.put({'filepath': f"{output_path}/jsonl/token-step.jsonl", 'event': task_event})
         task_event.wait()
         task_result = getattr(task_event, "result", None) or {}
 
@@ -73,19 +90,19 @@ class Server:
     def process_request(self):
         while True:
             task = self._request_queue.get()
-            filename = task['filename']
+            filepath = task['filepath']
             try:
                 token = predictor.predict_next_token(
-                    self._device, filename, self._model, self._tokenizer,
+                    self._device, filepath, self._model, self._tokenizer,
                     self._max_src_length, self._max_tgt_length
                 )
                 task['token'] = token
-                print("Processed request for:", filename)
+                print("Processed request for:", filepath)
             except TokenNotFoundException as e:
-                print("Error processing request for:", filename, "-", str(e))
+                print("Error processing request for:", filepath, "-", str(e))
                 task['error'] = str(e.predicted_token)
             except Exception as e:
-                print("Unhandled error processing request for:", filename, "-", repr(e))
+                print("Unhandled error processing request for:", filepath, "-", repr(e))
                 task['error'] = f"Unhandled error: {e}"
 
             task['event'].result = task

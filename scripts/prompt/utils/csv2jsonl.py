@@ -2,6 +2,7 @@ import pandas as pd
 import sys
 import json
 import os
+import math
 
 def preprocess_dp(query_template, src_col):
     """
@@ -60,6 +61,9 @@ if __name__ == '__main__':
                     #{"role": "system", "content": system_prompt},
                     {"role": "user", "content": query},
                     {"role": "assistant", "content": row['tgt']}
+                ] if not math.isnan(row['tgt']) else [
+                    # {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": query}
                 ]
                 json.dump({"messages": messages, "format": "chatml"}, f_out)
                 f_out.write("\n")

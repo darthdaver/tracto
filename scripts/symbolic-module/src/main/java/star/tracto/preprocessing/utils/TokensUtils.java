@@ -1,5 +1,6 @@
 package star.tracto.preprocessing.utils;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.javaparser.ast.*;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.type.Type;
@@ -16,6 +17,9 @@ import org.javatuples.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import star.tracto.data.enums.*;
+import star.tracto.data.exceptions.ServerErrorException;
+import star.tracto.data.exceptions.ServerUnexpectedResponseCodeException;
+import star.tracto.data.exceptions.TokenNotFoundException;
 import star.tracto.lsp.antlr4.Antlr4Utils;
 import star.tracto.preprocessing.builders.PartialOracleDatapointBuilder;
 import star.tracto.preprocessing.builders.TestClazzDatapointsBuilder;
@@ -25,6 +29,9 @@ import star.tracto.utils.FilesUtils;
 import star.tracto.utils.javaParser.JavaParserUtils;
 
 import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -450,6 +457,269 @@ public class TokensUtils {
         }
         return new Pair<>(testClazzDatapointsBuilder.build(), clazzDatapointsErrors);
     }
+
+    private static String getNextToken(
+            TestClazzDatapoints<PartialOracleDatapoint> tokenStep,
+            Path nextTokenPath,
+            String apiURL
+    ) {
+        // ObjectMapper for JSON processing
+        ObjectMapper objectMapper = new ObjectMapper();
+        Path nextTokenFilePath = nextTokenPath.resolve("token-step.json");
+
+        try {
+            objectMapper.writeValue(nextTokenFilePath.toFile(), List.of(tokenStep));
+            HttpURLConnection mlModelApiConn = (HttpURLConnection) new URL(apiURL).openConnection();
+            mlModelApiConn.setRequestMethod("GET");
+            mlModelApiConn.connect();
+            int responseCode = mlModelApiConn.getResponseCode();
+            String nextToken;
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                nextToken = new String(mlModelApiConn.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            } else if (responseCode == HttpURLConnection.HTTP_NOT_FOUND) {
+                // Handle 404 response
+                String errorResponse = new String(mlModelApiConn.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+                throw new TokenNotFoundException(errorResponse);
+            } else if (responseCode == HttpURLConnection.HTTP_INTERNAL_ERROR) {
+                throw new ServerErrorException("Unexpected internal error: " + responseCode);
+            } else {
+                throw new ServerUnexpectedResponseCodeException("Unexpected response code: " + responseCode);
+            }
+            mlModelApiConn.disconnect();
+            return nextToken;
+        } catch (IOException e) {
+            throw new RuntimeException("Error writing JSON to file", e);
+        }
+    }
+
+    public static Pair<List<List<String>>,HashMap<String, HashMap<String, List<String>>>> generateInference(
+            Path repoRootPath,
+            Path nextTokenPath,
+            String apiURL,
+            TestClazzDatapoints<OracleDatapoint> testClazzDatapoints
+    ) throws IllegalStateException {
+        // Define the set of literal tokens to be replaced with "LITERAL"
+        Set<String> literalsSet = new HashSet<>(Arrays.asList(
+                "DECIMAL_LITERAL", "HEX_LITERAL", "OCT_LITERAL", "BINARY_LITERAL",
+                "FLOAT_LITERAL", "HEX_FLOAT_LITERAL", "BOOL_LITERAL",
+                "CHAR_LITERAL", "STRING_LITERAL"
+        ));
+        List<List<String>> inferenceList = new ArrayList<>();
+        // Create a map to store the processing errors when processing the datapoints
+        clazzDatapointsErrors = new HashMap<>();
+        // Retrieve the datapoints and the path of the test class and the focal class from the test class object
+        List<OracleDatapoint> datapoints = testClazzDatapoints.datapoints();
+        Path testClassPath = repoRootPath.resolve(testClazzDatapoints.testClass().filePath().substring(1));
+        testPrefixClassPath = repoRootPath.resolve(testClazzDatapoints.testClass().prefixFilePath().substring(1));
+        focalClassPath = repoRootPath.resolve(testClazzDatapoints.focalClass().filePath().substring(1));
+        String fqnTestClass = testClazzDatapoints.testClass().packageIdentifier() + "." + testClazzDatapoints.testClass().identifier();
+        String fqnFocalClass = testClazzDatapoints.focalClass().packageIdentifier() + "." + testClazzDatapoints.focalClass().identifier();
+        // Get the path of the test directory of the repository
+        repoTestPath = Path.of(testClassPath.toString().replace(FilesUtils.getFQNPath(fqnTestClass).toString(), ""));
+        // Get the path of the source directory of the repository
+        repoSourcePath = Path.of(focalClassPath.toString().replace(FilesUtils.getFQNPath(fqnFocalClass).toString(), ""));
+        try {
+            // Get the compilation units for the test class and the focal class
+            CompilationUnit tcCu = JavaParserUtils.getCompilationUnit(testPrefixClassPath);
+            CompilationUnit fcCu = JavaParserUtils.getCompilationUnit(focalClassPath);
+            // Check that the compilation units are not null
+            if (tcCu == null || fcCu == null) {
+                logger.error("Compilation unit is null for test class: " + testPrefixClassPath + " or focal class: " + focalClassPath);
+                return new Pair<>(new ArrayList<>(), clazzDatapointsErrors);
+            }
+            TypeDeclaration testPrefixClass = tcCu.getPrimaryType().get();
+            TypeDeclaration focalClass = fcCu.getPrimaryType().get();
+            // Get the test prefixes from the test class (test cases and auxiliary methods defined in the test class)
+            List<MethodDeclaration> testPrefixes = testPrefixClass.getMethods();
+            // Commented if statement for debug
+            //if (testPrefixClass.getNameAsString().contains("MarcFactoryTestSTARSplitTestPrefix")) {
+            int datapointCounter = 0;
+            // Iterate over the oracle datapoints and process each test prefix and associated target assertion
+            for (OracleDatapoint datapoint : datapoints) {
+                List<String> oracleInference = new ArrayList<>();
+                String datapointId = testClazzDatapoints.testClass().identifier() + "-" + datapoint.testPrefix().identifier() + "-" + datapointCounter++;
+                oracleInference.add(datapointId);
+                oracleInference.add(testClassPath.toString());
+                oracleInference.add(datapoint.testPrefix().identifier());
+                oracleInference.add(datapoint.testPrefix().signature());
+                oracleInference.add(datapoint.testPrefix().body());
+                // Get the test prefix from the datapoint
+                Callable targetTestPrefix = datapoint.testPrefix();
+                // Set flag to check if the prefix has been found
+                boolean prefixFound = false;
+                // Iterate over the test methods to find the one matching the test prefix identifier
+                for (MethodDeclaration testPrefix : testPrefixes) {
+                    if (testPrefix.getNameAsString().equals(targetTestPrefix.identifier())) {
+                        prefixFound = true;
+                        List<Pair<TokenIdentifiersCollector, TokenReferencesCollector>> tokenIdentifiersStack = new ArrayList<>();
+                        rootTokenIdentifiersCollector = new TokenIdentifiersCollector();
+                        rootTokenReferencesCollector = new TokenReferencesCollector();
+                        // Get the target assertion from the test prefix
+                        String targetAssertion = datapointId + "::" + "inference";
+                        logger.info("Processing test class " + (testPrefixClass.getFullyQualifiedName().isPresent() ? testPrefixClass.getFullyQualifiedName().get() : testPrefixClass.getNameAsString()));
+                        // Commented if statement for debug
+                        //if (targetAssertion.contains("assertEquals(\"type, Leader, Leader_recordLength, Leader_recordStatus, Leader_typeOfRecord, \" + \"Leader_bibliographicLevel, Leader_typeOfControl, Leader_characterCodingScheme, \" + \"Leader_indicatorCount, Leader_subfieldCodeCount, Leader_baseAddressOfData, \" + \"Leader_encodingLevel, Leader_descriptiveCatalogingForm, Leader_multipartResourceRecordLevel, \" + \"Leader_lengthOfTheLengthOfFieldPortion, Leader_lengthOfTheStartingCharacterPositionPortion, \" + \"Leader_lengthOfTheImplementationDefinedPortion, Leader_undefined, ControlNumber, ControlNumberIdentifier, \" + \"LatestTransactionTime, PhysicalDescription, PhysicalDescription_categoryOfMaterial, \" + \"PhysicalDescription_specificMaterialDesignation, GeneralInformation, \" + \"GeneralInformation_dateEnteredOnFile, GeneralInformation_typeOfDateOrPublicationStatus, \" + \"GeneralInformation_date1, GeneralInformation_date2, \" + \"GeneralInformation_placeOfPublicationProductionOrExecution, GeneralInformation_language, \" + \"GeneralInformation_modifiedRecord, GeneralInformation_catalogingSource, \" + \"GeneralInformation_frequency, GeneralInformation_regularity, \" + \"GeneralInformation_typeOfContinuingResource, GeneralInformation_formOfOriginalItem, \" + \"GeneralInformation_formOfItem, GeneralInformation_natureOfEntireWork, \" + \"GeneralInformation_natureOfContents, GeneralInformation_governmentPublication, \" + \"GeneralInformation_conferencePublication, \" + \"GeneralInformation_originalAlphabetOrScriptOfTitle, GeneralInformation_entryConvention, \" + \"IdIntifiedByLocal_source, IdIntifiedByLocal, IdIntifiedByLocal_agency, \" + \"Issn_levelOfInternationalInterest, Issn, \" + \"SystemControlNumber_organizationCode, \" + \"SystemControlNumber, SystemControlNumber_recordNumber, SystemControlNumber_organization, \" + \"AdminMetadata_languageOfCataloging, \" + \"AdminMetadata_descriptionConventions, AdminMetadata_transcribingAgency, AdminMetadata_catalogingAgency, \" + \"Language_translationIndication, Language, Language_sourceOfCode, Place_country, ClassificationDdc_full, \" + \"ClassificationDdc_editionType, ClassificationDdc_classificationSource, ClassificationDdc, \" + \"Classification_classificationPortion, Classification_classificationPortion_zdbs, \" + \"Classification_source, Classification_full, Title_subtitle, \" + \"Title_responsibilityStatement, Title_mainTitle, Title_titleAddedEntry, \" + \"Title_nonfilingCharacters, Title_partName, ParallelTitle_mainTitle, ParallelTitle_type, \" + \"ParallelTitle_displayText, ParallelTitle_noteAndAddedEntry, \" + \"Publication_sequenceOfPublishingStatements, Publication_agent, Publication_place, \" + \"DatesOfPublication, DatesOfPublication_format, NumberingPeculiarities, \" + \"BemerkungenZurTitelaufnahme, \" + \"RSWKKette_nummerDesKettengliedes, RSWKKette_0, RSWKKette_a, \" + \"RSWKKette_nummerDerRSWKKette, RSWKKette_D, RSWKKette_5, AddedCorporateName, AddedCorporateName_full, \" + \"AddedCorporateName_authorityRecordControlNumber, \" + \"AddedCorporateName_authorityRecordControlNumber_recordNumber, \" + \"AddedCorporateName_authorityRecordControlNumber_organization, \" + \"AddedCorporateName_authorityRecordControlNumber_organizationCode, \" + \"AddedCorporateName_entryType, AddedCorporateName_nameType, PartOf_relation, PartOf_displayConstant, \" + \"PartOf_recordControlNumber, PartOf_noteController, PartOf_recordControlNumber_recordNumber, \" + \"PartOf_recordControlNumber_organization, PartOf_recordControlNumber_organizationCode, PartOf, \" + \"PrecededBy, PrecededBy_relation, PrecededBy_recordControlNumber_organization, \" + \"PrecededBy_recordControlNumber_recordNumber, PrecededBy_typeOfRelationship, \" + \"PrecededBy_recordControlNumber, PrecededBy_recordControlNumber_organizationCode, \" + \"PrecededBy_noteController, Bestandsinformationen, Bestandsinformationen_9, \" + \"Bestandsinformationen_d, \" + \"Bestandsinformationen_artDerRessource, Bestandsinformationen_b, Bestandsinformationen_c, \" + \"Bestandsinformationen_h, Bestandsinformationen_g\", StringUtils.join(keys, \", \"))")) {
+                        // Start with an empty partial snippet
+                        String partialSnippet = "";
+                        try {
+                            // Setup error map for the test class
+                            clazzDatapointsErrors.putIfAbsent(testPrefix.getNameAsString(), new HashMap<>());
+                            // Setup error map for the test case
+                            clazzDatapointsErrors.get(testPrefix.getNameAsString()).putIfAbsent(targetAssertion, new ArrayList<>());
+                            // Setup the root token identifiers amd references collector
+                            setUpRootTokenIdentifiers(tcCu, testPrefix, targetAssertion);
+                            setupRootTokenReferences(rootTokenReferencesCollector, rootTokenIdentifiersCollector);
+                            TokenIdentifiersCollector currentTokenIdentifiersCollector = cloneRootTokenIdentifiers();
+                            TokenReferencesCollector currentTokenReferences = new TokenReferencesCollector(); //cloneRootTokenReferences();
+                            tokenIdentifiersStack.add(new Pair<>(currentTokenIdentifiersCollector, currentTokenReferences));
+                            // Iterate over the tokens to build the token steps
+                            while (!partialSnippet.endsWith(";")) {
+                                // Define a new token step builder for the current token step
+                                TokenStepBuilder tokenStepBuilder = new TokenStepBuilder();
+                                // Define partial oracle datapoints builder
+                                PartialOracleDatapointBuilder partialOracleDatapointBuilder = new PartialOracleDatapointBuilder();
+                                // Define test class datapoints builder
+                                TestClazzDatapointsBuilder<PartialOracleDatapoint> testClazzDatapointsBuilder = new TestClazzDatapointsBuilder<>();
+                                tokenStepBuilder.setPartialSnippet(partialSnippet);
+                                // In the first step, we know that the next possible tokens are only JUnit assertion methods
+                                if (partialSnippet.isEmpty()) {
+                                    tokenStepBuilder.setNextPossibleJavaTokens(Arrays.stream(JUnitAssertionType.values()).map(a -> a.getAssertionMethodName()).collect(Collectors.toList()));
+                                    tokenStepBuilder.setNextPossibleProjectTokens(new ArrayList<>());
+                                    tokenStepBuilder.setNextPossibleGenericTokens(List.of(THROW_EXCEPTION_LABEL));
+                                    tokenStepBuilder.setSyntaxCorrect(false);
+                                    tokenStepBuilder.setTarget("");
+                                    tokenStepBuilder.setContextualInfos(new ArrayList<>());
+                                    partialOracleDatapointBuilder.setTestPrefix(targetTestPrefix);
+                                    partialOracleDatapointBuilder.setTarget("");
+                                    partialOracleDatapointBuilder.setDatapoints(List.of(tokenStepBuilder.build()));
+                                    testClazzDatapointsBuilder.setTestClass(testClazzDatapoints.testClass());
+                                    testClazzDatapointsBuilder.setFocalClass(testClazzDatapoints.focalClass());
+                                    testClazzDatapointsBuilder.setJunitVersion(testClazzDatapoints.junitVersion());
+                                    testClazzDatapointsBuilder.setDatapoints(List.of(partialOracleDatapointBuilder.build()));
+                                    // Get the next token from the model
+                                    String nextToken = getNextToken(
+                                            testClazzDatapointsBuilder.build(),
+                                            nextTokenPath,
+                                            apiURL
+                                    );
+                                    partialSnippet += nextToken;
+
+                                    if (nextToken.equals(THROW_EXCEPTION_LABEL)) {
+                                        oracleInference.add(nextToken);
+                                        break;
+                                    }
+                                    continue;
+                                }
+                                List<String> tokens = Antlr4Utils.tokenizeSnippet(partialSnippet);
+                                // Remove spurious tokens and check that the first token is a valid JUnit assertion method
+                                try {
+                                    tokens.removeIf(t -> t.equals(" "));
+                                    JUnitAssertionType.fromString(tokens.get(0));
+                                } catch (IllegalArgumentException e) {
+                                    String message = "Assertion do not start with JUnit api (do not implemented yet): " + targetAssertion + " - " + e.getMessage();
+                                    logger.error(message);
+                                    clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(message);
+                                    oracleInference.add(partialSnippet);
+                                    oracleInference.add("ERROR");
+                                    oracleInference.add(message);
+                                    break;
+                                }
+                                // Define the list of next possible tokens, divided by type
+                                List<String> adjustedNextJavaTokens = new ArrayList<>();
+                                List<String> adjustedNextConcreteTokens = new ArrayList<>();
+                                List<String> adjustedNextGenericTokens = new ArrayList<>();
+                                // Collect the list of possible raw next tokens using ANTLR4 (they need to be processed afterward)
+                                List<String> nextANTLRTokens = Antlr4Utils.parseSnippet(JUnitAssertionType.fromString(tokens.get(0)), partialSnippet, 600);
+                                // If ANTLR4 returns an empty list of candidates and the token is not a semicolon
+                                // (terminal symbol in Java statements), raise an exception because the expression
+                                // do not follow the Java syntax imposed by the grammar
+                                if (nextANTLRTokens.isEmpty()) {
+                                    IllegalStateException exception = new IllegalStateException("Unexpected empty token candidates after partial snippet: " + partialSnippet);
+                                    clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(exception.getMessage());
+                                    oracleInference.add(partialSnippet);
+                                    oracleInference.add("ERROR");
+                                    oracleInference.add(exception.getMessage());
+                                    break;
+                                }
+                                // Process the list of raw ANTLR next tokens
+                                for (String nextANTLRToken : nextANTLRTokens) {
+                                    if (literalsSet.contains(nextANTLRToken)) {
+                                        adjustedNextGenericTokens.add(nextANTLRToken);
+                                    } else if (nextANTLRToken.equals("IDENTIFIER")) {
+                                        if (!Antlr4Utils.getAntlrToken(tokens.get(tokens.size() - 1)).equals(AntlrToken.IDENTIFIER)) {
+                                            adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.classPathIdentifiers.keySet());
+                                            adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.methodIdentifiers.keySet());
+                                            adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.constructorIdentifiers.keySet());
+                                            adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.fieldIdentifiers.keySet());
+                                            adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.parameterIdentifiers.keySet());
+                                            adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.lambdaIdentifiers.keySet());
+                                            adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.enumIdentifiers.keySet());
+                                        }
+                                        if (streamFlag) {
+                                            adjustedNextConcreteTokens.add("LAMBDA_PARAM");
+                                        }
+                                    } else {
+                                        adjustedNextJavaTokens.add(nextANTLRToken);
+                                    }
+                                }
+                                // Build the token step
+                                tokenStepBuilder.setNextPossibleGenericTokens(adjustedNextGenericTokens);
+                                tokenStepBuilder.setNextPossibleProjectTokens(adjustedNextConcreteTokens);
+                                tokenStepBuilder.setNextPossibleJavaTokens(adjustedNextJavaTokens);
+                                tokenStepBuilder.setSyntaxCorrect(false);
+                                //tokenStepBuilder.setContextualInfos(tokenIdentifiersStack.stream().map(t -> generateTokenStepContextualInfo(t.getValue1())).collect(Collectors.toList()));
+                                tokenStepBuilder.setContextualInfos(List.of(generateTokenStepContextualInfo(tokenIdentifiersStack.get(tokenIdentifiersStack.size()-1).getValue1(), true)));
+                                partialOracleDatapointBuilder.setTestPrefix(targetTestPrefix);
+                                partialOracleDatapointBuilder.setTarget("");
+                                partialOracleDatapointBuilder.setDatapoints(List.of(tokenStepBuilder.build()));
+                                testClazzDatapointsBuilder.setTestClass(testClazzDatapoints.testClass());
+                                testClazzDatapointsBuilder.setFocalClass(testClazzDatapoints.focalClass());
+                                testClazzDatapointsBuilder.setJunitVersion(testClazzDatapoints.junitVersion());
+                                testClazzDatapointsBuilder.setDatapoints(List.of(partialOracleDatapointBuilder.build()));
+                                // Get the next token from the model
+                                String nextToken = getNextToken(
+                                        testClazzDatapointsBuilder.build(),
+                                        nextTokenPath,
+                                        apiURL
+                                );
+                                // Update the partial snippet
+                                partialSnippet += AntlrToken.isAtomicKeywordToken(Antlr4Utils.getAntlrToken(nextToken)) ? nextToken + " " : nextToken;
+                                // Update the token identifiers and references collectors
+                                Pair<TokenIdentifiersCollector, TokenReferencesCollector> updatedCollectors = updateTokenIdentifiersAndReferences(tokenIdentifiersStack, nextToken, tokens.get(tokens.size() - 1), testPrefixClass, testPrefix.getNameAsString(), targetAssertion);
+                                currentTokenIdentifiersCollector = updatedCollectors.getValue0();
+                                currentTokenReferences = updatedCollectors.getValue1();
+                            }
+                            if (partialSnippet.endsWith(";")) {
+                                oracleInference.add(partialSnippet);
+                                oracleInference.add("OK");
+                                oracleInference.add("");
+                            }
+                        } catch (Exception e) {
+                            logger.error(e.getMessage());
+                            clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(e.getMessage());
+                            oracleInference.add(partialSnippet);
+                            oracleInference.add("ERROR");
+                            oracleInference.add(e.getMessage());
+                        }
+                        //}
+                        break;
+                    }
+                }
+                if (!prefixFound) {
+                    oracleInference.add("");
+                    oracleInference.add("ERROR");
+                    oracleInference.add("Test prefix not found");
+                }
+                inferenceList.add(oracleInference);
+            }
+            //}
+        } catch (IOException e) {
+            logger.error("Error reading file: " + testPrefixClassPath);
+        }
+        return new Pair<>(inferenceList, clazzDatapointsErrors);
+    }
+
+
 
     public static TokenIdentifiersCollector cloneRootTokenIdentifiers () {
         TokenIdentifiersCollector clonedTokenIdentifierCollector = new TokenIdentifiersCollector(

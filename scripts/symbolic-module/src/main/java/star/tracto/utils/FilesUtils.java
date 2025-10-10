@@ -11,6 +11,7 @@ import star.tracto.preprocessing.components.OracleDatapoint;
 import star.tracto.preprocessing.components.TestClazzDatapoints;
 
 import java.io.BufferedWriter;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -31,6 +32,57 @@ public class FilesUtils {
     /** Do not instantiate this class. */
     private FilesUtils() {
         throw new UnsupportedOperationException("This class cannot be instantiated.");
+    }
+
+    public static class CSVWriter {
+        private final BufferedWriter writer;
+        private Path filePath;
+
+        // Constructor - creates file and writes header
+        public CSVWriter(Path filePath, List<String> header) throws IOException {
+            this.filePath = filePath;
+            this.writer = new BufferedWriter(new FileWriter(filePath.toFile()));
+            writeHeader(header);
+        }
+
+        // Write the CSV header
+        private void writeHeader(List<String> header) throws IOException {
+            writer.write(String.join(",", header));
+            writer.newLine();
+            writer.flush(); // Ensure header is written immediately
+        }
+
+        // Add a new row to the CSV
+        public void addRow(List<String> fields) throws IOException {
+            StringBuilder row = new StringBuilder();
+            for (int i = 0; i < fields.size(); i++) {
+                row.append(escapeCSV(fields.get(i)));
+                if (i < fields.size() - 1) {
+                    row.append(",");
+                }
+            }
+            writer.write(row.toString());
+            writer.newLine();
+            writer.flush(); // Ensures data is written immediately
+        }
+
+        // Escape special characters in CSV fields
+        private String escapeCSV(String value) {
+            if (value == null) {
+                return "";
+            }
+            if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
+                return "\"" + value.replace("\"", "\"\"") + "\"";
+            }
+            return value;
+        }
+
+        // Close the writer when done
+        public void close() throws IOException {
+            if (writer != null) {
+                writer.close();
+            }
+        }
     }
 
     /**
