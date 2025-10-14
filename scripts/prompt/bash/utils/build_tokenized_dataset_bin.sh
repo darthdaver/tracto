@@ -3,6 +3,11 @@
 # and tokenize them to avoid overhead during the fine-tuning.
 # The script generate the final tokenized dataset for fine-tuning
 
+#-e: exit immediately if any command returns a non-zero status.
+#-u: treat unset variables as an error (e.g., using $FOO when it wasn’t set).
+#-o pipefail: in a pipeline (a | b | c), the whole pipeline fails if any stage fails (not just the last one).
+set -euo pipefail
+
 # Get current directory
 current_dir=$(realpath "$(dirname "${BASH_SOURCE[@]}")")
 # Setup global & local variables
@@ -16,22 +21,34 @@ else
     config_paths=("${PROMPT_DIR}/resources/config/"*/)
 fi
 
+if [ $# -eq 1 ]; then
+  config_paths=("$1")
+else
+  config_paths=("${PROMPT_DIR}/resources/config/"*/)
+fi
+
 for config_path in "${config_paths[@]}"; do
   config_num=$(basename "${config_path}")
   i=$(basename "$config_num")
-  python "${PROMPT_DIR}/utils/build_tokenized_dataset_bin.py" \
-      --model_name "${MODEL_NAME}" \
-      --model_revision "${MODEL_REVISION}" \
-      --data_dir   "${OUTPUT_DIR}/${i}/prompt-jsonl" \
-      --train_csv  "${OUTPUT_DIR}/${i}/split-dataset/train_projects.csv" \
-      --val_csv    "${OUTPUT_DIR}/${i}/split-dataset/val_projects.csv" \
-      --out_dir    "${OUTPUT_DIR}/${i}/prompt-binary" \
-      --train_token_budget 2000000000 \
-      --val_token_budget   40000000 \
-      --max_length 8192 \
-      --bin_allocation sqrt \
-      --alpha 0.5 \
-      --target_mix 0.4,0.4,0.2 \
-      --tokens_per_shard 50000000 \
-      --train_drop_long
+  python "${PROMPT_DIR}/utils/build_dataset_bins.py" \
+    --model_name_or_path "${MODEL_NAME:-Qwen/Qwen2.5-Coder-7B-Instruct}" \
+    --model_revision "${MODEL_REVISION}" \
+    --data_dir   "${OUTPUT_DIR}/${i}/prompt-jsonl" \
+    --train_csv  "${OUTPUT_DIR}/${i}/split-dataset/train_projects.csv" \
+    --val_csv    "${OUTPUT_DIR}/${i}/split-dataset/val_projects.csv" \
+    --out_dir    "${OUTPUT_DIR}/${i}/prompt-binary" \
+    --train_token_budget 2000000000 \
+    --val_token_budget   40000000 \
+    --max_length 8192 \
+    --bin_allocation sqrt \
+    --alpha 0.5 \
+    --target_mix "0.4,0.4,0.2" \
+    --short_cut_frac 0.33 \
+    --med_cut_frac   0.66 \
+    --tokens_per_shard 50000000 \
+    --seed "${SEED}" \
+    --start_id "${START_ID:-<|im_start|>}" \
+    --end_id   "${END_ID:-<|im_end|>}" \
+    --train_drop_long \
+    --val_drop_long
 done
