@@ -24,6 +24,9 @@ MAVEN_VERSION="3.9.9"
 # Bin
 MAVEN_BIN="${SDKMAN_DIR}/candidates/maven/${MAVEN_VERSION}/bin"
 
+# General
+SEED=42
+
 # Python environment
 if [ -e "${ROOT_DIR}/.venv" ]; then
     PY_ENV="${ROOT_DIR}/.venv/bin/python"
