@@ -30,7 +30,7 @@ fi
 for config_path in "${config_paths[@]}"; do
   config_num=$(basename "${config_path}")
   i=$(basename "$config_num")
-  python "${PROMPT_DIR}/utils/build_dataset_bins.py" \
+  "$PY_ENV" "${PROMPT_DIR}/utils/build_dataset_bins.py" \
     --model_name_or_path "${MODEL_NAME:-Qwen/Qwen2.5-Coder-7B-Instruct}" \
     --model_revision "${MODEL_REVISION}" \
     --data_dir   "${OUTPUT_DIR}/${i}/prompt-jsonl" \
