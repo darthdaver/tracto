@@ -1,4 +1,4 @@
-import time, json, argparse, logging
+import time, json, logging, glob, bisect
 from dataclasses import dataclass, field
 from typing import Dict, Optional, List, Tuple
 from torch.utils.data import Sampler
@@ -19,7 +19,6 @@ torch.backends.cudnn.allow_tf32 = True
 from torch.utils.data import Dataset
 import transformers
 from transformers import Trainer
-from transformers.trainer_utils import is_main_process
 from transformers import BitsAndBytesConfig
 from torch.utils.data import DataLoader
 
@@ -27,6 +26,9 @@ from peft.utils import prepare_model_for_kbit_training
 from peft import get_peft_model, LoraConfig
 
 IGNORE_INDEX = -100
+sample_query_1 = "===== TASK DESCRIPTION =====\nGiven a Java test prefix and contextual information such as the javadoc, the signature, and the source code of the methods invoked within the test prefix, as well as the fields and methods declared in the focal class and in the test class, generate the next token to append to the partial oracle under construction, substituting the mask placeholder `<mask_id>` (the final oracle must conform to the API of the given JUnit version).\nThe input contains three lists of candidate tokens among which you can select the one to substitute for the mask placeholder:\n    1. Project tokens: tokens specifically related to the project under test (e.g., class names, method names, field names, variable names, literals, keywords, etc.);\n    2. Java tokens: tokens that are part of the Java language and JUnit (e.g., keywords, operators, symbols, punctuation, brackets, JUnit API names, etc.);\n    3. Generic tokens: tokens like strings or numbers that you have to guess without specific suggestions (e.g., STRING_LITERAL, DECIMAL_LITERAL, etc.).\nPut your answer between: [token] and [/token]. The answer must be of this format [token][TOKEN_TYPE]:[TOKEN_VALUE][/token].\nFor example:\n    * If the next token should be a method name `methodExample``, the answer should be of the form [token]IDENTIFIER:methodExample[/token].\n    * If the next token should be a left parenthesis, the answer should be of the form [token]LPAREN:)[/token].\n    * If the next token should be a string literal, the answer should be of the form [token]STRING_LITERAL:\"example of string you will generate\"[/token].\nDo not show me the reasoning behind your answer, but only the answer in the mentioned format.\n\n===== TASK TO EXECUTE =====\nHere is the query for this task:\n\nQuery:\n// Test prefix\npublic void testFromJson() throws IOException {\n    String json = \"{\\n\" + \"    \\\"task_routing\\\": {\\n\" + \"        \\\"filters\\\": [{\\n\" + \"            \\\"expression\\\": \\\"skill == \\\\\\\"HR\\\\\\\"\\\",\\n\" + \"            \\\"friendlyName\\\": \\\"4354\\\",\\n\" + \"            \\\"targets\\\": [{\\n\" + \"                \\\"queue\\\": \\\"WQaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\",\\n\" + \"                \\\"priority\\\": 54333,\\n\" + \"                \\\"timeout\\\": 30\\n\" + \"            }]\\n\" + \"        }],\\n\" + \"        \\\"default_filter\\\": {\\n\" + \"            \\\"queue\\\": \\\"WQaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\"\\n\" + \"        }\\n\" + \"    }\\n\" + \"}\";\n    Workflow workflow = Workflow.fromJson(json);\n    WorkflowRuleTarget defaultTarget = workflow.getDefaultTarget();\n    assertEquals(\"WQaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", defaultTarget.getQueue());\n    List<WorkflowRule> rules = workflow.getWorkflowRules();\n    assertEquals(1, rules.size());\n    WorkflowRule rule = rules.get(0);\n    assertEquals(\"skill == \\\"HR\\\"\",<mask_id>\n}\n\n// Junit Version\nJUnit 4\n\n// Next candidate project tokens\n[ WorkflowRuleTargetTestSTARSplitTest, TaskRouterResource, WorkflowTestSTARSplitTestPrefix, WorkflowRuleTarget, Workflow, IOException, TaskRouting, WorkflowTestSTARNormalizedTest, WorkflowRuleTargetTestSTARSplitTestPrefix, WorkflowRuleTargetTestSTARNormalizedTest, Assert, WorkflowTestSTARSplitTest, WorkflowRule, Collections, WorkflowRuleTargetTest, ObjectMapper, WorkflowTest, getClass, wait, hashCode, equals, notifyAll, clone, toString, finalize, registerNatives, notify, defaultTarget, json, rule, rules, workflow ]\n// Next candidate Java tokens\n[ -, @, boolean, byte, char, double, float, int, long, new, short, super, switch, this, void, module, open, requires, exports, opens, to, uses, provides, with, transitive, var, yield, record, sealed, permits, true, false, TEXT_BLOCK, null, (, <, !, ~, ++, --, + ]\n// Next candidate generic tokens\n[ DECIMAL_LITERAL, HEX_LITERAL, OCT_LITERAL, BINARY_LITERAL, FLOAT_LITERAL, HEX_FLOAT_LITERAL, CHAR_LITERAL, STRING_LITERAL ]\n\n// Invoked methods in test prefix\n/**\n * Converts a JSON workflow configuration to a workflow object.\n *\n * @param json JSON for workflow\n * @return a workflow rule target object\n * @throws IOException if unable to create object\n */\npublic static Workflow fromJson(String json) throws IOException{\n    ObjectMapper mapper = new ObjectMapper();\n    return mapper.readValue(json, Workflow.class);\n}\n\npublic WorkflowRuleTarget getDefaultTarget(){\n    return taskRouting.getDefaultTarget();\n}\n\n/**\n * Get the queue for the workflow rule target.\n *\n * @return queue sid\n */\npublic String getQueue(){\n    return queue;\n}\n\npublic List<WorkflowRule> getWorkflowRules(){\n    return taskRouting.getWorkflowRules();\n}\n\n/**\n * Returns the number of elements in this list.  If this list contains\n * more than <tt>Integer.MAX_VALUE</tt> elements, returns\n * <tt>Integer.MAX_VALUE</tt>.\n *\n * @return the number of elements in this list\n */\nint size()\n\n// Constructors and methods defined in focal class\npublic List<WorkflowRule> getWorkflowRules(){\n    return taskRouting.getWorkflowRules();\n}\n\npublic WorkflowRuleTarget getDefaultTarget(){\n    return taskRouting.getDefaultTarget();\n}\n\n/**\n * Converts a JSON workflow configuration to a workflow object.\n *\n * @param json JSON for workflow\n * @return a workflow rule target object\n * @throws IOException if unable to create object\n */\npublic static Workflow fromJson(String json) throws IOException{\n    ObjectMapper mapper = new ObjectMapper();\n    return mapper.readValue(json, Workflow.class);\n}\n\n// Fields defined in focal class\nprivate final TaskRouting taskRouting;\n\n\n\nAnswer:"
+sample_query_2 = "===== TASK DESCRIPTION =====\nGiven a Java test prefix and contextual information such as the javadoc, the signature, and the source code of the methods invoked within the test prefix, as well as the fields and methods declared in the focal class and in the test class, generate the next token to append to the partial oracle under construction, substituting the mask placeholder `<mask_id>` (the final oracle must conform to the API of the given JUnit version).\nThe input contains three lists of candidate tokens among which you can select the one to substitute for the mask placeholder:\n    1. Project tokens: tokens specifically related to the project under test (e.g., class names, method names, field names, variable names, literals, keywords, etc.);\n    2. Java tokens: tokens that are part of the Java language and JUnit (e.g., keywords, operators, symbols, punctuation, brackets, JUnit API names, etc.);\n    3. Generic tokens: tokens like strings or numbers that you have to guess without specific suggestions (e.g., STRING_LITERAL, DECIMAL_LITERAL, etc.).\nPut your answer between: [token] and [/token]. The answer must be of this format [token][TOKEN_TYPE]:[TOKEN_VALUE][/token].\nFor example:\n    * If the next token should be a method name `methodExample``, the answer should be of the form [token]IDENTIFIER:methodExample[/token].\n    * If the next token should be a left parenthesis, the answer should be of the form [token]LPAREN:)[/token].\n    * If the next token should be a string literal, the answer should be of the form [token]STRING_LITERAL:\"example of string you will generate\"[/token].\nDo not show me the reasoning behind your answer, but only the answer in the mentioned format.\n\n===== TASK TO EXECUTE =====\nHere is the query for this task:\n\nQuery:\n// Test prefix\npublic void testToJson() throws IOException {\n    List<WorkflowRuleTarget> targets = Collections.singletonList(new WorkflowRuleTarget.Builder(\"WQaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\").priority(54333).timeout(30).build());\n    List<WorkflowRule> rules = Collections.singletonList(new WorkflowRule.Builder(\"skill == \\\"HR\\\"\", targets).friendlyName(\"4354\").build());\n    WorkflowRuleTarget defaultTarget = new WorkflowRuleTarget.Builder(\"WQaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\").build();\n    Workflow workflow = new Workflow(rules, defaultTarget);\n    assertEquals(\"{\\\"task_routing\\\":{\\\"filters\\\":[{\\\"expression\\\":\\\"skill == \\\\\\\"HR\\\\\\\"\\\",\\\"targets\\\":[{\\\"queue\\\":\\\"WQaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\",\\\"priority\\\":54333,\\\"timeout\\\":30}],\\\"friendlyName\\\":\\\"4354\\\"}],\\\"default_filter\\\":{\\\"queue\\\":\\\"WQaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\"}}}\",workflow.<mask_id>\n}\n\n// Junit Version\nJUnit 4\n\n// Next candidate project tokens\n[ getClass, wait, notifyAll, registerNatives, notify, getDefaultTarget, toJson, hashCode, equals, clone, getWorkflowRules, fromJson, toString, finalize, taskRouting ]\n// Next candidate Java tokens\n[ super, class, this, module, open, requires, exports, opens, to, uses, <, provides, with, @, transitive, var, yield, record, new, sealed, permits ]\n// Next candidate generic tokens\n[  ]\n\n// Invoked methods in test prefix\n/**\n * Returns an immutable list containing only the specified object.\n * The returned list is serializable.\n *\n * @param  <T> the class of the objects in the list\n * @param o the sole object to be stored in the returned list.\n * @return an immutable list containing only the specified object.\n * @since 1.3\n */\npublic static <T> List<T> singletonList(T o){\n    return new SingletonList<>(o);\n}\n\npublic WorkflowRuleTarget build(){\n    return new WorkflowRuleTarget(this);\n}\n\npublic Builder timeout(Integer timeout){\n    this.timeout = timeout;\n    return this;\n}\n\npublic Builder priority(Integer priority){\n    this.priority = priority;\n    return this;\n}\n\npublic Builder(String queue){\n    this.queue = queue;\n}\n\npublic WorkflowRule build(){\n    return new WorkflowRule(this);\n}\n\npublic Builder friendlyName(String friendlyName){\n    this.friendlyName = friendlyName;\n    return this;\n}\n\npublic Builder(String expression, List<WorkflowRuleTarget> targets){\n    this.expression = expression;\n    this.targets = targets;\n}\n\n/**\n * Define a workflow.\n *\n * @param workflowRules list of workflow rules (in order they will be processed)\n * @param defaultTarget default filter\n */\npublic Workflow(List<WorkflowRule> workflowRules, WorkflowRuleTarget defaultTarget){\n    taskRouting = new TaskRouting(workflowRules, defaultTarget);\n}\n\n// Constructors and methods defined in focal class\npublic List<WorkflowRule> getWorkflowRules(){\n    return taskRouting.getWorkflowRules();\n}\n\npublic WorkflowRuleTarget getDefaultTarget(){\n    return taskRouting.getDefaultTarget();\n}\n\n/**\n * Converts a JSON workflow configuration to a workflow object.\n *\n * @param json JSON for workflow\n * @return a workflow rule target object\n * @throws IOException if unable to create object\n */\npublic static Workflow fromJson(String json) throws IOException{\n    ObjectMapper mapper = new ObjectMapper();\n    return mapper.readValue(json, Workflow.class);\n}\n\n// Fields defined in focal class\nprivate final TaskRouting taskRouting;\n\n\n\nAnswer:"
+sample_query_3 = "===== TASK DESCRIPTION =====\nGiven a Java test prefix and contextual information such as the javadoc, the signature, and the source code of the methods invoked within the test prefix, as well as the fields and methods declared in the focal class and in the test class, generate the next token to append to the partial oracle under construction, substituting the mask placeholder `<mask_id>` (the final oracle must conform to the API of the given JUnit version).\nThe input contains three lists of candidate tokens among which you can select the one to substitute for the mask placeholder:\n    1. Project tokens: tokens specifically related to the project under test (e.g., class names, method names, field names, variable names, literals, keywords, etc.);\n    2. Java tokens: tokens that are part of the Java language and JUnit (e.g., keywords, operators, symbols, punctuation, brackets, JUnit API names, etc.);\n    3. Generic tokens: tokens like strings or numbers that you have to guess without specific suggestions (e.g., STRING_LITERAL, DECIMAL_LITERAL, etc.).\nPut your answer between: [token] and [/token]. The answer must be of this format [token][TOKEN_TYPE]:[TOKEN_VALUE][/token].\nFor example:\n    * If the next token should be a method name `methodExample``, the answer should be of the form [token]IDENTIFIER:methodExample[/token].\n    * If the next token should be a left parenthesis, the answer should be of the form [token]LPAREN:)[/token].\n    * If the next token should be a string literal, the answer should be of the form [token]STRING_LITERAL:\"example of string you will generate\"[/token].\nDo not show me the reasoning behind your answer, but only the answer in the mentioned format.\n\n===== TASK TO EXECUTE =====\nHere is the query for this task:\n\nQuery:\n// Test prefix\npublic void testXmlAttributesDeserialization() {\n    final Redirect elem = new Redirect.Builder(URI.create(\"https://example.com\")).method(HttpMethod.GET).build();\n    assertEquals(Redirect.Builder.fromXml(\"<Redirect method=\\\"GET\\\">https://example.com</Redirect>\").build().toXml(),<mask_id>\n}\n\n// Junit Version\nJUnit 4\n\n// Next candidate project tokens\n[ MediaTestSTARNormalizedTest, Message, HashMap, MessageTest, URI, RedirectTestSTARNormalizedTest, MediaTestSTARSplitTest, Promoter, TwiML, Assert, RedirectTest, MessageTestSTARNormalizedTest, BodyTestSTARSplitTestPrefix, Body, JsonProcessingException, BodyTest, MessageTestSTARSplitTestPrefix, MessageTestSTARSplitTest, BodyTestSTARNormalizedTest, Media, RedirectTestSTARSplitTest, Redirect, TwiMLException, MediaTest, BodyTestSTARSplitTest, MediaTestSTARSplitTestPrefix, RedirectTestSTARSplitTestPrefix, HttpMethod, getClass, wait, hashCode, notifyAll, equals, clone, finalize, toString, registerNatives, notify, elem ]\n// Next candidate Java tokens\n[ -, @, boolean, byte, char, double, float, int, long, new, short, super, switch, this, void, module, open, requires, exports, opens, to, uses, provides, with, transitive, var, yield, record, sealed, permits, true, false, TEXT_BLOCK, null, (, <, !, ~, ++, --, + ]\n// Next candidate generic tokens\n[ DECIMAL_LITERAL, HEX_LITERAL, OCT_LITERAL, BINARY_LITERAL, FLOAT_LITERAL, HEX_FLOAT_LITERAL, CHAR_LITERAL, STRING_LITERAL ]\n\n// Invoked methods in test prefix\n/**\n * Create and return resulting {@code <Redirect>} element\n */\npublic Redirect build(){\n    return new Redirect(this);\n}\n\n/**\n * Redirect URL method\n */\npublic Builder method(HttpMethod method){\n    this.method = method;\n    return this;\n}\n\n/**\n * Creates a URI by parsing the given string.\n *\n * <p> This convenience factory method works as if by invoking the {@link\n * #URI(String)} constructor; any {@link URISyntaxException} thrown by the\n * constructor is caught and wrapped in a new {@link\n * IllegalArgumentException} object, which is then thrown.\n *\n * <p> This method is provided for use in situations where it is known that\n * the given string is a legal URI, for example for URI constants declared\n * within in a program, and so it would be considered a programming error\n * for the string not to parse as such.  The constructors, which throw\n * {@link URISyntaxException} directly, should be used situations where a\n * URI is being constructed from user input or from some other source that\n * may be prone to errors.  </p>\n *\n * @param  str   The string to be parsed into a URI\n * @return The new URI\n *\n * @throws  NullPointerException\n *          If {@code str} is {@code null}\n *\n * @throws  IllegalArgumentException\n *          If the given string violates RFC&nbsp;2396\n */\npublic static URI create(String str){\n    try {\n        return new URI(str);\n    } catch (URISyntaxException x) {\n        throw new IllegalArgumentException(x.getMessage(), x);\n    }\n}\n\n/**\n * Create a {@code <Redirect>} with url\n */\npublic Builder(URI url){\n    this.url = url;\n}\n\n// Constructors and methods defined in focal class\n/**\n * The body of the TwiML element\n *\n * @return Element body as a string if present else null\n */\nprotected String getElementBody(){\n    return this.getUrl() == null ? null : this.getUrl().toString();\n}\n\n/**\n * Attributes to set on the generated XML element\n *\n * @return A Map of attribute keys to values\n */\nprotected Map<String, String> getElementAttributes(){\n    // Preserve order of attributes\n    Map<String, String> attrs = new HashMap<>();\n    if (this.getMethod() != null) {\n        attrs.put(\"method\", this.getMethod().toString());\n    }\n    return attrs;\n}\n\n/**\n * Redirect URL method\n *\n * @return Redirect URL method\n */\npublic HttpMethod getMethod(){\n    return method;\n}\n\n/**\n * Redirect URL\n *\n * @return Redirect URL\n */\npublic URI getUrl(){\n    return url;\n}\n\n// Fields defined in focal class\nprivate final HttpMethod method;\n\nprivate final URI url;\n\nprivate HttpMethod method;\n\nprivate URI url;\n\n\n\nAnswer:"
 logging.basicConfig(level=logging.INFO)
 
 # -------------------------
@@ -35,21 +37,40 @@ logging.basicConfig(level=logging.INFO)
 
 @dataclass
 class ModelArguments:
-    model_name_or_path: Optional[str] = field(default="Qwen/Qwen2.5-Coder-14B-Instruct")
+    model_name_or_path: Optional[str] = field(
+        default="Qwen/Qwen2.5-Coder-14B-Instruct",
+        metadata={"help": "HF model name or absolute path to local base model folder."},
+    )
     model_revision: Optional[str] = field(
         default=None,
         metadata={"help": "HF revision (commit hash or tag) of the base model to pin."}
     )
-    use_flash_attention: bool = field(default=False, metadata={"help": "Whether to use Flash Attention."})
+    start_id: Optional[str] = field(
+        default="<|im_start|>",
+        metadata={"help":"Opening token for a message block (fallback formatter)."}
+    )
+    end_id: Optional[str] = field(
+        default="<|im_end|>",
+        metadata={"help":"Closing token for a message block (fallback formatter)."}
+    )
+    use_flash_attention: bool = field(
+        default=False,
+        metadata={"help": "Whether to use Flash Attention."}
+    )
 
 @dataclass
 class DataArguments:
-    # Root directory containing train.* and val.* shards + meta JSONs (output of the builder)
-    tokenized_dir: str = field(default=None, metadata={"help": "Folder with pre-tokenized shards: train.*.{bin,idx}, val.*.{bin,idx}, and meta JSONs."})
+    tokenized_dir: str = field(
+        default=None,
+        metadata={"help": "Folder with pre-tokenized shards: train.*.{bin,idx}, val.*.{bin,idx}, and meta JSONs."}
+    )
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
-    output_dir: Optional[str] = field(default=os.path.join(os.path.dirname(__file__), "output", "ft"))
+    output_dir: Optional[str] = field(
+        default=os.path.join(os.path.dirname(__file__), "output", "ft"),
+        metadata={"help": "Output directory for checkpoints and training outputs."}
+    )
     cache_dir: Optional[str] = field(default=None)
     optim: str = field(default="adamw_torch")
     model_max_length: int = field(default=8192)
@@ -65,7 +86,7 @@ class TrainingArguments(transformers.TrainingArguments):
     per_device_train_batch_size: int = 1
     per_device_eval_batch_size: int = 1
     gradient_accumulation_steps: int = 16
-    group_by_length: bool = False   # not used with plain PyTorch Dataset
+    group_by_length: bool = False
     ddp_find_unused_parameters: bool = False
     eval_accumulation_steps: int = 1
     prediction_loss_only: bool = True
@@ -74,10 +95,8 @@ class TrainingArguments(transformers.TrainingArguments):
     torch_compile: bool = False
     remove_unused_columns: bool = False
     include_num_input_tokens_seen: bool = False
-
-    # Early stopping guard: don't allow stop before at least N full epochs
     min_early_stopping_epochs: int = 1
-    early_stopping_patience: int = 2  # pass via CLI in bash
+    early_stopping_patience: int = 2
 
 class BlockDistributedSampler(Sampler):
     """
@@ -162,33 +181,47 @@ class BlockDistributedSampler(Sampler):
     def __len__(self) -> int:
         return self._len
 
-# -------------------------
-# Tokenizer helpers
-# -------------------------
 
-def load_tokenizer_consistent(model_name: str, model_max_length: int, tokenized_dir: str, revision: Optional[str] = None):
+def load_tokenizer_consistent(
+        model_name: str,
+        model_max_length: int,
+        tokenized_dir: str,
+        revision: Optional[str] = None,
+        special_tokens: List[str] = ["<|im_start|>", "<|im_end|>"]
+):
     """
-    Load the tokenizer in the exact same way as the builder did.
-    If a saved tokenizer exists under tokenized_dir/tokenizer/, prefer that.
-    Else load from model hub and add the same special tokens.
+    Loads the tokenizer in the exact same way as the builder did when the dataset has been tokenized and encoded in
+    `scripts/prompt`. If a saved tokenizer exists under tokenized_dir/tokenizer/, prefer that. Else load from model
+    hub and add the same special tokens.
     """
+    # Get the directory with the saved tokenizer, if any
     saved_tok_dir = os.path.join(tokenized_dir, "tokenizer")
+    # If the directory exists, load the tokenizer from there
     if os.path.isdir(saved_tok_dir):
         tok = transformers.AutoTokenizer.from_pretrained(saved_tok_dir, trust_remote_code=True)
+    # Else load the tokenizer from model hub and add the special tokens
     else:
         tok = transformers.AutoTokenizer.from_pretrained(
-            model_name, revision=revision, trust_remote_code=True, padding_side="right"
+            model_name,
+            revision=revision,
+            trust_remote_code=True,
+            padding_side="right"
         )
         if tok.pad_token_id is None:
             tok.pad_token = tok.eos_token
         # Suppress "longer than max length" warnings; we enforce our own cap in data
         tok.model_max_length = 1_000_000_000
-        tok.add_special_tokens({"additional_special_tokens": ["<|im_start|>", "<|im_end|>"]})
+        tok.add_special_tokens({"additional_special_tokens": special_tokens})
     # Set runtime cap for attention mask creation/padding
     tok.model_max_length = model_max_length
     return tok
 
-def assert_meta_compatible(tokenized_dir: str, tok: transformers.PreTrainedTokenizer, split: str):
+def assert_meta_compatible(
+        tokenized_dir: str,
+        tok: transformers.PreTrainedTokenizer,
+        special_tokens: List[str],
+        split: str
+):
     """
     Basic sanity checks between meta and the runtime tokenizer.
     """
@@ -199,12 +232,13 @@ def assert_meta_compatible(tokenized_dir: str, tok: transformers.PreTrainedToken
     with open(meta_path, "r") as f:
         meta = json.load(f)
     # pad/eos should match; special tokens should exist
-    if "vocab_size" in meta:
-        assert len(tok) == meta["vocab_size"], f"vocab size mismatch: {len(tok)} vs {meta['vocab_size']}"
-    sti = meta.get("special_token_ids")
-    if sti:
-        assert tok("<|im_start|>").input_ids[0] == sti["<|im_start|>"]
-        assert tok("<|im_end|>").input_ids[0] == sti["<|im_end|>"]
+    expected = meta.get("vocab_size") or meta.get("vocab_size_after")
+    if expected is not None:
+        assert len(tok) == int(expected), f"vocab size mismatch: {len(tok)} vs {expected}"
+    sti = meta.get("special_token_ids") or {}
+    for s in special_tokens:
+        if s in sti:
+            assert tok(s).input_ids[0] == sti[s]
     if "pad_token_id" in meta and meta["pad_token_id"] is not None:
         assert tok.pad_token_id == meta["pad_token_id"], \
             f"pad_token_id mismatch: tokenizer={tok.pad_token_id}, meta={meta['pad_token_id']}"
@@ -237,21 +271,36 @@ class MemmapShardDataset(Dataset):
       ...
       val.meta.json
       [optional] tokenizer/  (saved tokenizer from builder)
+
+    MemmapShardDataset is designed for efficient handling of large, pre-tokenized datasets for language model training.
+    In particular:
+        - Efficiently load and access very large datasets (potentially billions of tokens) that do not fit in RAM,
+          by using memory-mapped files.
+        - Support variable-length sequences stored in multiple shards, with fast indexing via offset files.
+        - Enable distributed training by allowing random access and shuffling, so each process can sample
+          data independently.
+    Data is split into multiple shards (chunks), each with three files:
+        - .input_ids.bin: int32 array of concatenated token IDs for all samples in the shard.
+        - .labels.bin: int32 array of concatenated label IDs (shifted input IDs) for all samples in the shard.
+        - .idx: uint64 array of offsets into the above two files, with N+1 entries for N samples.
+          The i-th sample's data is found between offsets[i] and offsets[i+1].
     """
-    def __init__(self, root: str, split: str):
+    def  __init__(self, root: str, split: str):
         self.root = root
         self.split = split
-
-        # Discover shard bases
-        import glob
-        idx_paths = sorted(glob.glob(os.path.join(root, f"{split}.*.idx")))
-        if not idx_paths:
-            raise FileNotFoundError(f"No {split} shards (.idx) found in {root}")
         self.shards: List[Dict] = []
         self.cum_counts: List[int] = []
+        # Collect and sort the .idx shard paths
+        idx_paths = sorted(glob.glob(os.path.join(root, f"{split}.*.idx")))
+        # If no shards found, raise an error
+        if not idx_paths:
+            raise FileNotFoundError(f"No {split} shards (.idx) found in {root}")
+        # Load each shard's offsets and compute lengths
         lengths_chunks: List[np.ndarray] = []
         total = 0
+        # Iterate over each shard's .idx file
         for idx_path in idx_paths:
+            # Get the corresponding .bin paths for input_ids and labels
             base = os.path.splitext(idx_path)[0]
             ids_path = base + ".input_ids.bin"
             lbl_path = base + ".labels.bin"
@@ -268,15 +317,13 @@ class MemmapShardDataset(Dataset):
                 "offsets": offsets,   # small; keep in RAM
                 "n": n_samples,
             })
-            # ---- length computation (tokens per sample) ----
+            # Length computation (tokens per sample)
             lengths = np.diff(offsets).astype(np.int32)  # safe since max_length <= 8192
             lengths_chunks.append(lengths)
             total += n_samples
             self.cum_counts.append(total)
-
         if total == 0:
             raise RuntimeError(f"{split}: zero samples found in {root}")
-
         # Concatenate all per-shard lengths into one array aligned with global indices
         self.lengths: np.ndarray = np.concatenate(lengths_chunks, axis=0)  # shape = [__len__()]
         # Per-worker cache for memmaps (opened lazily)
@@ -295,7 +342,6 @@ class MemmapShardDataset(Dataset):
 
     def _locate(self, i: int) -> Tuple[int, int]:
         # map global index -> (shard_idx, local_idx)
-        import bisect
         shard_idx = bisect.bisect_right(self.cum_counts, i)
         prev_total = 0 if shard_idx == 0 else self.cum_counts[shard_idx-1]
         local_idx = i - prev_total
@@ -307,16 +353,11 @@ class MemmapShardDataset(Dataset):
         off = self.shards[shard_idx]["offsets"]
         a = int(off[j])
         b = int(off[j + 1])
-
         # Copy + cast to torch.long (int64)
         ids = torch.tensor(self._ids_mm[shard_idx][a:b], dtype=torch.long)
         lbl = torch.tensor(self._lbl_mm[shard_idx][a:b], dtype=torch.long)
         return {"input_ids": ids, "labels": lbl}
 
-
-# -------------------------
-# Collator (dynamic pad)
-# -------------------------
 
 @dataclass
 class DataCollatorForSupervisedDataset:
@@ -360,13 +401,9 @@ class DataCollatorForSupervisedDataset:
 # Logging + delayed early stop
 # -------------------------
 
-def is_master(local_rank):
-    return is_main_process(local_rank)
-
 class LocalityTrainer(Trainer):
     @staticmethod
     def _num_items_from_batch(batch):
-        # ... (your existing robust implementation unchanged) ...
         if isinstance(batch, dict):
             for k in ("labels", "input_ids", "pixel_values", "input_values"):
                 v = batch.get(k)
@@ -408,53 +445,28 @@ class LocalityTrainer(Trainer):
         num_items = None
         if batch_samples and isinstance(batch_samples[0], dict) and "labels" in batch_samples[0]:
             try:
+                # If labels are present, counts the number of non-IGNORE_INDEX tokens (i.e., real tokens, not padding)
+                # across all batches. This gives a true token count for throughput metrics.
                 num_items = sum((b["labels"].ne(IGNORE_INDEX)).sum() for b in batch_samples)
             except Exception:
                 num_items = None
-
         if num_items is None:
             per_mb = [self.get_num_items(b) for b in batch_samples]
             num_items = torch.tensor(sum(per_mb))
-
         # Ensure CUDA + dense before any gather
         if device is None:
             device = getattr(self, "accelerator", None).device if hasattr(self, "accelerator") else torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
         if not torch.is_tensor(num_items):
             num_items = torch.tensor(num_items, device=device)
         else:
             num_items = num_items.to(device=device)
         if getattr(num_items, "is_sparse", False):
             num_items = num_items.to_dense()
-
         if getattr(self.args, "average_tokens_across_devices", False):
             num_items = self.accelerator.gather(num_items).sum().item()
         else:
             num_items = int(num_items.item())
-
         return batch_samples, num_items
-
-    # def get_batch_samples(self, epoch_iterator, num_batches, device):
-    #     batch = next(epoch_iterator)
-    #     # Get batch size robustly
-    #     if hasattr(super(), "get_num_items"):
-    #         try:
-    #             num_items = super().get_num_items(batch)  # HF provides this
-    #         except Exception:
-    #             num_items = None
-    #     else:
-    #         num_items = None
-    #     if num_items is None:
-    #         # fallback: look for any tensor and take its first dim
-    #         if isinstance(batch, dict):
-    #             for v in batch.values():
-    #                 if isinstance(v, torch.Tensor):
-    #                     num_items = int(v.shape[0]);
-    #                     break
-    #         if num_items is None: num_items = 1
-    #
-    #     num_items = torch.tensor(num_items, device=device)  # <-- CUDA
-    #     return batch, num_items
 
     def get_train_dataloader(self):
         ds = self.train_dataset
@@ -491,7 +503,7 @@ class LocalityTrainer(Trainer):
 
 class SaveModelCallback(transformers.TrainerCallback):
     def on_save(self, args, state, control, **kwargs):
-        if is_master(args.local_rank):
+        if self.trainer.is_world_process_zero():
             print(f"[save] {args.output_dir}/checkpoint-{state.global_step}/")
         if dist.is_available() and dist.is_initialized():
             try:
@@ -540,20 +552,27 @@ class LoggingCallback(transformers.TrainerCallback):
                 torch.cuda.reset_peak_memory_stats()
             except Exception:
                 pass
-        if is_master(args.local_rank):
+        if self.trainer.is_world_process_zero():
             print("\n------------------")
             print(msg)
             print("------------------")
         self.last_time = now
 
+
 class DelayedEarlyStopping(transformers.EarlyStoppingCallback):
     """
     Wraps Hugging Face EarlyStopping but ignores evaluate calls until epoch >= min_early_stopping_epochs.
     """
-    def __init__(self, min_early_stopping_epochs: int = 1, early_stopping_patience: int = 2,
-                 early_stopping_threshold: float = 0.0):
-        super().__init__(early_stopping_patience=early_stopping_patience,
-                         early_stopping_threshold=early_stopping_threshold)
+    def __init__(
+            self,
+            min_early_stopping_epochs: int = 1,
+            early_stopping_patience: int = 2,
+            early_stopping_threshold: float = 0.0
+    ):
+        super().__init__(
+            early_stopping_patience=early_stopping_patience,
+            early_stopping_threshold=early_stopping_threshold
+        )
         self._min_epochs = min_early_stopping_epochs
 
     def on_evaluate(self, args, state, control, **kwargs):
@@ -562,19 +581,75 @@ class DelayedEarlyStopping(transformers.EarlyStoppingCallback):
             return control
         return super().on_evaluate(args, state, control, **kwargs)
 
-# -------------------------
-# Train
-# -------------------------
+
+class SampleGenerationCallback(transformers.TrainerCallback):
+    def __init__(self, tokenizer, prompts, every_n_steps=50, max_new_tokens=64, **gen_kwargs):
+        self.tok = tokenizer
+        self.prompts = list(prompts)
+        self.every = int(every_n_steps)
+        self.max_new_tokens = int(max_new_tokens)
+        # Deterministic by default; you can pass do_sample=True, top_p, etc., via gen_kwargs.
+        self.gen_kwargs = {"do_sample": False, "temperature": 0.0}
+        self.gen_kwargs.update(gen_kwargs)
+
+    def _format(self, p):
+        # If it's a chat model, try to use the chat template; otherwise raw text.
+        try:
+            return self.tok.apply_chat_template(
+                [{"role": "user", "content": p}],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        except Exception:
+            return p
+
+    def on_step_end(self, args, state, control, **kwargs):
+        # Only occasionally, and only on main process
+        if state.global_step == 0 or state.global_step % self.every != 0:
+            return
+        if not self.trainer.is_world_process_zero():
+            return
+
+        model = kwargs["model"]
+        was_train = model.training
+        prev_use_cache = getattr(model.config, "use_cache", False)
+
+        try:
+            model.eval()
+            # Generation prefers use_cache=True even if training disabled it.
+            model.config.use_cache = True
+
+            print(f"\n=== SAMPLE GENERATIONS @ step {state.global_step} ===")
+            for p in self.prompts:
+                text_in = self._format(p)
+                inputs = self.tok(text_in, return_tensors="pt").to(model.device)
+                with torch.no_grad():
+                    out = model.generate(
+                        **inputs,
+                        max_new_tokens=self.max_new_tokens,
+                        pad_token_id=self.tok.pad_token_id,
+                        eos_token_id=self.tok.eos_token_id,
+                        **self.gen_kwargs,
+                    )
+                # Slice off the prompt portion
+                gen_tokens = out[0][inputs["input_ids"].shape[1]:]
+                text_out = self.tok.decode(gen_tokens, skip_special_tokens=True)
+                print(f"Prompt: {p}\nOutput: {text_out}\n---")
+        finally:
+            model.config.use_cache = prev_use_cache
+            if was_train:
+                model.train()
+
 
 def _resolve_snapshot(repo_or_path: str, revision: Optional[str]) -> tuple[str, str]:
     """
     Return (load_path, used_revision). If local directory, returns ('/abs/path', 'local').
-    Otherwise downloads/uses cached snapshot and returns its directory and commit sha.
+    Otherwise, downloads/uses cached snapshot and returns its directory and commit sha.
     """
     if os.path.isdir(repo_or_path):
         return os.path.abspath(repo_or_path), "local"
     snap_dir = snapshot_download(repo_id=repo_or_path, revision=revision)
-    used_rev = Path(snap_dir).name  # snapshots/<sha>
+    used_rev = Path(snap_dir).name
     return snap_dir, used_rev
 
 def make_datasets(tokenized_dir: str):
@@ -583,36 +658,42 @@ def make_datasets(tokenized_dir: str):
     return train_ds, eval_ds
 
 def train():
+    # Parse arguments
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-    args = {**model_args.__dict__, **data_args.__dict__, **training_args.__dict__}
-    args = argparse.Namespace(**args)
-
     # Resolve exact base snapshot (even if --model_revision is None)
     base_load_path, used_revision = _resolve_snapshot(model_args.model_name_or_path, model_args.model_revision)
-
+    # Create the absolute path to the output of the training if it does not exist
     os.makedirs(training_args.output_dir, exist_ok=True)
-    if is_main_process(training_args.local_rank):
-        info = {
-            "base_model_name_or_path": model_args.model_name_or_path,
-            "base_model_revision": used_revision,  # <-- commit SHA / 'local'
-            "resolved_load_path": base_load_path,  # <-- snapshot dir or local path
-        }
-        with open(os.path.join(training_args.output_dir, "BASE_MODEL.json"), "w") as f:
-            json.dump(info, f, indent=2)
-
+    # Load tokenizer (matching the tokenizer used to encode and tokenize the dataset in the `scripts/prompt` folder)
     assert data_args.tokenized_dir, "--tokenized_dir is required and must point to the pre-tokenized shards."
-
-    # Load tokenizer (matching the builder)
-    tokenizer = load_tokenizer_consistent(model_args.model_name_or_path,
-                                          training_args.model_max_length,
-                                          data_args.tokenized_dir,
-                                          revision=model_args.model_revision)
-
+    tokenizer = load_tokenizer_consistent(
+        model_args.model_name_or_path,
+        training_args.model_max_length,
+        data_args.tokenized_dir,
+        revision=model_args.model_revision,
+        special_tokens=[model_args.start_id, model_args.end_id]
+    )
     # Model (QLoRA 4-bit)
+    #
+    # LoRA is a parameter-efficient fine-tuning technique for large language models.
+    # Instead of updating all model weights during fine-tuning, LoRA freezes the original weights and injects
+    # small, trainable low-rank matrices (adapters) into certain layers (usually attention and feed-forward layers).
+    # This drastically reduces the number of trainable parameters and memory usage, while maintaining
+    # performance comparable to full fine-tuning.
+    #
+    # QLoRA extends LoRA by combining it with 4-bit quantization of the base model weights.
+    # Quantization means representing weights with fewer bits (here, 4 bits instead of 16 or 32),
+    # which saves memory and allows you to run/fine-tune very large models on consumer GPUs.
+    #
+    # - The base model weights are quantized to 4 bits (very compact).
+    # - LoRA adapters are added and trained in normal precision (e.g., 16 or 32 bits).
+    #
     bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True, bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16
+        load_in_4bit=True,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.bfloat16
     )
     attn_impl = "flash_attention_2" if model_args.use_flash_attention else "sdpa"
     model = transformers.AutoModelForCausalLM.from_pretrained(
@@ -621,9 +702,9 @@ def train():
         attn_implementation=attn_impl,
         trust_remote_code=True,
     )
-
     # Ensure model embeddings match tokenizer (in case additional specials were added)
     model.resize_token_embeddings(len(tokenizer), pad_to_multiple_of=8)
+    model.config.vocab_size = model.get_input_embeddings().weight.shape[0]
     model.config.pad_token_id = tokenizer.pad_token_id
     model.config.eos_token_id = tokenizer.eos_token_id
     model.config.bos_token_id = tokenizer.bos_token_id
@@ -631,40 +712,77 @@ def train():
     if hasattr(model, "generation_config"):
         model.generation_config.pad_token_id = tokenizer.pad_token_id
         model.generation_config.eos_token_id = tokenizer.eos_token_id
-        model.config.bos_token_id = tokenizer.bos_token_id
+        model.generation_config.bos_token_id = tokenizer.bos_token_id
     model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     model.config.use_cache = False
-
+    # PEFT (Parameter-Efficient Fine-Tuning) is a family of methods that allow to adapt large pre-trained models
+    # to new tasks by training only a small subset of parameters, rather than the entire model.
+    # LoRA (Low-Rank Adaptation) is one such PEFT method that injects trainable low-rank matrices into
+    # certain layers of the model (typically attention and feed-forward layers) while keeping the original
+    # model weights frozen. This drastically reduces the number of trainable parameters and memory usage,
+    # while maintaining performance comparable to full fine-tuning.
+    # Here, we configure LoRA to target all linear layers in the model:
+    #    - r=16: The rank of the low-rank matrices. Higher rank means more capacity for adaptation,
+    #    but more trainable parameters.
+    #    - lora_alpha=32: A scaling factor that amplifies the effect of the low-rank updates.
+    #    - lora_dropout=0.05: Dropout rate applied to the LoRA layers for regularization.
+    #    - bias="none": No additional bias parameters are added.
+    #    - task_type="CAUSAL_LM": Specifies that the model is being fine-tuned for a causal language modeling task.
+    #    - target_modules=None: This means LoRA will be applied to all linear layers in the model.
     if training_args.use_peft:
         peft_config = LoraConfig(
-            r=16, lora_alpha=32, lora_dropout=0.05,
-            bias="none", task_type="CAUSAL_LM",
+            r=16,
+            lora_alpha=32,
+            lora_dropout=0.05,
+            bias="none",
+            task_type="CAUSAL_LM",
             target_modules=None,
         )
         model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()
-
     # Sanity-check tokenizer vs meta
     try:
-        assert_meta_compatible(data_args.tokenized_dir, tokenizer, "train")
-        assert_meta_compatible(data_args.tokenized_dir, tokenizer, "val")
+        assert_meta_compatible(
+            data_args.tokenized_dir,
+            tokenizer,
+            [ model_args.start_id, model_args.end_id ],
+            "train"
+        )
+        assert_meta_compatible(
+            data_args.tokenized_dir,
+            tokenizer,
+            [ model_args.start_id, model_args.end_id ],
+            "val"
+        )
     except AssertionError as e:
         raise RuntimeError(f"Tokenizer/meta mismatch: {e}")
-
     # Datasets
     train_ds, eval_ds = make_datasets(data_args.tokenized_dir)
-
     # Collator (dynamic padding to multiple of 8)
-    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer, pad_to_multiple_of=8, static_pad_to=None)
-
+    data_collator = DataCollatorForSupervisedDataset(
+        tokenizer=tokenizer,
+        pad_to_multiple_of=8,
+        static_pad_to=None
+    )
     # Trainer
     callbacks = [
         LoggingCallback(log_memory=True),
         SaveModelCallback(),
-        DelayedEarlyStopping(min_early_stopping_epochs=training_args.min_early_stopping_epochs,
-                             early_stopping_patience=training_args.early_stopping_patience),
+        DelayedEarlyStopping(
+            min_early_stopping_epochs=training_args.min_early_stopping_epochs,
+            early_stopping_patience=training_args.early_stopping_patience
+        ),
+        SampleGenerationCallback(
+            tokenizer,
+            prompts=[
+                sample_query_1,
+                sample_query_2,
+                sample_query_3,
+            ],
+            every_n_steps=50,
+            max_new_tokens=64,
+        ),
     ]
-
     trainer = LocalityTrainer(
         model=model,
         args=training_args,
@@ -674,15 +792,29 @@ def train():
         data_collator=data_collator,
         callbacks=callbacks,
     )
-
+    # Save base model info for reproducibility
+    if trainer.is_world_process_zero():
+        info = {
+            "base_model_name_or_path": model_args.model_name_or_path,
+            "base_model_revision": used_revision,
+            "resolved_load_path": base_load_path,
+        }
+        with open(os.path.join(training_args.output_dir, "meta_base_model.json"), "w") as f:
+            json.dump(info, f, indent=2)
     trainer.train()
     trainer.save_state()
     trainer.save_model(output_dir=training_args.output_dir)
-
+    tokenizer.save_pretrained(training_args.output_dir)
+    # Persist generation config for inference tools that read it
+    try:
+        model.generation_config.save_pretrained(training_args.output_dir)
+    except Exception:
+        pass
     # Save LoRA adapter folder and embed the revision inside adapter_config.json (optional, recommended)
     lora_dir = training_args.output_dir + "_lora"
     model.save_pretrained(lora_dir)
-    if is_main_process(training_args.local_rank):
+    tokenizer.save_pretrained(lora_dir)
+    if trainer.is_world_process_zero():
         try:
             ac_path = os.path.join(lora_dir, "adapter_config.json")
             cfg = json.load(open(ac_path))

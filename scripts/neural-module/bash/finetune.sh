@@ -3,6 +3,8 @@
 # the finetuning ends and the best model is saved in the output directory. The finetuning performs an evaluation
 # at the end of any epoch. The finetuning ends after 5 epochs, in any case.
 
+set -Eeuo pipefail
+
 # Get current directory
 current_dir=$(realpath "$(dirname "${BASH_SOURCE[@]}")")
 # Setup global & local variables
@@ -34,7 +36,8 @@ rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary" 
   --per_device_train_batch_size 1 \
   --per_device_eval_batch_size 1 \
   --gradient_accumulation_steps 16 \
-  --bf16 True --fp16 False \
+  --bf16 True \
+  --fp16 False \
   --gradient_checkpointing True \
   --group_by_length False \
   --dataloader_num_workers 8 \
