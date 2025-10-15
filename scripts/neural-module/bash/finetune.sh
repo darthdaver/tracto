@@ -51,8 +51,8 @@ rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary-$
   --max_grad_norm 0.3 \
   --use_peft True \
   --num_train_epochs 3 \
-  --eval_strategy epoch \
-  --save_strategy steps --save_steps 200 --save_total_limit 3 \
+  --eval_strategy steps --eval_steps 3500 \
+  --save_strategy steps --save_steps 3500 --save_total_limit 3 \
   --prediction_loss_only True \
   --eval_accumulation_steps 1 \
   --load_best_model_at_end True \

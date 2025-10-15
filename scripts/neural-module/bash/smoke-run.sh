@@ -31,13 +31,13 @@ python -m torch.distributed.run --nproc-per-node=2 finetuning.py \
   --use_flash_attention False \
   --tokenized_dir "${LOCAL_TOKENIZED}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" \
   --output_dir "${OUTPUT_FINE_TUNING_DIR}/smoke" \
-  --model_max_length 512 \
+  --model_max_length 8192 \
   --per_device_train_batch_size 2 \
   --per_device_eval_batch_size 2 \
   --gradient_accumulation_steps 1 \
   --num_train_epochs 1 \
-  --eval_strategy steps --eval_steps 5 \
-  --save_strategy steps --save_steps 5 --save_total_limit 1 \
+  --eval_strategy steps --eval_steps 500 \
+  --save_strategy steps --save_steps 500 --save_total_limit 1 \
   --bf16 True --fp16 False \
   --gradient_checkpointing True \
   --optim adamw_torch --learning_rate 1e-4 \
