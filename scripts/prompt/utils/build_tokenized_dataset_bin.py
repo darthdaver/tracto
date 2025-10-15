@@ -30,6 +30,7 @@ Example:
 import os, io, csv, glob, json, math, random, argparse
 from typing import Dict, List, Tuple, Iterable, Optional, Iterator, Union, Any
 import numpy as np
+import pandas as pd
 import orjson
 from transformers import AutoTokenizer, AutoModel
 from huggingface_hub import snapshot_download
@@ -579,21 +580,29 @@ def iter_project_samples(
                     if isinstance(msgs, list) and msgs:
                         yield msgs
             elif encoding_type == "csv":
-                # Initialize CSV reader
-                reader = csv.DictReader(f)
-                # Normalize headers: allow 'SRC','Src', etc.
-                fieldmap = {k.lower(): k for k in reader.fieldnames or []}
-                src_key = fieldmap.get("src")
-                tgt_key = fieldmap.get("tgt")
-                if src_key is None or tgt_key is None:
-                    raise ValueError(f"CSV {p} must contain 'src' and 'tgt' columns.")
-                for row in reader:
-                    src = row.get(src_key, "")
-                    tgt = row.get(tgt_key, "")
-                    if src is None: src = ""
-                    if tgt is None: tgt = ""
+                # Read CSV with pandas - handles large fields automatically
+                df = pd.read_csv(p, encoding="utf-8", engine="python", on_bad_lines="skip")
+                # Normalize column names to lowercase
+                df.columns = df.columns.str.lower()
+
+                # Check for required columns
+                if "src" not in df.columns or "tgt" not in df.columns:
+                    raise ValueError(f"CSV {p} must contain 'src' and 'tgt' columns (case-insensitive).")
+
+                # Iterate over rows
+                for _, row in df.iterrows():
+                    src = row.get("src", "")
+                    tgt = row.get("tgt", "")
+                    # Handle NaN values
+                    if pd.isna(src):
+                        src = ""
+                    if pd.isna(tgt):
+                        tgt = ""
+                    # Convert to string
+                    src = str(src) if src else ""
+                    tgt = str(tgt) if tgt else ""
                     # Skip empty pairs
-                    if (src.strip() == "") or (tgt.strip() == ""):
+                    if (src.strip() == "") and (tgt.strip() == ""):
                         continue
                     if wrap:
                         tgt = "[token]" + tgt + " [/token]"
