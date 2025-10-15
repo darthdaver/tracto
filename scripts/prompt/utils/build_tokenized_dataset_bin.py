@@ -592,7 +592,7 @@ def iter_project_samples(
                     if src is None: src = ""
                     if tgt is None: tgt = ""
                     # Skip empty pairs
-                    if (src.strip() == "") and (tgt.strip() == ""):
+                    if (src.strip() == "") or (tgt.strip() == ""):
                         continue
                     yield (src, tgt)
 

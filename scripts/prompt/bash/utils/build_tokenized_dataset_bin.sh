@@ -21,17 +21,10 @@ else
     config_paths=("${PROMPT_DIR}/resources/config/"*/)
 fi
 
-if [ $# -eq 1 ]; then
-  config_paths=("$1")
-else
-  config_paths=("${PROMPT_DIR}/resources/config/"*/)
-fi
-
 for config_path in "${config_paths[@]}"; do
-  config_num=$(basename "${config_path}")
-  i=$(basename "$config_num")
+  i=$(basename "${config_path}")
   "$PY_ENV" "${PROMPT_DIR}/utils/build_tokenized_dataset_bin.py" \
-    --model_name_or_path "${MODEL_NAME:-Qwen/Qwen2.5-Coder-7B-Instruct}" \
+    --model_name_or_path "${MODEL_NAME:-Qwen/Qwen2.5-Coder-7B}" \
     --model_revision "${MODEL_REVISION}" \
     --encoding_type "csv" \
     --data_dir   "${OUTPUT_DIR}/${i}/prompt" \
@@ -48,8 +41,8 @@ for config_path in "${config_paths[@]}"; do
     --med_cut_frac   0.66 \
     --tokens_per_shard 50000000 \
     --seed "${SEED}" \
-    --start_id "${START_ID:-<|im_start|>}" \
-    --end_id   "${END_ID:-<|im_end|>}" \
     --train_drop_long \
     --val_drop_long
+    #--start_id "${START_ID:-<|im_start|>}" \
+    #--end_id   "${END_ID:-<|im_end|>}" \
 done
