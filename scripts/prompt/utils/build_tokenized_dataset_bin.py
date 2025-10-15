@@ -605,7 +605,9 @@ def iter_project_samples(
                     if (src.strip() == "") and (tgt.strip() == ""):
                         continue
                     if wrap:
-                        tgt = "[token]" + tgt + " [/token]"
+                        tgt = "<|type_mask_token|>" + tgt.split(":")[0] + "<|type_mask_token|>" + "<|value_mask_token|>" + tgt.split(":")[1].strip() + "<|value_mask_token|>"
+                    src = src.replace("<mask_id>", "<|fill_mask_token|>")
+                    src = src.replace("// Junit Version\n", "// Junit Version: ")
                     yield (src, tgt)
 
 
@@ -937,7 +939,7 @@ def main():
         resolved_path,
         used_revision,
         args.max_length,
-        [ args.start_id,args.end_id ] if args.encoding_type == "jsonl" else [],
+        [ args.start_id, args.end_id, "<|fill_mask_token|>", "<|type_mask_token|>", "<|value_mask_token|>" ] if args.encoding_type == "jsonl" else [ "<|fill_mask_token|>", "<|type_mask_token|>", "<|value_mask_token|>" ],
         args.train_token_budget,
         args.bin_allocation,
         args.alpha,
@@ -959,7 +961,7 @@ def main():
         resolved_path,
         used_revision,
         args.max_length,
-        [ args.start_id, args.end_id ] if args.encoding_type == "jsonl" else [],
+        [ args.start_id, args.end_id, "<|fill_mask_token|>", "<|type_mask_token|>", "<|value_mask_token|>" ] if args.encoding_type == "jsonl" else [ "<|fill_mask_token|>", "<|type_mask_token|>", "<|value_mask_token|>" ],
         args.val_token_budget,
         args.bin_allocation,
         args.alpha,

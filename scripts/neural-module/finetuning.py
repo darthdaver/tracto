@@ -1,6 +1,8 @@
 import time, json, logging, glob, bisect
 from dataclasses import dataclass, field
 from typing import Dict, Optional, List, Tuple
+
+from safetensors.torch import save_model
 from torch.utils.data import Sampler
 from huggingface_hub import snapshot_download
 from pathlib import Path
@@ -584,13 +586,12 @@ class DelayedEarlyStopping(transformers.EarlyStoppingCallback):
 
 
 class SampleGenerationCallback(transformers.TrainerCallback):
-    def __init__(self, tokenizer, prompts, every_n_steps=50, max_new_tokens=64, **gen_kwargs):
+    def __init__(self, tokenizer, prompts, every_n_steps=5, max_new_tokens=64, **gen_kwargs):
         self.tok = tokenizer
         self.prompts = list(prompts)
         self.every = int(every_n_steps)
         self.max_new_tokens = int(max_new_tokens)
-        # Deterministic by default; you can pass do_sample=True, top_p, etc., via gen_kwargs.
-        self.gen_kwargs = {"do_sample": False, "temperature": 0.0}
+        self.gen_kwargs = {"do_sample": True, "temperature": 0.7}
         self.gen_kwargs.update(gen_kwargs)
 
     def _format(self, p):
@@ -605,10 +606,13 @@ class SampleGenerationCallback(transformers.TrainerCallback):
             return p
 
     def on_step_end(self, args, state, control, **kwargs):
-        # Only occasionally, and only on main process
+        # Only occasionally
         if state.global_step == 0 or state.global_step % self.every != 0:
             return
-        if not self.trainer.is_world_process_zero():
+
+        # Use distributed check instead of trainer reference
+        import torch
+        if torch.distributed.is_initialized() and torch.distributed.get_rank() != 0:
             return
 
         model = kwargs["model"]
@@ -620,13 +624,24 @@ class SampleGenerationCallback(transformers.TrainerCallback):
             # Generation prefers use_cache=True even if training disabled it.
             model.config.use_cache = True
 
+            # Debug PEFT status without trying to enable adapters
+            print(f"Model has PEFT: {hasattr(model, 'peft_config')}")
+            if hasattr(model, 'peft_config'):
+                print(f"PEFT config: {model.peft_config}")
+                if hasattr(model, 'active_adapters'):
+                    print(f"Active adapters: {model.active_adapters}")
+
+            # Check if model is a PeftModel
+            print(f"Model type: {type(model)}")
+
             print(f"\n=== SAMPLE GENERATIONS @ step {state.global_step} ===")
             for p in self.prompts:
-                text_in = p #self._format(p)
+                text_in = p
                 inputs = self.tok(text_in, return_tensors="pt").to(model.device)
                 with torch.no_grad():
                     out = model.generate(
                         **inputs,
+                        min_new_tokens=3,
                         max_new_tokens=self.max_new_tokens,
                         pad_token_id=self.tok.pad_token_id,
                         eos_token_id=self.tok.eos_token_id,
@@ -635,6 +650,10 @@ class SampleGenerationCallback(transformers.TrainerCallback):
                 # Slice off the prompt portion
                 gen_tokens = out[0][inputs["input_ids"].shape[1]:]
                 text_out = self.tok.decode(gen_tokens, skip_special_tokens=True)
+                print(f"Generated token IDs: {out[0].tolist()}")
+                print(f"Input length: {inputs['input_ids'].shape[1]}")
+                print(f"Output length: {out[0].shape[0]}")
+                print(f"New tokens: {out[0][inputs['input_ids'].shape[1]:].tolist()}")
                 print(f"Prompt: {p}\nOutput: {text_out}\n---")
         finally:
             model.config.use_cache = prev_use_cache
@@ -673,7 +692,7 @@ def train():
         training_args.model_max_length,
         data_args.tokenized_dir,
         revision=model_args.model_revision,
-        special_tokens=[model_args.start_id, model_args.end_id]
+        special_tokens=["<|fill_mask_token|>", "<|type_mask_token|>", "<|value_mask_token|>"] #[model_args.start_id, model_args.end_id]
     )
     # Model (QLoRA 4-bit)
     #
@@ -766,23 +785,27 @@ def train():
         static_pad_to=None
     )
     # Trainer
-    callbacks = [
-        LoggingCallback(log_memory=True),
-        SaveModelCallback(),
-        DelayedEarlyStopping(
-            min_early_stopping_epochs=training_args.min_early_stopping_epochs,
-            early_stopping_patience=training_args.early_stopping_patience
-        ),
-        SampleGenerationCallback(
+    logging_callback = LoggingCallback(log_memory=True)
+    save_model_callback = SaveModelCallback()
+    delayed_early_stopping = DelayedEarlyStopping(
+        min_early_stopping_epochs=training_args.min_early_stopping_epochs,
+        early_stopping_patience=training_args.early_stopping_patience
+    )
+    sample_generation_callback = SampleGenerationCallback(
             tokenizer,
             prompts=[
                 sample_query_1,
                 sample_query_2,
                 sample_query_3,
             ],
-            every_n_steps=50,
+            every_n_steps=5,
             max_new_tokens=64,
-        ),
+        )
+    callbacks = [
+        logging_callback,
+        save_model_callback,
+        delayed_early_stopping,
+        sample_generation_callback,
     ]
     trainer = LocalityTrainer(
         model=model,
@@ -793,6 +816,9 @@ def train():
         data_collator=data_collator,
         callbacks=callbacks,
     )
+    logging_callback.trainer = trainer
+    save_model_callback.trainer = trainer
+    sample_generation_callback.trainer = trainer
     # Save base model info for reproducibility
     if trainer.is_world_process_zero():
         info = {
