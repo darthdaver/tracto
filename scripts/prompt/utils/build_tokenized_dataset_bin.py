@@ -618,6 +618,7 @@ def bucket_from_len(
 def sample_project_tokenized(
         files: List[str],
         target_tokens: int,             # token budget for the project
+        encoding_type: str,             # 'jsonl' or 'csv'
         encoder: EncoderInterface,      # encodes one conversation -> (ids, labels)
         rng: random.Random,             # token length thresholds for buckets
         short_cut: int,
@@ -652,7 +653,7 @@ def sample_project_tokenized(
     overflow = [[], [], []]
 
     # Iterate over the samples of the project
-    for sample in iter_project_samples(files, wrap):
+    for sample in iter_project_samples(files, encoding_type, wrap):
         # Encode the messages in the conversation and retrieve the encoded `input_ids` and `label_ids` to
         # fine-tune the model
         ids, lbl = encoder.encode(sample)
@@ -844,6 +845,7 @@ def build_split(
         ids_list, lbl_list, got = sample_project_tokenized(
             files,
             tokens_cap,
+            encoding_type,
             enc,
             rng,
             short_cut,
