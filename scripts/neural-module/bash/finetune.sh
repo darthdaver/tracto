@@ -19,7 +19,7 @@ target_config=${1}
 
 LOCAL_TOKENIZED="${OUTPUT_PROMPT_DIR}/${target_config}/local_nvme"
 mkdir -p "$LOCAL_TOKENIZED"
-rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary" "$LOCAL_TOKENIZED/"
+rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" "$LOCAL_TOKENIZED/"
 
 # NOTE
 # - --tokenized_dir must point to the directory produced by the builder,
@@ -30,9 +30,9 @@ rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary" 
   --model_name_or_path "${MODEL_NAME}" \
   --model_revision "${MODEL_REVISION}" \
   --use_flash_attention False \
-  --tokenized_dir "${LOCAL_TOKENIZED}/prompt-binary" \
+  --tokenized_dir "${LOCAL_TOKENIZED}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" \
   --output_dir "${OUTPUT_FINE_TUNING_DIR}" \
-  --model_max_length 8192 \
+  --model_max_length ${MAX_LENGTH} \
   --per_device_train_batch_size 1 \
   --per_device_eval_batch_size 1 \
   --gradient_accumulation_steps 16 \

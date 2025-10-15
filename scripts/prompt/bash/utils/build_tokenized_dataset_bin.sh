@@ -21,23 +21,20 @@ else
     config_paths=("${PROMPT_DIR}/resources/config/"*/)
 fi
 
-encoding_type=${2:-"csv"}
-max_length=${3:-8192}
-
 for config_path in "${config_paths[@]}"; do
   i=$(basename "${config_path}")
   echo "Processing config: ${i}"
   echo "${OUTPUT_DIR}/${i}/prompt"
   "$PY_ENV" "${PROMPT_DIR}/utils/build_tokenized_dataset_bin.py" \
     --model_name_or_path "${MODEL_NAME:-Qwen/Qwen2.5-Coder-7B}" \
-    --encoding_type "${encoding_type}" \
+    --encoding_type "${ENCODING_TYPE}" \
     --data_dir   "${OUTPUT_DIR}/${i}/prompt" \
     --train_csv  "${OUTPUT_DIR}/${i}/split-dataset/train_projects.csv" \
     --val_csv    "${OUTPUT_DIR}/${i}/split-dataset/val_projects.csv" \
-    --out_dir    "${OUTPUT_DIR}/${i}/prompt-binary-${MODEL_NAME}-${encoding_type}-${max_length}" \
+    --out_dir    "${OUTPUT_DIR}/${i}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" \
     --train_token_budget 2000000000 \
     --val_token_budget   40000000 \
-    --max_length "${max_length}" \
+    --max_length "${MAX_LENGTH}" \
     --bin_allocation sqrt \
     --alpha 0.5 \
     --target_mix "0.33,0.34,0.33" \

@@ -22,12 +22,13 @@ target_config=${1}
 
 LOCAL_TOKENIZED="${OUTPUT_PROMPT_DIR}/${target_config}/local_nvme"
 mkdir -p "$LOCAL_TOKENIZED"
-rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary" "$LOCAL_TOKENIZED/"
+rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary-${MODEL_NAME}-${encoding_type}-${max_length}" "$LOCAL_TOKENIZED/"
 
 python -m torch.distributed.run --nproc-per-node=2 finetuning-speed.py \
-  --model_name_or_path Qwen/Qwen2.5-Coder-7B-Instruct \
+  --model_name_or_path "${MODEL_NAME}" \
+  --model_revision "${MODEL_REVISION}" \
   --use_flash_attention False \
-  --tokenized_dir "${LOCAL_TOKENIZED}/prompt-binary" \
+  --tokenized_dir "${LOCAL_TOKENIZED}/prompt-binary-${MODEL_NAME}-${encoding_type}-${max_length}" \
   --output_dir "${OUTPUT_FINE_TUNING_DIR}/smoke" \
   --model_max_length 512 \
   --per_device_train_batch_size 2 \
@@ -39,7 +40,6 @@ python -m torch.distributed.run --nproc-per-node=2 finetuning-speed.py \
   --bf16 True --fp16 False \
   --gradient_checkpointing True \
   --optim adamw_torch --learning_rate 1e-4 \
-  --dataloader_num_workers 0 \
   --dataloader_persistent_workers False \
   --dataloader_pin_memory False \
   --dataloader_drop_last \

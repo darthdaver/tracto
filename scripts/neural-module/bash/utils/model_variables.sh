@@ -1,6 +1,8 @@
-TOKENIZER="Qwen/Qwen2.5-Coder-7B-Instruct"
-MODEL_NAME="Qwen/Qwen2.5-Coder-7B-Instruct"
-MODEL_REVISION="c03e6d358207e414f1eca0bb1891e29f1db0e242"
+TOKENIZER="Qwen/Qwen2.5-Coder-7B"
+MODEL_NAME="Qwen/Qwen2.5-Coder-7B"
+MODEL_REVISION=""
+ENCODING_TYPE="csv"
+MAX_LENGTH=8192
 START_ID="<|im_start|>"
 END_ID="<|im_end|>"
 CUDA_VISIBLE_DEVICES=0,1
