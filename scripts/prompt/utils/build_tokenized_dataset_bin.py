@@ -5,7 +5,7 @@ Balanced, pre-tokenized SFT corpus using existing size bins (Small/Medium/Large)
 
 - Uses train/val CSVs with columns: project_id,num_oracles,size_bin
 - Allocates token budgets per bin and per project (√-scaling)
-- Encodes chat with Qwen tokenizer (+ <|im_start|>, <|im_end|>)
+- Encodes chat with Qwen tokenizer (+ <|im_start|>, <|im_end|>) OR plain src/tgt pairs (no chat template)
 - Assistant-only supervision (IGNORE_INDEX=-100)
 - Length buckets by *token length after encoding*: short/med/long
 - Sharded memmap output: {split}.{shard}.{input_ids|labels}.bin, .idx, {split}.meta.json
@@ -28,18 +28,19 @@ Example:
 """
 
 import os, io, csv, glob, json, math, random, argparse
-from typing import Dict, List, Tuple, Iterable, Optional
+from typing import Dict, List, Tuple, Iterable, Optional, Iterator, Union, Any
 import numpy as np
 import orjson
 from transformers import AutoTokenizer, AutoModel
 from huggingface_hub import snapshot_download
 from pathlib import Path
 
-# ----------------
-# Global Variables
-# ----------------
+# --------------------------
+# Global Variables and types
+# --------------------------
 # Standard label mask value (PyTorch cross entropy ignores -100)
 IGNORE_INDEX = -100
+Sample = Union[List[Dict[str, Any]], Tuple[str, str]]
 
 # -----------------
 # Auxiliary classes
@@ -83,13 +84,19 @@ class ShardWriter:
         with open(self.idx_path, "wb") as f:
             np.asarray(self.idx, np.uint64).tofile(f)
 
-class ChatEncoder:
+class EncoderInterface:
+    def encode(self, sample: Sample) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """
+        Encodes a (src,tgt) pair or a conversation (list of messages exchanged between the user and the assistant).
+        """
+        pass
+
+
+class ChatEncoder(EncoderInterface):
     def __init__(
             self,
             tok: AutoTokenizer,
             max_len: int,
-            start_id: str,
-            end_id: str,
             only_last_turn_loss: bool =True,
             drop_long: bool =False,
             assistant_roles: Tuple[str, ...] = ("assistant",),
@@ -116,7 +123,7 @@ class ChatEncoder:
         # to format messages before tokenize them
         self._has_template = hasattr(self.tok, "apply_chat_template")
 
-    def encode(self, msgs: List[Dict]) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    def encode(self, sample: Sample) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         """
         Encodes a conversation (list of messages exchanged between the user and the assistant).
         If only_last_turn_loss=True, the script unmasks only the final assistant message's content; earlier turns are
@@ -125,21 +132,21 @@ class ChatEncoder:
             messages: [{"role": "user"|"assistant"|"system", "content": "..."}, "..."]
         """
         # No messages mean nothing to encode
-        if not msgs:
+        if not sample:
             return None, None
         # Get the index of the last message sent by the assistant in the conversation
-        last_asst_idx = self._find_last_assistant_index(msgs)
+        last_asst_idx = self._find_last_assistant_index(sample)
         # Check if the conversation contains a message from the assistant
         if last_asst_idx is None:
             # No assistant turn to supervise -> skip this conversation sample
             return None, None
         if self.only_last:
-            return self._encode_last_turn(msgs, last_asst_idx)
+            return self._encode_last_turn(sample, last_asst_idx)
         else:
             # Optional: multi-turn supervision (each assistant turn contributes)
             # For compactness, we implement last-turn fully and provide a
             # straightforward multi-turn variant below.
-            return self._encode_multi_turn(msgs)
+            return self._encode_multi_turn(sample)
 
     def _encode_last_turn(self, msgs: List[Dict[str, str]], last_asst_idx: int):
         """
@@ -325,7 +332,61 @@ class ChatEncoder:
         return None
 
 
-def build_tokenizer(model_name_or_path: str, max_length: int, revision: str) -> Tuple[AutoTokenizer,int,int]:
+class PairEncoder(EncoderInterface):
+    """
+    Encoder for plain source-target pairs (no chat template).
+        - input_ids  = tok(src) + tok(tgt) + [eos?]
+        - labels     = IGNORE for src tokens, tok(tgt) + [eos?]
+    Truncation/drop behavior mirrors ChatEncoder.
+    """
+    def __init__(
+            self,
+            tok: AutoTokenizer,
+            max_len: int,
+            drop_long: bool = False,
+            append_eos: bool = True
+    ):
+        # Set tokenizer
+        self.tok = tok
+        # Set prompt max len
+        self.max_len = max_len
+        # If set to `True` the tokenizer completely skip the sample if it exceeds
+        # the `max_len`. If set to `False` the input is truncated
+        self.drop_long = drop_long
+        # If set to `True` the tokenizer appends the EOS token at the end of the input sequence
+        self.append_eos = append_eos
+        # Get the id of the EOS token, if present
+        self.eos_id = getattr(tok, "eos_token_id", None)
+
+    def _tokenize_plain(self, text: str):
+        if text is None or text == "":
+            return []
+        return self.tok.encode(text, add_special_tokens=False)
+
+    def encode(self, sample: Sample) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        src, tgt = sample
+        # Encode src and tgt separately (no special tokens)
+        src_ids = self._tokenize_plain(src)
+        tgt_ids = self._tokenize_plain(tgt)
+        tail = [self.eos_id] if (self.append_eos and self.eos_id is not None) else []
+        # Assemble input and labels (eos if present)
+        input_ids = src_ids + tgt_ids + tail
+        # Only the target tokens contribute to loss
+        labels = [IGNORE_INDEX] * len(src_ids) + tgt_ids + tail
+        # Manage max length policy: drop vs truncate
+        if len(input_ids) > self.max_len:
+            # Discard the sample if `drop_long` policy is set to `True`
+            if self.drop_long:
+                return None, None
+            # Truncate the input and labels to the max_len (this implementation implies that
+            # both the input and the labels has the same max_len - this is an assumption that
+            # does not always hold)
+            input_ids = input_ids[:self.max_len]
+            labels = labels[:self.max_len]
+        return np.array(input_ids, dtype=np.int32), np.array(labels, dtype=np.int32)
+
+
+def build_tokenizer(model_name_or_path: str, max_length: int, revision: str, special_tokens: List[str]) -> Tuple[AutoTokenizer,int,int]:
     tok = AutoTokenizer.from_pretrained(
         model_name_or_path,
         revision=revision,
@@ -336,7 +397,8 @@ def build_tokenizer(model_name_or_path: str, max_length: int, revision: str) -> 
     vocab_size_before = len(tok)
     if tok.pad_token_id is None:
         tok.pad_token = tok.eos_token
-    tok.add_special_tokens({"additional_special_tokens": ["<|im_start|>", "<|im_end|>"]})
+    if special_tokens:
+        tok.add_special_tokens({"additional_special_tokens": special_tokens})
     return tok, vocab_size_before, len(tok)
 
 
@@ -366,15 +428,16 @@ def read_split_csv(
     return out
 
 
-def find_project_files(
+def find_project_files_by_ext(
         data_dir: str,
-        pids: List[str]
+        pids: List[str],
+        ext: str = "jsonl"
 ) -> Dict[str, List[str]]:
     """
     Searches the files containing the datapoints corresponding to the given project ids (`pids`), and collect them.
     """
     # Collect the list of files representing the dataset, from the `data_dir`
-    files = glob.glob(os.path.join(data_dir, "*.jsonl"))
+    files = glob.glob(os.path.join(data_dir, f"*.{ext}"))
     # Initialize the dictionary of projects files links
     by = {pid: [] for pid in pids}
     # Iterate over the list of `.jsonl` files within `data_dir`
@@ -484,31 +547,54 @@ def allocate_project_budgets(
     return budgets
 
 
-def iter_project_msgs(
-        file_paths: List[str]
-) -> Iterable[List[Dict]]:
+def iter_project_samples(
+        file_paths: List[str],
+        encoding_type: str = "jsonl"
+) -> Iterator[Sample]:
     """
-    Iterates over a list of .jsonl file paths, reading each file line by line. Each line is expected to contain a
-    JSON object representing a conversation between a user and an assistant. The function yields the messages
+    encoding_type: 'jsonl' --> Iterates over a list of .jsonl file paths, reading each file line by line. Each line is expected to contain a
+    JSON object representing a conversation between a user and an assistant.
+    encoding_type: 'csv' --> Iterates over a list of .csv file paths, reading the rows of each file. Each row is expected to contain a
+    sample object representing an input to the model (src) and the corresponding target answer (tgt).
+    The function yields the messages
     from these conversations as lists of dictionaries, allowing for efficient processing of potentially large datasets.
     """
     # Iterate over the `.jsonl` file paths
     for p in file_paths:
         # Read the current file path (the content of the file is a list of json objects corresponding to
         # conversations between the `user` and the `assistant`
-        with io.open(p, "r", encoding="utf-8", errors="replace") as f:
-            # Iterate over each line in the file path (it corresponds to a single conversation)
-            for line in f:
-                try:
-                    # Load the current conversation as a json object
-                    obj = orjson.loads(line)
-                except Exception:
-                    # Skip the conversation sample if not able to process it as a json object
-                    continue
-                # Collect the messages between the user and the assistant within the conversation
-                msgs = obj["messages"] if "messages" in obj else obj
-                if isinstance(msgs, list) and msgs:
-                    yield msgs
+        with io.open(p, "r", encoding="utf-8") as f:
+            if encoding_type == "jsonl":
+                # Iterate over each line in the file path (it corresponds to a single conversation)
+                for line in f:
+                    try:
+                        # Load the current conversation as a json object
+                        obj = orjson.loads(line)
+                    except Exception:
+                        # Skip the conversation sample if not able to process it as a json object
+                        continue
+                    # Collect the messages between the user and the assistant within the conversation
+                    msgs = obj["messages"] if "messages" in obj else obj
+                    if isinstance(msgs, list) and msgs:
+                        yield msgs
+            elif encoding_type == "csv":
+                # Initialize CSV reader
+                reader = csv.DictReader(f)
+                # Normalize headers: allow 'SRC','Src', etc.
+                fieldmap = {k.lower(): k for k in reader.fieldnames or []}
+                src_key = fieldmap.get("src")
+                tgt_key = fieldmap.get("tgt")
+                if src_key is None or tgt_key is None:
+                    raise ValueError(f"CSV {p} must contain 'src' and 'tgt' columns.")
+                for row in reader:
+                    src = row.get(src_key, "")
+                    tgt = row.get(tgt_key, "")
+                    if src is None: src = ""
+                    if tgt is None: tgt = ""
+                    # Skip empty pairs
+                    if (src.strip() == "") and (tgt.strip() == ""):
+                        continue
+                    yield (src, tgt)
 
 
 def bucket_from_len(
@@ -529,7 +615,7 @@ def bucket_from_len(
 def sample_project_tokenized(
         files: List[str],
         target_tokens: int,             # token budget for the project
-        encoder: ChatEncoder,           # encodes one conversation -> (ids, labels)
+        encoder: EncoderInterface,      # encodes one conversation -> (ids, labels)
         rng: random.Random,             # token length thresholds for buckets
         short_cut: int,
         med_cut: int,
@@ -560,11 +646,12 @@ def sample_project_tokenized(
     soft_buckets = [[],[],[]]
     # Buckets of overflow samples (over-cap samples)
     overflow = [[], [], []]
-    # Iterate over the conversations of the project
-    for msgs in iter_project_msgs(files):
+
+    # Iterate over the samples of the project
+    for sample in iter_project_samples(files):
         # Encode the messages in the conversation and retrieve the encoded `input_ids` and `label_ids` to
         # fine-tune the model
-        ids, lbl = encoder.encode(msgs)
+        ids, lbl = encoder.encode(sample)
         # Discard empty samples
         if ids is None:
             continue
@@ -643,14 +730,14 @@ def sample_project_tokenized(
 
 def build_split(
         split_name: str,
+        encoding_type: str,
         csv_path: str,
         data_dir: str,
         out_dir: str,
         model_name_or_path: str,
         model_revision: str,
         max_length: int,
-        start_id: str,
-        end_id: str,
+        special_tokens: List[str],
         total_token_budget: int,
         bin_allocation: str,
         alpha: float,
@@ -664,22 +751,33 @@ def build_split(
     # Initalize pseudo-random with seed for reproducibility
     rng = random.Random(seed)
     # Get the tokenizer
-    tok, tok_vocab_len_before, tok_vocab_len_after = build_tokenizer(model_name_or_path, max_length, model_revision)
-    # Initialize chat encoder
-    enc = ChatEncoder(
-        tok,
-        start_id=start_id,
-        end_id=end_id,
-        max_len=max_length,
-        only_last_turn_loss=True,
-        drop_long=drop_long
+    tok, tok_vocab_len_before, tok_vocab_len_after = build_tokenizer(
+        model_name_or_path,
+        max_length,
+        model_revision,
+        special_tokens,
     )
+    # Initialize encoder
+    if encoding_type == "jsonl":
+        enc = ChatEncoder(
+            tok,
+            max_len=max_length,
+            only_last_turn_loss=True,
+            drop_long=drop_long
+        )
+    else:
+        enc = PairEncoder(
+            tok,
+            max_len=max_length,
+            drop_long=drop_long,
+            append_eos=True
+        )
     # Read .csv with the identifiers of projects to process, and the relative metadata
     meta = read_split_csv(csv_path)
     # Get the list of project identifiers
     pids = sorted(meta.keys())
     # Get the list of files per project, in the dataset
-    files_by_pid = find_project_files(data_dir, pids)
+    files_by_pid = find_project_files_by_ext(data_dir, pids, encoding_type)
     # Allocate tokens budget for each bin (`Small`, `Medium`, `Large`, determined by the total number
     # of oracles in each project and the policy applied - `mode`)
     bin_tokens = allocate_bin_budgets(meta, total_token_budget, mode=bin_allocation)
@@ -703,11 +801,8 @@ def build_split(
         "eos_token_id": tok.eos_token_id,
         "special_tokens_map": tok.special_tokens_map,
         "vocab_size_before": tok_vocab_len_before,
-        "vocab_size_after": tok_vocab_len_after,
-        "special_token_ids": {
-            "<|im_start|>": tok("<|im_start|>").input_ids[0],
-            "<|im_end|>": tok("<|im_end|>").input_ids[0],
-        }
+        "vocab_size": tok_vocab_len_after,
+        "special_token_ids": { t: tok(t).input_ids[0] for t in special_tokens },
     }
     # Define path where to save tokenizer
     tok_dir = os.path.join(out_dir, "tokenizer")
@@ -761,12 +856,12 @@ def build_split(
         json.dump(per_project, f, indent=2)
     print(f"[{split_name}] DONE. total_tokens={total_written:,}")
 
-# ---------------- CLI ---------------- #
 
 def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model_name_or_path", required=True, help="Path to pretrained model or model identifier from huggingface.co")
     ap.add_argument("--model_revision", type=str, default=None, help="HF revision (commit hash or tag) to pin the base tokenizer.")
+    ap.add_argument("--encoding_type", choices=["jsonl","csv"], default="jsonl", help="Type of files to process (jsonl with chat messages or csv with src/tgt pairs).")
     ap.add_argument("--data_dir", required=True, help="Path to data directory where JSON files are stored.")
     ap.add_argument("--train_csv", required=True, help="Path to training CSV (the csv contains the list of project identifers to use for training).")
     ap.add_argument("--val_csv", required=True, help="Path to validation CSV (the csv contains the list of project identifers to use for validation).")
@@ -813,6 +908,7 @@ def main():
     # Process projects for training and encode selected samples. Save them in shards
     build_split(
         "train",
+        args.encoding_type,
         args.train_csv,
         args.data_dir,
         args.out_dir,
@@ -834,6 +930,7 @@ def main():
     # Process projects for validation and encode selected samples. Save them in shards
     build_split(
         "val",
+        args.encoding_type,
         args.val_csv,
         args.data_dir,
         args.out_dir,

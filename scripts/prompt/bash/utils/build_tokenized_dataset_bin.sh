@@ -33,7 +33,8 @@ for config_path in "${config_paths[@]}"; do
   "$PY_ENV" "${PROMPT_DIR}/utils/build_tokenized_dataset_bin.py" \
     --model_name_or_path "${MODEL_NAME:-Qwen/Qwen2.5-Coder-7B-Instruct}" \
     --model_revision "${MODEL_REVISION}" \
-    --data_dir   "${OUTPUT_DIR}/${i}/prompt-jsonl" \
+    --encoding_type "csv" \
+    --data_dir   "${OUTPUT_DIR}/${i}/prompt" \
     --train_csv  "${OUTPUT_DIR}/${i}/split-dataset/train_projects.csv" \
     --val_csv    "${OUTPUT_DIR}/${i}/split-dataset/val_projects.csv" \
     --out_dir    "${OUTPUT_DIR}/${i}/prompt-binary" \
@@ -42,7 +43,7 @@ for config_path in "${config_paths[@]}"; do
     --max_length 8192 \
     --bin_allocation sqrt \
     --alpha 0.5 \
-    --target_mix "0.4,0.4,0.2" \
+    --target_mix "0.33,0.34,0.33" \
     --short_cut_frac 0.33 \
     --med_cut_frac   0.66 \
     --tokens_per_shard 50000000 \
