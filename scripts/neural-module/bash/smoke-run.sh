@@ -24,7 +24,7 @@ LOCAL_TOKENIZED="${OUTPUT_PROMPT_DIR}/${target_config}/local_nvme"
 mkdir -p "$LOCAL_TOKENIZED"
 rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary-${MODEL_NAME}-${encoding_type}-${max_length}" "$LOCAL_TOKENIZED/"
 
-python -m torch.distributed.run --nproc-per-node=2 finetuning-speed.py \
+python -m torch.distributed.run --nproc-per-node=2 finetuning.py \
   --model_name_or_path "${MODEL_NAME}" \
   --model_revision "${MODEL_REVISION}" \
   --use_flash_attention False \
