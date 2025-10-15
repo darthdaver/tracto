@@ -549,7 +549,8 @@ def allocate_project_budgets(
 
 def iter_project_samples(
         file_paths: List[str],
-        encoding_type: str = "jsonl"
+        encoding_type: str = "jsonl",
+        wrap: bool = False
 ) -> Iterator[Sample]:
     """
     encoding_type: 'jsonl' --> Iterates over a list of .jsonl file paths, reading each file line by line. Each line is expected to contain a
@@ -594,6 +595,8 @@ def iter_project_samples(
                     # Skip empty pairs
                     if (src.strip() == "") or (tgt.strip() == ""):
                         continue
+                    if wrap:
+                        tgt = "[token]" + tgt + " [/token]"
                     yield (src, tgt)
 
 
@@ -624,6 +627,7 @@ def sample_project_tokenized(
         per_bucket_buf: float = 0.10,   # allow up to +10% over each bucket cap
         overflow_keep_p: float = 0.25,  # keep some over-cap items as reservoir
         early_stop_buf: float = 0.15,   # stop scanning around 115% of budget (like before)
+        wrap: bool = False
 ) -> Tuple[List[np.ndarray], List[np.ndarray], int]:
     """
     Samples datapoints from a given project, according to a distribution determined by the conversation lengths, up to
@@ -648,7 +652,7 @@ def sample_project_tokenized(
     overflow = [[], [], []]
 
     # Iterate over the samples of the project
-    for sample in iter_project_samples(files):
+    for sample in iter_project_samples(files, wrap):
         # Encode the messages in the conversation and retrieve the encoded `input_ids` and `label_ids` to
         # fine-tune the model
         ids, lbl = encoder.encode(sample)
@@ -731,7 +735,7 @@ def sample_project_tokenized(
 def build_split(
         split_name: str,
         encoding_type: str,
-        csv_path: str,
+        pids_path: str,
         data_dir: str,
         out_dir: str,
         model_name_or_path: str,
@@ -746,7 +750,8 @@ def build_split(
         target_mix: Tuple[float,float,float],
         short_cut_frac: float,
         med_cut_frac: float,
-        seed: int
+        seed: int,
+        wrap: bool = False
 ):
     # Initalize pseudo-random with seed for reproducibility
     rng = random.Random(seed)
@@ -773,7 +778,7 @@ def build_split(
             append_eos=True
         )
     # Read .csv with the identifiers of projects to process, and the relative metadata
-    meta = read_split_csv(csv_path)
+    meta = read_split_csv(pids_path)
     # Get the list of project identifiers
     pids = sorted(meta.keys())
     # Get the list of files per project, in the dataset
@@ -803,6 +808,10 @@ def build_split(
         "vocab_size_before": tok_vocab_len_before,
         "vocab_size": tok_vocab_len_after,
         "special_token_ids": { t: tok(t).input_ids[0] for t in special_tokens },
+        "wrap": wrap,
+        "drop_long": drop_long,
+        "num_projects": len(pids),
+        "projects": pids
     }
     # Define path where to save tokenizer
     tok_dir = os.path.join(out_dir, "tokenizer")
@@ -839,7 +848,8 @@ def build_split(
             rng,
             short_cut,
             med_cut,
-            target_mix=target_mix
+            target_mix=target_mix,
+            wrap=wrap,
         )
         # Write samples in the current shard
         for ids, lbl in zip(ids_list, lbl_list):
@@ -880,6 +890,7 @@ def parse_args():
     ap.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     ap.add_argument("--train_drop_long", action="store_true", help="Whether to drop long tokens in training bins.")
     ap.add_argument("--val_drop_long", action="store_true", help="Whether to drop long tokens in validation bins.")
+    ap.add_argument("--wrap", action="store_true", help="Whether to wrap each message in [token][/token] format.")
     return ap.parse_args()
 
 def resolve_snapshot(model_name_or_path: str, model_revision: Optional[str]):
@@ -915,8 +926,7 @@ def main():
         resolved_path,
         used_revision,
         args.max_length,
-        args.start_id,
-        args.end_id,
+        [ args.start_id,args.end_id ] if args.encoding_type == "jsonl" else [],
         args.train_token_budget,
         args.bin_allocation,
         args.alpha,
@@ -925,7 +935,8 @@ def main():
         mix,
         args.short_cut_frac,
         args.med_cut_frac,
-        args.seed
+        args.seed,
+        args.wrap
     )
     # Process projects for validation and encode selected samples. Save them in shards
     build_split(
@@ -937,8 +948,7 @@ def main():
         resolved_path,
         used_revision,
         args.max_length,
-        args.start_id,
-        args.end_id,
+        [ args.start_id, args.end_id ] if args.encoding_type == "jsonl" else [],
         args.val_token_budget,
         args.bin_allocation,
         args.alpha,
@@ -947,7 +957,8 @@ def main():
         mix,
         args.short_cut_frac,
         args.med_cut_frac,
-        args.seed + 1
+        args.seed + 1,
+        args.wrap
     )
 
 if __name__ == "__main__":

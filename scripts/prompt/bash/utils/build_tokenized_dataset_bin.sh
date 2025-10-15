@@ -42,7 +42,8 @@ for config_path in "${config_paths[@]}"; do
     --tokens_per_shard 50000000 \
     --seed "${SEED}" \
     --train_drop_long \
-    --val_drop_long
+    --val_drop_long \
+    --wrap
     #--start_id "${START_ID:-<|im_start|>}" \
     #--end_id   "${END_ID:-<|im_end|>}" \
 done
