@@ -116,7 +116,7 @@ if __name__ == '__main__':
             with open(output_prompt_path, 'w', newline='') as csv_file:
                 writer = csv.writer(csv_file)
                 # Write the header
-                writer.writerow(["id", "src", "tgt"])
+                writer.writerow(["id", "src", "tgt", "unmask_tokens"] if ewash_config['type'] == "tokens" else ["id", "src", "tgt"])
                 # Process each datapoint in the JSON list
                 for tcs_d in test_classes_datapoints:
                     # Initialize the counter of the tokens in the input to the model
@@ -180,6 +180,10 @@ if __name__ == '__main__':
                                     partial_oracle = s['partialSnippet']
                                     # Get target (next token)
                                     tgt = s['target']
+                                    if len(tgt.split(":")) < 2:
+                                        logger.log(f"Target token {tgt} is not in the expected format.", logging.ERROR)
+                                        stats_error(stats, tc['identifier'], f"Target token {tgt} is not in the expected format")
+                                        continue
                                     logger.log(f"Processing step. Partial oracle: {partial_oracle}, next token: {tgt}", logging.INFO)
                                     print(f"Processing step. Partial oracle: {partial_oracle}, next token: {tgt}")
                                     tokens = EWash.normalize_section(s)
@@ -211,9 +215,14 @@ if __name__ == '__main__':
 
                                         src = src + ewash_config['infix_tag']
 
+                                        unmask_tokens = []
+                                        for t_type in ewash_config['tokens']:
+                                            if len(tokens[t_type]) > 0:
+                                                unmask_tokens.extend(tokens[t_type])
+
                                         if not tgt.split(':')[0] in LITERALS:
                                             tgt = f"{{\"choice\": \"{":".join(tgt.split(':')[1:])}\"}}"
-                                            writer.writerow([datapoint_id, src, tgt])
+                                            writer.writerow([datapoint_id, src, tgt, unmask_tokens])
                                             json_data_list.append({
                                                 "id": datapoint_id,
                                                 "src": src,
@@ -228,7 +237,7 @@ if __name__ == '__main__':
                                             update_stats(stats, tc['identifier'], tp['signature'], tgt, exceeded, num_tokens)
                                         else:
                                             tgt_1 = f"{{\"choice\": \"{tgt.split(':')[0]}\"}}"
-                                            writer.writerow([datapoint_id, src, tgt_1])
+                                            writer.writerow([datapoint_id, src, tgt_1, unmask_tokens])
                                             json_data_list.append({
                                                 "id": datapoint_id,
                                                 "src": src,
@@ -259,7 +268,7 @@ if __name__ == '__main__':
                                                 # Create the new string without the unwanted substring
                                                 src = src[:start_index] + src[end_index:]
                                             tgt_2 = ":".join(tgt.split(':')[1:])
-                                            writer.writerow([datapoint_id, src, tgt_2])
+                                            writer.writerow([datapoint_id, src, tgt_2, []])
                                             json_data_list.append({
                                                 "id": datapoint_id,
                                                 "src": src,
@@ -276,6 +285,7 @@ if __name__ == '__main__':
                                         # Update stats
                                         update_stats(stats, tc['identifier'], tp['signature'], tgt, True, -1)
         except Exception as e:
+            logger.log(f"Unexpected error: {e}", logging.ERROR)
             logger.log(
                 f"Unexpected error while processing file: {filename} ({file_path}).",
                 logging.ERROR
