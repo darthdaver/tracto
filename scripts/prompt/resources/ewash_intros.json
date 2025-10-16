@@ -28,19 +28,32 @@
   "tokens":{
     "project_tokens":{
       "label":"// Next candidate project tokens\n",
+      "var_name": "candidateProjectTokens",
       "flag":false
     },
     "java_tokens":{
       "label":"// Next candidate Java tokens\n",
+      "var_name": "candidateJavaTokens",
       "flag":false
     },
     "generic_tokens":{
       "label":"// Next candidate generic tokens\n",
+      "var_name": "candidateGenericTokens",
       "flag":false
     },
     "expected_types":{
       "label":"// Expected types\n",
       "flag":false
+    }
+  },
+  "guideline": {
+    "1": {
+      "task": "# TASK: Choose exactly one among the three given list as the NEXT token/type.\n",
+      "output": "# OUTPUT: Generate a JSON on one line: {\"choice\":\"<candidate>\"}\n\n"
+    },
+    "2": {
+      "task": "# EMIT a Java <LITERAL_TYPE> as the next token\n",
+      "output": "Output ONLY the literal including quotes, with valid Java escapes. Nothing else.\n\n"
     }
   }
 }
