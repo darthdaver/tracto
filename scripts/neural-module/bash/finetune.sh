@@ -18,8 +18,9 @@ export HF_DATASETS_DISABLE_PARALLELISM
 target_config=${1}
 
 LOCAL_TOKENIZED="${OUTPUT_PROMPT_DIR}/${target_config}/local_nvme"
-mkdir -p "$LOCAL_TOKENIZED"
-rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" "$LOCAL_TOKENIZED/"
+LOCAL_TOKENIZED_PROMPT_BINARY="$(dirname "${LOCAL_TOKENIZED}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}")"
+mkdir -p "${LOCAL_TOKENIZED_PROMPT_BINARY}"
+rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" "$LOCAL_TOKENIZED_PROMPT_BINARY/"
 
 # NOTE
 # - --tokenized_dir must point to the directory produced by the builder,

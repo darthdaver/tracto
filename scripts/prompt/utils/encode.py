@@ -49,9 +49,10 @@ IGNORE_INDEX = -100
 Sample = Union[List[Dict[str, Any]], Tuple[str, str], Tuple[str, str, List[str]]]
 
 # JSON structure tokens - these should always be available for JSON output
-JSON_STRUCTURE_TOKENS = [
-    "{\"choice\":\"", "\"}"
-]
+JSON_STRUCTURE_TOKENS = {
+    "prefix": "{\"choice\":\"",
+    "suffix": "\"}"
+}
 
 # Generic literal tokens
 LITERALS = [
@@ -372,7 +373,7 @@ class PairEncoder(EncoderInterface):
             constraint_sequences_ids = []
             if len(sample) >= 3 and sample[2]:
                 constraint_sequences_ids = self.encode_constraints_sequences(sample[2])
-                logger.debug(f"Encoded {len(constraint_sequences_ids)} valid constraints seuqences from {len(sample[2])} candidate tokens, for a total of {sum(len(seq) for seq in constraint_sequences_ids)} constraint token IDs")
+                logger.debug(f"Encoded {len(constraint_sequences_ids)} valid constraints sequences from {len(sample[2])} candidate tokens, for a total of {sum(len(seq) for seq in constraint_sequences_ids)} constraint token IDs")
             # Assemble final sequences
             input_ids = src_ids + tgt_ids + tail
             labels = [IGNORE_INDEX] * len(src_ids) + tgt_ids
@@ -387,25 +388,22 @@ class PairEncoder(EncoderInterface):
             logger.error(f"Error encoding sample: {e}")
             return None, None, []
 
-    def encode_constraints_sequences(self, constraints_tokens: List[str]) -> List[List[int]]:
+    def encode_constraints_sequences(self, constraints_seqs: List[str]) -> List[List[int]]:
         """
         Encode each constraint as a sequence of token IDs (ragged array).
         This is required for safe constrained decoding with subword tokenization.
         """
-        if not constraints_tokens:
+        if not constraints_seqs:
             return []
         candidate_sequences = []
-        for token in constraints_tokens:
-            # Handle special FIM tokens as single-token sequences
-            if token in ['<|fim_prefix|>', '<|fim_suffix|>', '<|fim_middle|>']:
-                tid = self._get_special_token_id(token)
-                if tid is not None:
-                    candidate_sequences.append([tid])
-            else:
-                # Encode as a sequence (may be multiple subwords)
-                token_ids = self.tok.encode(token, add_special_tokens=False)
-                if token_ids and token_ids[0] != self.tok.unk_token_id:
-                    candidate_sequences.append(token_ids)
+        for seq in constraints_seqs:
+            # Encode as a sequence (may be multiple subwords)
+            token_ids = self.tok.encode(seq, add_special_tokens=False)
+            if token_ids and token_ids[0] != self.tok.unk_token_id:
+                # Append EOS if needed, at the end of each constraint sequence
+                if self.append_eos and self.eos_id is not None:
+                    token_ids.append(self.eos_id)
+                candidate_sequences.append(token_ids)
         return candidate_sequences
 
     def encode_constraints(self, constraints_tokens: List[str]) -> List[int]:
@@ -558,33 +556,35 @@ def iter_project_samples(
                     try:
                         src = str(row.get("src", "")).strip() if not pd.isna(row.get("src")) else ""
                         tgt = str(row.get("tgt", "")).strip() if not pd.isna(row.get("tgt")) else ""
-                        unmask_raw = row.get("unmask_tokens", "")
+                        #unmask_raw = str(row.get("unmask_tokens", "")).strip().replace("'\"'","\"\\\"\"").replace("'","\"")
+                        unmask_raw = str(row.get("unmask_tokens", "")).strip()
                         unmask_tokens = []
-                        if not pd.isna(unmask_raw) and unmask_raw:
-                            try:
-                                # Try JSON parsing first
-                                parsed = orjson.loads(unmask_raw) if isinstance(unmask_raw, str) else unmask_raw
-                                if isinstance(parsed, list):
-                                    unmask_tokens = [str(token).strip() for token in parsed if str(token).strip()]
-                                elif isinstance(parsed, str):
-                                    unmask_tokens = [parsed.strip()]
-                                else:
-                                    unmask_tokens = [str(parsed).strip()]
-                            except (orjson.JSONDecodeError, TypeError):
-                                # Fallback to comma-separated parsing
-                                unmask_tokens = [token.strip() for token in str(unmask_raw).split(',') if token.strip()]
+                        # if not pd.isna(unmask_raw) and unmask_raw:
+                        #     try:
+                        #         # Try JSON parsing first
+                        #         parsed = orjson.loads(unmask_raw) if isinstance(unmask_raw, str) else unmask_raw
+                        #         if isinstance(parsed, list):
+                        #             unmask_tokens = [str(token).strip() for token in parsed if str(token).strip()]
+                        #         elif isinstance(parsed, str):
+                        #             unmask_tokens = [parsed.strip()]
+                        #         else:
+                        #             unmask_tokens = [str(parsed).strip()]
+                        #     except (orjson.JSONDecodeError, TypeError):
+                        # Fallback to comma-separated parsing
+                        unmask_tokens = [token.strip() for token in str(unmask_raw[1:-1]).split(',') if token.strip()]
                         # Add JSON structure tokens for constraint stages (when unmask_tokens is not empty)
                         if unmask_tokens:
                             unmask_tokens = [
                                 t[1:-1] if (len(t) >= 2 and t[0] in ("'", '"') and t[-1] in ("'", '"')) else t
                                 for t in unmask_tokens
                             ]
-                            for token in JSON_STRUCTURE_TOKENS:
-                                if token not in unmask_tokens:
-                                    unmask_tokens.append(token)
+                        complete_candidate_seqs = []
+                        for token in unmask_tokens:
+                            seq = JSON_STRUCTURE_TOKENS["prefix"] + token + JSON_STRUCTURE_TOKENS["suffix"]
+                            complete_candidate_seqs.append(seq)
                         # Only yield if both src and tgt are non-empty
                         if src and tgt:
-                            yield (src, tgt, unmask_tokens)
+                            yield (src, tgt, complete_candidate_seqs)
                     except Exception as e:
                         logger.warning(f"Skipping invalid row {idx} in {p}: {e}")
                         continue
@@ -665,7 +665,7 @@ def sample_project_tokenized(
         rng.shuffle(overflow[k])
     # Define final lists of selected samples (input_ids, labels).
     # Written counts the total number of tokens selected, overall, and per bucket (`written_by_bucket`)
-    sel_ids, sel_lbls, sel_constraint_seq_ids, written = [], [], [], [], 0
+    sel_ids, sel_lbls, sel_constraint_seq_ids, written = [], [], [], 0
     written_by_bucket = [0, 0, 0]
     # Keep track of unused samples
     leftovers = []
@@ -884,10 +884,11 @@ def build_split(
     )
 
     # Initialize encoder
-    if encoding_type == "jsonl":
-        enc = ChatEncoder(tok, max_len=max_length, only_last_turn_loss=True, drop_long=drop_long)
-    else:
-        enc = PairEncoder(tok, max_len=max_length, drop_long=drop_long, append_eos=True)
+    # if encoding_type == "jsonl":
+    #     enc = ChatEncoder(tok, max_len=max_length, only_last_turn_loss=True, drop_long=drop_long)
+    # else:
+    #     enc = PairEncoder(tok, max_len=max_length, drop_long=drop_long, append_eos=True)
+    enc = PairEncoder(tok, max_len=max_length, drop_long=drop_long, append_eos=True)
 
     # Read csv with the identifiers of projects to process, and the relative metadata
     meta = read_split_csv(pids_path)
@@ -919,8 +920,7 @@ def build_split(
         "special_tokens_map": tok.special_tokens_map,
         "vocab_size_before": tok_vocab_len_before,
         "vocab_size": tok_vocab_len_after,
-        "special_token_ids": {t: tok(t).input_ids[0] for t in
-                              (special_tokens + ["<|fim_prefix|>", "<|fim_suffix|>", "<|fim_middle|>"])},
+        "special_token_ids": {t: tok(t).input_ids[0] for t in (special_tokens + ["<|fim_prefix|>", "<|fim_suffix|>", "<|fim_middle|>"])},
         "wrap": wrap,
         "drop_long": drop_long,
         "num_projects": len(pids),
