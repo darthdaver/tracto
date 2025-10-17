@@ -28,12 +28,11 @@ python build_tokenized_dataset_bins.py \
 --train_drop_long
 """
 
-import os, io, csv, glob, json, math, random, argparse, logging
+import io, csv, glob, math, random, argparse, logging
 from typing import Dict, List, Tuple, Optional, Iterator, Union, Any
-import numpy as np
 import pandas as pd
 import orjson
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AddedToken
 from huggingface_hub import snapshot_download
 from pathlib import Path
 
@@ -51,7 +50,7 @@ Sample = Union[List[Dict[str, Any]], Tuple[str, str], Tuple[str, str, List[str]]
 
 # JSON structure tokens - these should always be available for JSON output
 JSON_STRUCTURE_TOKENS = [
-    "{", "}", "\"", ":", ",", "choice"
+    "{\"choice\":\"", "\"}"
 ]
 
 # Generic literal tokens
@@ -62,8 +61,19 @@ LITERALS = [
 ]
 
 
+import os
+import json
+import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 class ShardWriter:
-    """Enhanced shard writer with proper alignment and data consistency."""
+    """
+    Shard writer for input_ids, labels, and ragged constraint sequences.
+    Constraints are stored efficiently as binary data using numpy arrays.
+    """
 
     def __init__(self, out_dir: str, split: str, tokens_per_shard: int):
         os.makedirs(out_dir, exist_ok=True)
@@ -74,115 +84,165 @@ class ShardWriter:
         self._open_new()
 
     def _open_new(self):
-        """Open new shard files with proper structure."""
         base = os.path.join(self.out_dir, f"{self.split}.{self.shard_id:05d}")
-
-        # Main data files
         self.ids_path = base + ".input_ids.bin"
         self.lbl_path = base + ".labels.bin"
         self.constraints_path = base + ".constraints.bin"
         self.constraints_idx_path = base + ".constraints.idx"
         self.idx_path = base + ".idx"
 
-        # Open with larger buffers for better performance
-        self.ids_f = open(self.ids_path, "wb", buffering=65536)
-        self.lbl_f = open(self.lbl_path, "wb", buffering=65536)
-        self.constraints_f = open(self.constraints_path, "wb", buffering=65536)
+        # Open files with buffering for performance
+        self.ids_f = open(self.ids_path, 'wb', buffering=65536)
+        self.lbl_f = open(self.lbl_path, 'wb', buffering=65536)
+        self.constraints_f = open(self.constraints_path, 'wb', buffering=65536)
 
-        # Index tracking
-        self.idx = []  # Token counts per sample
-        self.constraints_idx = []  # (offset, length) pairs for constraints
+        # Track cumulative token counts and constraint positions
+        self.idx = []  # Cumulative token count per sample
+        self.constraints_idx = []  # (offset, length) for each sample's constraints
         self.tok_count = 0
         self.n_samples = 0
-        self.constraints_offset = 0
+        self.constraints_offset = 0  # Byte offset in constraints file
 
     def roll(self, tokens_to_add: int) -> None:
-        """Check if we need to start a new shard."""
+        """Start a new shard if current one is full."""
         if self.tok_count + tokens_to_add > self.tokens_per_shard and self.n_samples > 0:
             self.close()
             self.shard_id += 1
             self._open_new()
 
-    def write(self, input_ids: np.ndarray, labels: np.ndarray,
-              constraint_ids: np.ndarray, len_constraint_ids: int) -> None:
-        """Write sample with proper data type consistency and alignment."""
+    def write(self, input_ids: np.ndarray, labels: np.ndarray, constraint_seqs: list) -> None:
+        """
+        Write a sample to the current shard.
+
+        Args:
+            input_ids: np.ndarray of int32, shape (L,)
+            labels: np.ndarray of int32, shape (L,)
+            constraint_seqs: List[List[int]], ragged array of constraint token sequences
+        """
         try:
             L = int(input_ids.shape[0])
             self.roll(L)
-
-            # Ensure ALL arrays use consistent int32 data type
+            # Ensure int32 dtype
             if input_ids.dtype != np.int32:
                 input_ids = input_ids.astype(np.int32)
             if labels.dtype != np.int32:
                 labels = labels.astype(np.int32)
-            # CRITICAL FIX: Add missing constraint_ids type conversion
-            if constraint_ids.dtype != np.int32:
-                constraint_ids = constraint_ids.astype(np.int32)
-
-            # Write fixed-size records for input_ids and labels
+            # Write input_ids and labels as contiguous binary
             self.ids_f.write(input_ids.tobytes())
             self.lbl_f.write(labels.tobytes())
+            # Store constraints efficiently using binary format
+            # Format: [num_sequences (uint32)] + [seq_len_1 (uint32), token_id_1_1 (int32), token_id_1_2, ...]
+            #         [seq_len_2, token_id_2_1, ...] ...
+            offset_start = self.constraints_offset
 
-            # Record constraint position BEFORE writing (critical for indexing)
-            self.constraints_idx.append((self.constraints_offset, len_constraint_ids))
-
-            # Write constraint data with proper structure
-            # Structure: [count:uint32][constraint_ids:int32*count]
-            count_bytes = np.array([len_constraint_ids], dtype=np.uint32).tobytes()
-            self.constraints_f.write(count_bytes)
-
-            if len_constraint_ids > 0:
-                constraint_bytes = constraint_ids[:len_constraint_ids].tobytes()
-                self.constraints_f.write(constraint_bytes)
-
-            # Update offset with proper alignment calculation
-            # 4 bytes for count + 4*len_constraint_ids for data
-            self.constraints_offset += 4 + (len_constraint_ids * 4)
-
+            if constraint_seqs:
+                # Write number of constraint sequences
+                num_seqs = np.array([len(constraint_seqs)], dtype=np.uint32)
+                self.constraints_f.write(num_seqs.tobytes())
+                bytes_written = num_seqs.nbytes
+                # Write each sequence: length + token_ids
+                for seq in constraint_seqs:
+                    if isinstance(seq, list):
+                        seq = np.array(seq, dtype=np.int32)
+                    elif not isinstance(seq, np.ndarray):
+                        seq = np.array([seq], dtype=np.int32)
+                    seq = seq.astype(np.int32)
+                    seq_len = np.array([len(seq)], dtype=np.uint32)
+                    # Write sequence length
+                    self.constraints_f.write(seq_len.tobytes())
+                    bytes_written += seq_len.nbytes
+                    # Write sequence token IDs
+                    self.constraints_f.write(seq.tobytes())
+                    bytes_written += seq.nbytes
+            else:
+                # Write 0 to indicate no constraints
+                num_seqs = np.array([0], dtype=np.uint32)
+                self.constraints_f.write(num_seqs.tobytes())
+                bytes_written = num_seqs.nbytes
+            # Record offset and length in index
+            self.constraints_idx.append((offset_start, bytes_written))
+            self.constraints_offset += bytes_written
             # Update counters
             self.tok_count += L
             self.n_samples += 1
-            self.idx.append(self.tok_count)  # Cumulative token count
-
+            self.idx.append(self.tok_count)
         except Exception as e:
             logger.error(f"Error writing sample to shard {self.shard_id}: {e}")
             raise
 
     def close(self):
-        """Close current shard with proper index file structure."""
+        """Close current shard and write index files."""
         try:
             # Flush and close data files
             for f in [self.ids_f, self.lbl_f, self.constraints_f]:
                 f.flush()
                 f.close()
-
             # Write main index file (cumulative token counts)
-            with open(self.idx_path, "wb") as f:
+            with open(self.idx_path, 'wb') as f:
                 idx_array = np.asarray(self.idx, dtype=np.uint64)
                 idx_array.tofile(f)
-
-            # Write constraints index file with proper structure
-            # Format: array of (offset:uint64, length:uint32) pairs
-            with open(self.constraints_idx_path, "wb") as f:
+            # Write constraints index file (offset, length per sample)
+            with open(self.constraints_idx_path, 'wb') as f:
                 if self.constraints_idx:
-                    # Convert to structured array for better alignment
+                    # Create structured array with offset and length
                     constraints_dtype = np.dtype([('offset', np.uint64), ('length', np.uint32)])
                     constraints_array = np.array(self.constraints_idx, dtype=constraints_dtype)
                     constraints_array.tofile(f)
                 else:
-                    # Write empty file with correct structure
+                    # Write empty array
                     empty_array = np.array([], dtype=np.dtype([('offset', np.uint64), ('length', np.uint32)]))
                     empty_array.tofile(f)
-
             logger.info(f"Closed shard {self.shard_id} with {self.n_samples} samples, {self.tok_count} tokens")
-
         except Exception as e:
             logger.error(f"Error closing shard {self.shard_id}: {e}")
             raise
 
 
+# Helper function to read constraints from binary format
+def read_constraints_from_shard(constraints_path: str, constraints_idx_path: str, sample_idx: int):
+    """
+    Read constraint sequences for a specific sample from binary format.
+
+    Args:
+        constraints_path: Path to constraints binary file
+        constraints_idx_path: Path to constraints index file
+        sample_idx: Index of the sample to read
+
+    Returns:
+        List[List[int]]: Ragged array of constraint token sequences
+    """
+    # Read index to get offset and length
+    constraints_dtype = np.dtype([('offset', np.uint64), ('length', np.uint32)])
+    with open(constraints_idx_path, 'rb') as f:
+        idx_array = np.fromfile(f, dtype=constraints_dtype)
+    if sample_idx >= len(idx_array):
+        raise IndexError(f"Sample index {sample_idx} out of range")
+    offset, length = idx_array[sample_idx]
+    # Read the constraint data for this sample
+    with open(constraints_path, 'rb') as f:
+        f.seek(offset)
+        data = f.read(length)
+    # Parse the binary data
+    constraint_seqs = []
+    pos = 0
+    # Read number of sequences
+    num_seqs = np.frombuffer(data[pos:pos + 4], dtype=np.uint32)[0]
+    pos += 4
+    # Read each sequence
+    for _ in range(num_seqs):
+        # Read sequence length
+        seq_len = np.frombuffer(data[pos:pos + 4], dtype=np.uint32)[0]
+        pos += 4
+        # Read token IDs
+        seq = np.frombuffer(data[pos:pos + seq_len * 4], dtype=np.int32).tolist()
+        pos += seq_len * 4
+        constraint_seqs.append(seq)
+    return constraint_seqs
+
+
+
 class EncoderInterface:
-    def encode(self, sample: Sample) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[List[np.ndarray]], Optional[int], Optional[int], Optional[int]]:
+    def encode(self, sample: Sample) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[List[List[int]]]]:
         """Encode sample and return (input_ids, labels, constraint_tokens)"""
         pass
 
@@ -249,7 +309,7 @@ class PairEncoder(EncoderInterface):
     def _find(self, ids: List[int], tid: int) -> List[int]:
         return [i for i, t in enumerate(ids) if t == tid]
 
-    def encode(self, sample: Sample) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray], Optional[int], Optional[int], Optional[int]]:
+    def encode(self, sample: Sample) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[List[List[int]]]]:
         try:
             if len(sample) == 2:
                 src, tgt = sample
@@ -257,30 +317,30 @@ class PairEncoder(EncoderInterface):
             elif len(sample) == 3:
                 src, tgt, constraints = sample
             else:
-                return None, None, None, 0, 0, 0
+                return None, None, []
             # Validate inputs
             if not src or not tgt:
                 logger.debug("Skipping empty src or tgt")
-                return None, None, None, 0, 0, 0
+                return None, None, []
             src_ids = self._tokenize_plain(src)
             tgt_ids = self._tokenize_plain(tgt)
             if not src_ids or not tgt_ids:
                 logger.debug("Skipping sample with empty tokenization")
-                return None, None, None, 0, 0, 0
+                return None, None, []
             # Enhanced FIM validation
             if not src_ids or src_ids[-1] != self.fim_middle_id:
                 logger.debug("Skipping src without <|fim_middle|> at end")
-                return None, None, None, 0, 0, 0
+                return None, None, []
             # Verify FIM structure more robustly
             pfx_pos = self._find(src_ids, self.fim_prefix_id)
             sfx_pos = self._find(src_ids, self.fim_suffix_id)
             mid_pos = len(src_ids) - 1
             if not pfx_pos or not sfx_pos:
                 logger.debug("Missing FIM prefix or suffix tokens")
-                return None, None, None, 0, 0, 0
+                return None, None, []
             if not (pfx_pos[0] < sfx_pos[0] < mid_pos):
                 logger.debug("Invalid FIM token order")
-                return None, None, None, 0, 0, 0
+                return None, None, []
             # Handle EOS token
             tail = [self.eos_id] if (self.append_eos and self.eos_id is not None) else []
             # Enhanced length management
@@ -288,16 +348,16 @@ class PairEncoder(EncoderInterface):
             if needed_len > self.max_len:
                 if self.drop_long:
                     logger.debug(f"Dropping long sample: {needed_len} > {self.max_len}")
-                    return None, None, None, 0, 0, 0
+                    return None, None, []
                 # Smart truncation preserving FIM structure
                 keep_for_src = self.max_len - len(tgt_ids) - len(tail)
                 if keep_for_src <= 0:
-                    return None, None, None, 0, 0, 0
+                    return None, None, []
                 # Calculate minimum required src length to preserve structure
                 min_src_needed = len(src_ids) - pfx_pos[0]
                 if keep_for_src < min_src_needed:
                     logger.debug("Cannot preserve FIM structure after truncation")
-                    return None, None, None, 0, 0, 0
+                    return None, None, []
                 # Truncate from the beginning, but keep FIM structure
                 start_idx = max(0, len(src_ids) - keep_for_src)
                 if start_idx > pfx_pos[0]:
@@ -307,12 +367,12 @@ class PairEncoder(EncoderInterface):
                 pfx_pos2 = self._find(src_ids, self.fim_prefix_id)
                 sfx_pos2 = self._find(src_ids, self.fim_suffix_id)
                 if not pfx_pos2 or not sfx_pos2 or not (pfx_pos2[0] < sfx_pos2[0] < len(src_ids) - 1):
-                    return None, None, None, 0, 0, 0
-            # Encode constraints
-            constraint_ids = []
+                    return None, None, []
+            # Encode constraint sequences
+            constraint_sequences_ids = []
             if len(sample) >= 3 and sample[2]:
-                constraint_ids = self.encode_constraints(sample[2])
-                logger.debug(f"Encoded {len(constraint_ids)} valid constraints from {len(sample[2])} tokens")
+                constraint_sequences_ids = self.encode_constraints_sequences(sample[2])
+                logger.debug(f"Encoded {len(constraint_sequences_ids)} valid constraints seuqences from {len(sample[2])} candidate tokens, for a total of {sum(len(seq) for seq in constraint_sequences_ids)} constraint token IDs")
             # Assemble final sequences
             input_ids = src_ids + tgt_ids + tail
             labels = [IGNORE_INDEX] * len(src_ids) + tgt_ids
@@ -321,11 +381,32 @@ class PairEncoder(EncoderInterface):
             # Final validation
             if len(input_ids) != len(labels):
                 logger.error(f"Length mismatch: input_ids={len(input_ids)}, labels={len(labels)}")
-                return None, None, None, 0, 0, 0
-            return np.array(input_ids, dtype=np.int32), np.array(labels, dtype=np.int32), np.array(constraint_ids, dtype=np.int32), len(src_ids), len(labels), len(constraint_ids)
+                return None, None, []
+            return np.array(input_ids, dtype=np.int32), np.array(labels, dtype=np.int32), constraint_sequences_ids
         except Exception as e:
             logger.error(f"Error encoding sample: {e}")
-            return None, None, None, 0, 0, 0
+            return None, None, []
+
+    def encode_constraints_sequences(self, constraints_tokens: List[str]) -> List[List[int]]:
+        """
+        Encode each constraint as a sequence of token IDs (ragged array).
+        This is required for safe constrained decoding with subword tokenization.
+        """
+        if not constraints_tokens:
+            return []
+        candidate_sequences = []
+        for token in constraints_tokens:
+            # Handle special FIM tokens as single-token sequences
+            if token in ['<|fim_prefix|>', '<|fim_suffix|>', '<|fim_middle|>']:
+                tid = self._get_special_token_id(token)
+                if tid is not None:
+                    candidate_sequences.append([tid])
+            else:
+                # Encode as a sequence (may be multiple subwords)
+                token_ids = self.tok.encode(token, add_special_tokens=False)
+                if token_ids and token_ids[0] != self.tok.unk_token_id:
+                    candidate_sequences.append(token_ids)
+        return candidate_sequences
 
     def encode_constraints(self, constraints_tokens: List[str]) -> List[int]:
         """
@@ -366,330 +447,67 @@ class PairEncoder(EncoderInterface):
             return []
 
 
-# class ChatEncoder(EncoderInterface):
-#     """Chat encoder with enhanced error handling (keeping your original logic)."""
-#
-#     def __init__(
-#             self,
-#             tok: AutoTokenizer,
-#             max_len: int,
-#             only_last_turn_loss: bool = True,
-#             drop_long: bool = False,
-#             assistant_roles: Tuple[str, ...] = ("assistant",),
-#             user_roles: Tuple[str, ...] = ("user",),
-#             system_roles: Tuple[str, ...] = ("system",),
-#     ):
-#         # Set tokenizer
-#         self.tok = tok
-#         # Set prompt max len
-#         self.max_len = max_len
-#         # Set if only the last assistant message is used for training (True) or
-#         # the full history of assistant messages (False)
-#         self.only_last = only_last_turn_loss
-#         # If set to `True` the tokenizer completely skip the sample if it exceeds
-#         # the `max_len`. If set to `False` the input is truncated
-#         self.drop_long = drop_long
-#         # Assign the values that refers to the assistant, the user and the system
-#         # The usage of tuples and set relax to the possibility that multiple identifiers
-#         # can refer to the same role
-#         self.assistant_roles = set(assistant_roles)
-#         self.user_roles = set(user_roles)
-#         self.system_roles = set(system_roles)
-#         # Boolean attribute to check if the tokenizer has the apply_chat_template api
-#         # to format messages before tokenize them
-#         self._has_template = hasattr(self.tok, "apply_chat_template")
-#
-#     def encode(self, sample: Sample) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[List[str]]]:
-#         """
-#         Encodes a conversation (list of messages exchanged between the user and the assistant).
-#         For chat format, constraints are not used, so return empty list.
-#         If only_last_turn_loss=True, the script unmasks only the final assistant message's content; earlier turns are
-#         context only. Otherwise, the script unmask all the messages' content provided by the assistant.
-#         Messages format:
-#             messages: [{"role": "user"|"assistant"|"system", "content": "..."}, "..."]
-#         """
-#         try:
-#             # No messages mean nothing to encode
-#             if not sample:
-#                 return None, None, []
-#             # For chat format, extract messages (no constraints expected)
-#             if isinstance(sample, (tuple, list)) and len(sample) >= 1:
-#                 if isinstance(sample[0], list):
-#                     msgs = sample[0]
-#                     constraints = []
-#                 else:
-#                     return None, None, []
-#             else:
-#                 msgs = sample
-#                 constraints = []
-#
-#             if not msgs or not isinstance(msgs, list):
-#                 return None, None, []
-#             # Get the index of the last message sent by the assistant in the conversation
-#             last_asst_idx = self._find_last_assistant_index(msgs)
-#             # Check if the conversation contains a message from the assistant
-#             if last_asst_idx is None:
-#                 # No assistant turn to supervise -> skip this conversation sample
-#                 return None, None, []
-#
-#             if self.only_last:
-#                 result = self._encode_last_turn(msgs, last_asst_idx)
-#             else:
-#                 result = self._encode_multi_turn(msgs)
-#
-#             if result and result[0] is not None:
-#                 return result[0], result[1], constraints
-#             return None, None, []
-#
-#         except Exception as e:
-#             logger.error(f"Error in chat encoding: {e}")
-#             return None, None, []
-#
-#     def _encode_last_turn(self, msgs: List[Dict[str, str]], last_asst_idx: int):
-#         """
-#                 Encode the conversation to input/labels so that ONLY the last assistant message contributes to loss
-#                 during the training process.
-#                 The method does this by:
-#                     1) Formatting the prefix WITHOUT the last assistant message, but WITH an 'assistant header'
-#                        via add_generation_prompt=True.
-#                     2) Tokenizing the last assistant content alone (no specials).
-#                     3) Formatting the full conversation to discover any tail tokens (EOS, EOT, etc.)
-#                        and taking the remainder after prefix+content as tail_ids (masked).
-#                 """
-#         # Split messages into prefix (context) and last assistant
-#         prefix_msgs = msgs[:last_asst_idx] + self._msg_without_content(msgs[last_asst_idx])
-#         asst_text = msgs[last_asst_idx]["content"] or ""
-#         # Tokenize the part of the conversation that preceded the final assistant message
-#         # (used in the training phase to compute the loss and update the weights accordingly)
-#         ctx_ids = self._format_ids(prefix_msgs, add_generation_prompt=True)
-#         # Tokenize the final assistant message that contribute to loss during the training.
-#         # `apply_chat_template` produces wrappers around the assistant span (assistant header, separators, maybe BOS/EOT).
-#         # Therefore, the answer is encoded using the _tokenize_plain so that the labels will include only the content
-#         # tokens (no headers, no closing specials).
-#         ans_ids = self._tokenize_plain(asst_text)
-#         # The whole conversation (including the last message of the assistant) is initially considered
-#         # as part of the input prompt (all the idxs in the labels are ignored)
-#         # This it the entire conversation as seen it in the wild, using the model’s chat template
-#         # (no “generation prompt” cut-off). This typically equals ctx_ids + ans_ids + trailer,
-#         # where trailer is whatever the template appends after the assistant text
-#         # (often an end-of-turn / EOS token, maybe a newline).
-#         full_ids = self._format_ids(msgs, add_generation_prompt=False)
-#         # Compute tail_ids as "what remains" after ctx + ans
-#         # It represents the “trailer” after the answer (e.g., <eot>, </s>, a newline).
-#         tail_start = len(ctx_ids) + len(ans_ids)
-#         tail_ids = full_ids[tail_start:] if tail_start <= len(full_ids) else []
-#         # Assemble input and labels
-#         input_ids = ctx_ids + ans_ids + tail_ids
-#         labels = [IGNORE_INDEX] * len(ctx_ids) + ans_ids + [IGNORE_INDEX] * len(tail_ids)
-#         # Length policy: drop vs truncate
-#         if len(input_ids) > self.max_len:
-#             # Discard the conversation sample if `drop_long` policy is set to `True`
-#             if self.drop_long:
-#                 return None, None
-#             # Truncate the input and labels to the max_len (this implementation implies that
-#             # both the input and the labels has the same max_len - this is an assumption that
-#             # does not always hold)
-#             else:
-#                 input_ids = input_ids[: self.max_len]
-#                 labels = labels[: self.max_len]
-#
-#         # Return the tokenized conversation as a tuple of numpy arrays (input,label)
-#         return np.asarray(input_ids, dtype=np.int32), np.asarray(labels, dtype=np.int32)
-#
-#     def _encode_multi_turn(self, msgs: List[Dict[str, str]]):
-#         """
-#         Generic (optional) multi-turn supervision: every assistant message contributes to loss at its content span.
-#         The method computes full_ids once, then for each assistant turn computes the context length up to that turn
-#         using add_generation_prompt=True and unmasks exactly the span for that assistant content.
-#         """
-#         # The whole conversation (including the last message of the assistant) is initially considered
-#         # as part of the input prompt (all the idxs in the labels are ignored)
-#         # This it the entire conversation as seen it in the wild, using the model’s chat template
-#         # (no “generation prompt” cut-off). This typically equals ctx_ids + ans_ids + trailer,
-#         # where trailer is whatever the template appends after the assistant text (often an
-#         # end-of-turn / EOS token, maybe a newline).
-#         full_ids = self._format_ids(msgs, add_generation_prompt=False)
-#         labels = [IGNORE_INDEX] * len(full_ids)
-#         # For each assistant message j, compute where its content starts
-#         for j, m in enumerate(msgs):
-#             # If the role of the message does not refer to assistant, skip the message
-#             if m.get("role") not in self.assistant_roles:
-#                 continue
-#             # Consider the messages before the assistant message and replace
-#             # the message of the assistant (target message) with an empty message
-#             prefix_msgs = msgs[:j] + self._msg_without_content(msgs[j])
-#             # Tokenize the context and the answer
-#             ctx_ids = self._format_ids(prefix_msgs, add_generation_prompt=True)
-#             ans_ids = self._tokenize_plain(m.get("content", ""))
-#             # Get the start and end indices of the answer
-#             start = len(ctx_ids)
-#             end = start + len(ans_ids)
-#             # Guard against odd formatting mismatches
-#             if end <= len(full_ids):
-#                 labels[start:end] = ans_ids
-#         # Set the input prompt as the full conversation tokenized
-#         input_ids = full_ids
-#         # Check if the input prompt exceeds the max length
-#         if len(input_ids) > self.max_len:
-#             # Discard the conversation sample if `drop_long` policy is set to `True`
-#             if self.drop_long:
-#                 return None, None
-#             # Truncate the input and labels to the max_len (this implementation implies that
-#             # both the input and the labels has the same max_len - this is an assumption that
-#             # does not always hold)
-#             else:
-#                 input_ids = input_ids[: self.max_len]
-#                 labels = labels[: self.max_len]
-#         # Return the tokenized conversation as a tuple of numpy arrays (input,label)
-#         return np.asarray(input_ids, dtype=np.int32), np.asarray(labels, dtype=np.int32)
-#
-#     def _msg_without_content(self, msg: Dict[str, str]) -> List[Dict[str, str]]:
-#         """
-#         Return a message without content (content is empty string), within a list.
-#         This lets `apply_chat_template` produce the assistant header when used with add_generation_prompt=True.
-#         """
-#         return [{"role": msg.get("role", ""), "content": ""}]
-#
-#     def _format_ids(self, msgs: List[Dict[str, str]], add_generation_prompt: bool) -> List[int]:
-#         """
-#         Returns token ids for the conversation *surface form* up to (optionally) the assistant header.
-#         Prefers tokenizer.apply_chat_template(..., tokenize=True). If unavailable or it throws,
-#         falls back to a minimal plain-text formatter.
-#         """
-#         # If the model provides a tokenizer with chat template api, tokenize directly
-#         if self._has_template:
-#             try:
-#                 ids = self.tok.apply_chat_template(
-#                     msgs,
-#                     tokenize=True,
-#                     add_generation_prompt=add_generation_prompt,
-#                     return_tensors=None
-#                 )
-#                 # Some tokenizers return a list or np array; normalize to list[int]
-#                 if hasattr(ids, "tolist"):
-#                     # If the condition is true, this line calls the tolist() method on ids,
-#                     # converting it from a NumPy array to a standard Python list.
-#                     ids = ids.tolist()
-#                 # The map(int, ids) function applies the int constructor to each element in ids,
-#                 # converting all elements to integers. The list() function then creates a list
-#                 # from the mapped integers, which is returned by the method.
-#                 return list(map(int, ids))
-#             except Exception:
-#                 pass
-#         # Fallback: minimal, generic "User/Assistant/System" formatting
-#         text = self._format_plain_text(msgs, add_generation_prompt=add_generation_prompt)
-#         return self._tokenize_plain(text)
-#
-#     def _tokenize_plain(self, text: str) -> List[int]:
-#         """
-#         Tokenize raw text without adding model-level special tokens. This method should be used when the
-#         tokenizer corresponding to the model selected, do not implement the chat template api.
-#         """
-#         return self.tok(text, add_special_tokens=False).input_ids
-#
-#     def _format_plain_text(self, messages: List[Dict[str, str]], add_generation_prompt: bool) -> str:
-#         """
-#         A dead-simple, model-agnostic fallback surface form. (Good enough for datasets without a proper
-#         chat_template api included in the tokenizer associated to the model chosen.)
-#         """
-#         parts = []
-#         for m in messages:
-#             # Retrieve the role and capitalize it. If the role attribute is not present
-#             # in the message, assume it is a message from the `user`
-#             role = m.get("role", "user").capitalize()
-#             # Get the content of the message, if present
-#             content = (m.get("content") or "").strip()
-#             # Map the message to the template format
-#             parts.append(f"{role}:\n{content}".strip())
-#         # Compose the conversation joining the messages exchanged
-#         text = "\n\n".join(parts)
-#         # Append the assistant role prefix if `add_generation_prompt` is `True`
-#         if add_generation_prompt:
-#             text = (text + "\n\nAssistant:\n").lstrip()
-#         # Returns the conversation in the plain text template
-#         return text
-#
-#     def _find_last_assistant_index(self, msgs: List[Dict[str, str]]) -> Optional[int]:
-#         """
-#         Given a list of messages, returns the index of the last message sent by the assistant.
-#         """
-#         for i in range(len(msgs) - 1, -1, -1):
-#             if msgs[i].get("role") in self.assistant_roles:
-#                 return i
-#         return None
-
-
-def build_tokenizer(model_name_or_path: str, max_length: int, model_revision: str, special_tokens: List[str]) -> Tuple[AutoTokenizer, int, int]:
-    """Build tokenizer with proper FIM token handling for Qwen models."""
-
-    # Load tokenizer
+def build_tokenizer(
+    model_name_or_path: str,
+    max_length: int,
+    model_revision: str,
+    special_tokens: List[str],
+) -> Tuple[AutoTokenizer, int, int]:
+    """
+    Build tokenizer with robust FIM handling for Qwen models.
+    Ensures <|fim_prefix|>, <|fim_middle|>, <|fim_suffix|> are single tokens
+    and registered as special tokens. Optionally adds <|fim_pad|> if desired.
+    Returns (tokenizer, orig_vocab_size, new_vocab_size).
+    """
     tok = AutoTokenizer.from_pretrained(
         model_name_or_path,
         revision=model_revision,
         trust_remote_code=True,
-        use_fast=True
+        use_fast=True,
     )
 
-    # Define expected FIM tokens for Qwen
-    expected_fim_tokens = {
-        "<|fim_prefix|>": 151659,
-        "<|fim_middle|>": 151660,
-        "<|fim_suffix|>": 151661,
-        "<|fim_pad|>": 151662
-    }
+    orig_vocab_size = len(tok)
 
-    # Verify FIM tokens exist and get their actual IDs
-    fim_token_ids = {}
-    missing_fim = []
+    # FIM markers (pad is optional — include it only if you actually use it)
+    fim_core = ("<|fim_prefix|>", "<|fim_middle|>", "<|fim_suffix|>")
+    fim_optional = ("<|fim_pad|>",)
 
-    for token, expected_id in expected_fim_tokens.items():
-        actual_ids = tok.convert_tokens_to_ids([token])
-        if actual_ids and actual_ids[0] != tok.unk_token_id:
-            actual_id = actual_ids[0]
-            if actual_id != expected_id:
-                logger.warning(f"FIM token {token} has ID {actual_id}, expected {expected_id}")
-            fim_token_ids[token] = actual_id
-        else:
-            missing_fim.append(token)
-
-    if missing_fim:
-        raise ValueError(f"Missing expected FIM tokens: {missing_fim}. "
-                         f"Are you using a Qwen-Coder model?")
-
-    # CRITICAL: Mark FIM tokens as special in the tokenizer
-    # Method 1: Update special_tokens_map
-    if not hasattr(tok, 'special_tokens_map'):
-        tok.special_tokens_map = {}
-    if 'additional_special_tokens' not in tok.special_tokens_map:
-        tok.special_tokens_map['additional_special_tokens'] = []
-
-    for token in expected_fim_tokens.keys():
-        if token not in tok.special_tokens_map['additional_special_tokens']:
-            tok.special_tokens_map['additional_special_tokens'].append(token)
-
-    # Method 2: Add to all_special_tokens if it exists
-    if hasattr(tok, 'all_special_tokens'):
-        for token in expected_fim_tokens.keys():
-            if token not in tok.all_special_tokens:
-                tok.all_special_tokens.append(token)
-
-    # Method 3: Ensure they're in the special token set for fast lookup
-    if hasattr(tok, 'all_special_tokens_extended'):
-        for token in expected_fim_tokens.keys():
-            tok.all_special_tokens_extended.add(token)
-
-    # Add any additional special tokens if provided
+    def _as_added(ts):
+        return [
+            AddedToken(
+                t,
+                lstrip=False,
+                rstrip=False,
+                single_word=False,
+                normalized=False,  # critical: keep exact bytes, no NFC/space handling
+                special=True,
+            )
+            for t in ts
+        ]
+    # 1) Add/mark FIM core tokens as special, ensuring they’re single tokens.
+    # add_tokens is idempotent (returns 0 if already present).
+    tok.add_tokens(_as_added(fim_core), special_tokens=True)
+    # 2) (Optional) Add/mark <|fim_pad|>. Safe to skip if you don’t use it.
+    tok.add_tokens(_as_added(fim_optional), special_tokens=True)
+    # 3) Also register in additional_special_tokens (harmless if duplicates).
+    tok.add_special_tokens({"additional_special_tokens": list(fim_core) + list(fim_optional)})
+    # 4) Sanity check: each FIM marker must now be a single token.
+    for t in fim_core:
+        ids = tok.encode(t, add_special_tokens=False)
+        if len(ids) != 1:
+            raise ValueError(f"{t} must be a single token after add_tokens; got {ids}")
+    # 5) Add any extra special tokens your pipeline wants.
     if special_tokens:
-        num_added = tok.add_special_tokens({"additional_special_tokens": list(special_tokens)})
-        logger.info(f"Added {num_added} additional special tokens")
-
-    # Set padding and max length
+        # Use AddedToken to avoid normalization/splitting surprises
+        tok.add_tokens(_as_added(special_tokens), special_tokens=True)
+        tok.add_special_tokens({"additional_special_tokens": list(special_tokens)})
+    # 6) Padding & max length
     if tok.pad_token is None:
+        # Using EOS as pad is common for causal LMs; keep consistent with training script.
         tok.pad_token = tok.eos_token
     tok.model_max_length = max_length
-
-    logger.info(f"FIM tokens configured: {list(fim_token_ids.keys())}")
-    return tok, len(tok.vocab), len(tok.vocab)  # Vocab size unchanged since FIM tokens already exist
+    new_vocab_size = len(tok)
+    return tok, orig_vocab_size, new_vocab_size
 
 
 def iter_project_samples(
@@ -757,6 +575,10 @@ def iter_project_samples(
                                 unmask_tokens = [token.strip() for token in str(unmask_raw).split(',') if token.strip()]
                         # Add JSON structure tokens for constraint stages (when unmask_tokens is not empty)
                         if unmask_tokens:
+                            unmask_tokens = [
+                                t[1:-1] if (len(t) >= 2 and t[0] in ("'", '"') and t[-1] in ("'", '"')) else t
+                                for t in unmask_tokens
+                            ]
                             for token in JSON_STRUCTURE_TOKENS:
                                 if token not in unmask_tokens:
                                     unmask_tokens.append(token)
@@ -785,7 +607,7 @@ def sample_project_tokenized(
         overflow_keep_p: float = 0.25,  # keep some over-cap items as reservoir
         early_stop_buf: float = 0.15,   # stop scanning around 115% of budget (like before)
         wrap: bool = False
-) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray], List[int], int]:
+) -> Tuple[List[np.ndarray], List[np.ndarray], List[List[int]], int]:
     """
     Samples datapoints from a given project, according to a distribution determined by the conversation lengths, up to
     the limit imposed by the `target_tokens` cap assigned to the project.
@@ -810,7 +632,7 @@ def sample_project_tokenized(
     for sample in iter_project_samples(files, encoding_type, wrap):
         # Encode the messages in the conversation and retrieve the encoded `input_ids` and `label_ids` to
         # fine-tune the model
-        ids, lbl, constraint_ids, _, _, len_constraint_ids = encoder.encode(sample)
+        ids, lbl, constraint_seq_ids = encoder.encode(sample)
         # Discard empty samples
         if ids is None:
             continue
@@ -825,7 +647,7 @@ def sample_project_tokenized(
         if tok_sum[b] <= cap_plus[b]:
             # Append the candidate to the corresponding soft bucket (save both the encoded `input_ids`,
             # `label_ids` and tokens length `L` of the `input_ids`
-            soft_buckets[b].append((ids, lbl, constraint_ids, len_constraint_ids, L))
+            soft_buckets[b].append((ids, lbl, constraint_seq_ids, L))
             # Update the total counter of tokens of the bucket to which the sample belongs
             tok_sum[b] += L
             # Update the soft total
@@ -833,25 +655,24 @@ def sample_project_tokenized(
         else:
             # Keep some overflow as backfill reservoir (helps skewed corpora)
             if rng.random() < overflow_keep_p:
-                overflow[b].append((ids, lbl, constraint_ids, len_constraint_ids, L))
+                overflow[b].append((ids, lbl, constraint_seq_ids, L))
         # Early stop: once pools roughly cover the whole project budget, stop scanning
         if soft_total >= int(target_tokens * (1 + early_stop_buf)):
             break
-
     # Iterate over the three buckets and the overflows backfill reservoir and shuffle them for variety
     for k in range(len(soft_buckets)):
         rng.shuffle(soft_buckets[k])
         rng.shuffle(overflow[k])
     # Define final lists of selected samples (input_ids, labels).
     # Written counts the total number of tokens selected, overall, and per bucket (`written_by_bucket`)
-    sel_ids, sel_lbls, sel_constraint_ids, sel_len_constraint_ids, written = [], [], [], [], 0
+    sel_ids, sel_lbls, sel_constraint_seq_ids, written = [], [], [], [], 0
     written_by_bucket = [0, 0, 0]
     # Keep track of unused samples
     leftovers = []
     # Iterate over the buckets to select the samples
     for k in range(len(soft_buckets)):
         # Iterate over the samples in the current bucket
-        for _ids, _lbl, _constraint_ids, _len_constraint_ids, _L in soft_buckets[k]:
+        for _ids, _lbl, _constraint_seq_ids, _L in soft_buckets[k]:
             # If the limit of tokens assigned to the project has been overcome, exit the loop
             if written >= target_tokens:
                 break
@@ -860,12 +681,11 @@ def sample_project_tokenized(
             if written_by_bucket[k] <= cap_plus[k]:
                 sel_ids.append(_ids)
                 sel_lbls.append(_lbl)
-                sel_constraint_ids.append(_constraint_ids)
-                sel_len_constraint_ids.append(_len_constraint_ids)
+                sel_constraint_seq_ids.append(_constraint_seq_ids)
                 written += _L
                 written_by_bucket[k] += _L
             else:
-                leftovers.append((_ids, _lbl, _constraint_ids, _len_constraint_ids, _L))
+                leftovers.append((_ids, _lbl, _constraint_seq_ids, _L))
         # If the limit of tokens assigned to the project has been overcome, exit the loop even if one or more
         # buckets have not been processed yet
         if written >= target_tokens:
@@ -878,17 +698,16 @@ def sample_project_tokenized(
         # Shuffle and greedily fill to target (allow tiny overshoot for small samples)
         rng.shuffle(leftovers)
         # Iterate over the leftover samples and add them up to the limit of tokens assigned to project, if any
-        for _ids, _lbl, _constraint_ids, _len_constraint_ids, _L in leftovers:
+        for _ids, _lbl, _constraint_seq_ids, _L in leftovers:
             if written < target_tokens:
                 sel_ids.append(_ids)
                 sel_lbls.append(_lbl)
-                sel_constraint_ids.append(_constraint_ids)
-                sel_len_constraint_ids.append(_len_constraint_ids)
+                sel_constraint_seq_ids.append(_constraint_seq_ids)
                 written += _L
             if written >= target_tokens:
                 break
     # Returns the selected samples
-    return sel_ids, sel_lbls, sel_constraint_ids, sel_len_constraint_ids, written
+    return sel_ids, sel_lbls, sel_constraint_seq_ids, written
 
 
 # ... (rest of the helper functions remain the same)
@@ -1136,7 +955,7 @@ def build_split(
         if tokens_cap <= 0 or not files:
             continue
         # Get samples with constraints
-        ids_list, lbl_list, constraint_ids_list, len_constrains_ids_list, got = sample_project_tokenized(
+        ids_list, lbl_list, constraint_seq_ids_list, got = sample_project_tokenized(
             files,
             tokens_cap,
             encoding_type,
@@ -1148,8 +967,8 @@ def build_split(
             wrap=wrap
         )
         # Write samples with constraints
-        for ids, lbl, constraint_ids, len_constrain_ids in zip(ids_list, lbl_list, constraint_ids_list, len_constrains_ids_list):
-            writer.write(ids, lbl, constraint_ids, len_constrain_ids)
+        for ids, lbl, constraint_seq_ids in zip(ids_list, lbl_list, constraint_seq_ids_list):
+            writer.write(ids, lbl, constraint_seq_ids)
         # Update written tokens per project and in total
         total_written += got
         per_project[pid] = got

@@ -1,47 +1,72 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
 Balanced, pre-tokenized SFT corpus using existing size bins (Small/Medium/Large).
 
-- Uses train/val CSVs with columns: project_id,num_oracles,size_bin
+- Uses train/val CSVs with columns: project_id,num_oracles,size_bin,unmask_tokens
 - Allocates token budgets per bin and per project (√-scaling)
 - Encodes chat with Qwen tokenizer (+ <|im_start|>, <|im_end|>) OR plain src/tgt pairs (no chat template)
 - Assistant-only supervision (IGNORE_INDEX=-100)
 - Length buckets by *token length after encoding*: short/med/long
-- Sharded memmap output: {split}.{shard}.{input_ids|labels}.bin, .idx, {split}.meta.json
+- Sharded memmap output: {split}.{shard}.{input_ids|labels|constraints}.bin, .idx, {split}.meta.json
 
 Example:
-  python build_tokenized_dataset_bins.py \
-    --model_name_or_path Qwen/Qwen2.5-Coder-14B-Instruct \
-    --data_dir   /path/jsonl \
-    --train_csv  /path/splits/train_projects.csv \
-    --val_csv    /path/splits/val_projects.csv \
-    --out_dir    /path/tokenized \
-    --train_token_budget 2000000000 \
-    --val_token_budget   40000000 \
-    --max_length 4096 \
-    --bin_allocation sqrt \
-    --alpha 0.5 \
-    --target_mix 0.4,0.4,0.2 \
-    --tokens_per_shard 50000000 \
-    --train_drop_long
+python build_tokenized_dataset_bins.py \
+--model_name_or_path Qwen/Qwen2.5-Coder-14B-Instruct \
+--data_dir /path/jsonl \
+--train_csv /path/splits/train_projects.csv \
+--val_csv /path/splits/val_projects.csv \
+--out_dir /path/tokenized \
+--train_token_budget 2000000000 \
+--val_token_budget 40000000 \
+--max_length 4096 \
+--bin_allocation sqrt \
+--alpha 0.5 \
+--target_mix 0.4,0.4,0.2 \
+--tokens_per_shard 50000000 \
+--train_drop_long
 """
 
 import os, io, csv, glob, json, math, random, argparse
-from typing import Dict, List, Tuple, Iterable, Optional, Iterator, Union, Any
+from typing import Dict, List, Tuple, Optional, Iterator, Union, Any
 import numpy as np
 import pandas as pd
 import orjson
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer
 from huggingface_hub import snapshot_download
 from pathlib import Path
 
 # --------------------------
 # Global Variables and types
 # --------------------------
+
 # Standard label mask value (PyTorch cross entropy ignores -100)
 IGNORE_INDEX = -100
-Sample = Union[List[Dict[str, Any]], Tuple[str, str]]
+Sample = Union[List[Dict[str, Any]], Tuple[str, str], Tuple[str, str, List[str]]]
+json_structure_tokens = [
+    "{",        # Opening brace
+    "}",        # Closing brace
+    "\"",       # Quote marks
+    ":",        # Colon
+    ",",        # Comma (if multi-field JSON)
+    "choice",   # The field name
+    #" ",       # Space (for formatting)
+    #"\n",      # Newline (if multi-line JSON)
+]
+
+LITERALS = [
+    "DECIMAL_LITERAL",
+    "HEX_LITERAL",
+    "OCT_LITERAL",
+    "BINARY_LITERAL",
+    "FLOAT_LITERAL",
+    "HEX_FLOAT_LITERAL",
+    "BOOL_LITERAL",
+    "CHAR_LITERAL",
+    "STRING_LITERAL",
+    "LAMDA_PARAM"
+]
 
 # -----------------
 # Auxiliary classes
@@ -60,9 +85,13 @@ class ShardWriter:
         base = os.path.join(self.out_dir, f"{self.split}.{self.shard_id:05d}")
         self.ids_path = base + ".input_ids.bin"
         self.lbl_path = base + ".labels.bin"
+        self.constraints_path = base + ".constraints.bin"
         self.idx_path = base + ".idx"
+
         self.ids_f = open(self.ids_path, "wb")
         self.lbl_f = open(self.lbl_path, "wb")
+        self.constraints_f = open(self.constraints_path, "wb")
+
         self.idx = [0]
         self.tok_count = 0
         self.n_samples = 0
@@ -73,22 +102,41 @@ class ShardWriter:
             self.shard_id += 1
             self._open_new()
 
-    def write(self, input_ids: np.ndarray, labels: np.ndarray):
+    def write(self, input_ids: np.ndarray, labels: np.ndarray, constraints_tokens: List[str]):
         L = int(input_ids.shape[0])
         self._roll(L)
-        self.ids_f.write(input_ids.tobytes()); self.lbl_f.write(labels.tobytes())
-        self.tok_count += L; self.n_samples += 1; self.idx.append(self.tok_count)
+
+        # Write input_ids and labels as before
+        self.ids_f.write(input_ids.tobytes())
+        self.lbl_f.write(labels.tobytes())
+        # Serialize and write constraints
+        constraints_data = json.dumps(constraints_tokens).encode('utf-8')
+        constraints_length = len(constraints_data)
+        # Write length first, then data (for easy reading later)
+        self.constraints_f.write(np.array([constraints_length], dtype=np.uint32).tobytes())
+        self.constraints_f.write(constraints_data)
+
+        self.tok_count += L
+        self.n_samples += 1
+        self.idx.append(self.tok_count)
 
     def close(self):
-        self.ids_f.flush(); self.ids_f.close()
-        self.lbl_f.flush(); self.lbl_f.close()
+        self.ids_f.flush()
+        self.ids_f.close()
+        self.lbl_f.flush()
+        self.lbl_f.close()
+        self.constraints_f.flush()
+        self.constraints_f.close()
+
         with open(self.idx_path, "wb") as f:
             np.asarray(self.idx, np.uint64).tofile(f)
 
+
 class EncoderInterface:
-    def encode(self, sample: Sample) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    def encode(self, sample: Sample) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[List[str]]]:
         """
         Encodes a (src,tgt) pair or a conversation (list of messages exchanged between the user and the assistant).
+        Returns: (input_ids, labels, constraint_tokens)
         """
         pass
 
@@ -98,8 +146,8 @@ class ChatEncoder(EncoderInterface):
             self,
             tok: AutoTokenizer,
             max_len: int,
-            only_last_turn_loss: bool =True,
-            drop_long: bool =False,
+            only_last_turn_loss: bool = True,
+            drop_long: bool = False,
             assistant_roles: Tuple[str, ...] = ("assistant",),
             user_roles: Tuple[str, ...] = ("user",),
             system_roles: Tuple[str, ...] = ("system",),
@@ -124,9 +172,10 @@ class ChatEncoder(EncoderInterface):
         # to format messages before tokenize them
         self._has_template = hasattr(self.tok, "apply_chat_template")
 
-    def encode(self, sample: Sample) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    def encode(self, sample: Sample) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[List[str]]]:
         """
         Encodes a conversation (list of messages exchanged between the user and the assistant).
+        For chat format, constraints are not used, so return empty list.
         If only_last_turn_loss=True, the script unmasks only the final assistant message's content; earlier turns are
         context only. Otherwise, the script unmask all the messages' content provided by the assistant.
         Messages format:
@@ -134,31 +183,48 @@ class ChatEncoder(EncoderInterface):
         """
         # No messages mean nothing to encode
         if not sample:
-            return None, None
+            return None, None, []
+        # For chat format, extract messages (no constraints expected)
+        if isinstance(sample, (tuple, list)) and len(sample) >= 1:
+            if isinstance(sample[0], list):  # Chat format
+                msgs = sample[0]
+                constraints = []
+            else:
+                # Should not happen for ChatEncoder
+                return None, None, []
+        else:
+            msgs = sample
+            constraints = []
         # Get the index of the last message sent by the assistant in the conversation
-        last_asst_idx = self._find_last_assistant_index(sample)
+        last_asst_idx = self._find_last_assistant_index(msgs)
         # Check if the conversation contains a message from the assistant
         if last_asst_idx is None:
             # No assistant turn to supervise -> skip this conversation sample
-            return None, None
+            return None, None, []
         if self.only_last:
-            return self._encode_last_turn(sample, last_asst_idx)
+            result = self._encode_last_turn(msgs, last_asst_idx)
+            if result[0] is not None:
+                return result[0], result[1], constraints
+            return None, None, []
         else:
             # Optional: multi-turn supervision (each assistant turn contributes)
             # For compactness, we implement last-turn fully and provide a
             # straightforward multi-turn variant below.
-            return self._encode_multi_turn(sample)
+            result = self._encode_multi_turn(msgs)
+            if result[0] is not None:
+                return result[0], result[1], constraints
+            return None, None, []
 
     def _encode_last_turn(self, msgs: List[Dict[str, str]], last_asst_idx: int):
         """
         Encode the conversation to input/labels so that ONLY the last assistant message contributes to loss
         during the training process.
         The method does this by:
-          1) Formatting the prefix WITHOUT the last assistant message,
-             but WITH an 'assistant header' via add_generation_prompt=True.
-          2) Tokenizing the last assistant content alone (no specials).
-          3) Formatting the full conversation to discover any tail tokens (EOS, EOT, etc.)
-             and taking the remainder after prefix+content as tail_ids (masked).
+            1) Formatting the prefix WITHOUT the last assistant message, but WITH an 'assistant header'
+               via add_generation_prompt=True.
+            2) Tokenizing the last assistant content alone (no specials).
+            3) Formatting the full conversation to discover any tail tokens (EOS, EOT, etc.)
+               and taking the remainder after prefix+content as tail_ids (masked).
         """
         # Split messages into prefix (context) and last assistant
         prefix_msgs = msgs[:last_asst_idx] + self._msg_without_content(msgs[last_asst_idx])
@@ -196,23 +262,22 @@ class ChatEncoder(EncoderInterface):
             else:
                 input_ids = input_ids[: self.max_len]
                 labels = labels[: self.max_len]
+
         # Return the tokenized conversation as a tuple of numpy arrays (input,label)
         return np.asarray(input_ids, dtype=np.int32), np.asarray(labels, dtype=np.int32)
 
     def _encode_multi_turn(self, msgs: List[Dict[str, str]]):
         """
-        Generic (optional) multi-turn supervision:
-        every assistant message contributes to loss at its content span.
-        We compute full_ids once, then for each assistant turn we compute
-        the context length up to that turn using add_generation_prompt=True
-        and unmask exactly the span for that assistant content.
+        Generic (optional) multi-turn supervision: every assistant message contributes to loss at its content span.
+        The method computes full_ids once, then for each assistant turn computes the context length up to that turn
+        using add_generation_prompt=True and unmasks exactly the span for that assistant content.
         """
         # The whole conversation (including the last message of the assistant) is initially considered
         # as part of the input prompt (all the idxs in the labels are ignored)
         # This it the entire conversation as seen it in the wild, using the model’s chat template
         # (no “generation prompt” cut-off). This typically equals ctx_ids + ans_ids + trailer,
-        # where trailer is whatever the template appends after the assistant text
-        # (often an end-of-turn / EOS token, maybe a newline).
+        # where trailer is whatever the template appends after the assistant text (often an
+        # end-of-turn / EOS token, maybe a newline).
         full_ids = self._format_ids(msgs, add_generation_prompt=False)
         labels = [IGNORE_INDEX] * len(full_ids)
         # For each assistant message j, compute where its content starts
@@ -225,9 +290,6 @@ class ChatEncoder(EncoderInterface):
             prefix_msgs = msgs[:j] + self._msg_without_content(msgs[j])
             # Tokenize the context and the answer
             ctx_ids = self._format_ids(prefix_msgs, add_generation_prompt=True)
-            # `apply_chat_template` produces wrappers around the assistant span (assistant header, separators, maybe BOS/EOT).
-            # The answer is encoded using the _tokenize_plain so that the labels will include only the content
-            # tokens (no headers, no closing specials).
             ans_ids = self._tokenize_plain(m.get("content", ""))
             # Get the start and end indices of the answer
             start = len(ctx_ids)
@@ -256,10 +318,7 @@ class ChatEncoder(EncoderInterface):
         Return a message without content (content is empty string), within a list.
         This lets `apply_chat_template` produce the assistant header when used with add_generation_prompt=True.
         """
-        return [{
-            "role": msg.get("role", ""),
-            "content": "",
-        }]
+        return [{"role": msg.get("role", ""), "content": ""}]
 
     def _format_ids(self, msgs: List[Dict[str, str]], add_generation_prompt: bool) -> List[int]:
         """
@@ -274,7 +333,7 @@ class ChatEncoder(EncoderInterface):
                     msgs,
                     tokenize=True,
                     add_generation_prompt=add_generation_prompt,
-                    return_tensors=None,
+                    return_tensors=None
                 )
                 # Some tokenizers return a list or np array; normalize to list[int]
                 if hasattr(ids, "tolist"):
@@ -286,7 +345,7 @@ class ChatEncoder(EncoderInterface):
                 # from the mapped integers, which is returned by the method.
                 return list(map(int, ids))
             except Exception:
-                pass  # fall through to fallback
+                pass
         # Fallback: minimal, generic "User/Assistant/System" formatting
         text = self._format_plain_text(msgs, add_generation_prompt=add_generation_prompt)
         return self._tokenize_plain(text)
@@ -298,13 +357,10 @@ class ChatEncoder(EncoderInterface):
         """
         return self.tok(text, add_special_tokens=False).input_ids
 
-    # ---------- Tiny plain-text fallback ----------
-
     def _format_plain_text(self, messages: List[Dict[str, str]], add_generation_prompt: bool) -> str:
         """
-        A dead-simple, model-agnostic fallback surface form.
-        (Good enough for datasets without a proper chat_template api included in the tokenizer associated
-        to the model chosen.)
+        A dead-simple, model-agnostic fallback surface form. (Good enough for datasets without a proper
+        chat_template api included in the tokenizer associated to the model chosen.)
         """
         parts = []
         for m in messages:
@@ -335,17 +391,23 @@ class ChatEncoder(EncoderInterface):
 
 class PairEncoder(EncoderInterface):
     """
-    Encoder for plain source-target pairs (no chat template).
-        - input_ids  = tok(src) + tok(tgt) + [eos?]
-        - labels     = IGNORE for src tokens, tok(tgt) + [eos?]
-    Truncation/drop behavior mirrors ChatEncoder.
+    Encoder for FIM-style plain pairs with constraints support:
+    - src = everything up to and INCLUDING <|fim_middle|>
+    - tgt = what the model should generate after <|fim_middle|>
+    - constraints = list of allowed tokens for constrained generation
+
+    Loss is computed only on tgt (+ optional EOS).
+    If the pair is too long, we right-truncate *src* while preserving the
+    FIM structure; tgt is never truncated.
     """
+
     def __init__(
             self,
             tok: AutoTokenizer,
             max_len: int,
             drop_long: bool = False,
-            append_eos: bool = True
+            append_eos: bool = True,
+            predict_eos: bool = True, # if False, EOS won't contribute to loss
     ):
         # Set tokenizer
         self.tok = tok
@@ -356,38 +418,94 @@ class PairEncoder(EncoderInterface):
         self.drop_long = drop_long
         # If set to `True` the tokenizer appends the EOS token at the end of the input sequence
         self.append_eos = append_eos
-        # Get the id of the EOS token, if present
+        self.predict_eos = predict_eos
         self.eos_id = getattr(tok, "eos_token_id", None)
 
+        # Cache FIM special token ids
+        self.fim_prefix_id = tok.convert_tokens_to_ids("<|fim_prefix|>")
+        self.fim_suffix_id = tok.convert_tokens_to_ids("<|fim_suffix|>")
+        self.fim_middle_id = tok.convert_tokens_to_ids("<|fim_middle|>")
+
     def _tokenize_plain(self, text: str):
-        if text is None or text == "":
+        if not text:
             return []
+        # no extra BOS/EOS added by tokenizer
         return self.tok.encode(text, add_special_tokens=False)
 
-    def encode(self, sample: Sample) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        src, tgt = sample
-        # Encode src and tgt separately (no special tokens)
+    def _find(self, ids, tid):
+        return [i for i, t in enumerate(ids) if t == tid]
+
+    def encode(self, sample: Sample) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[List[str]]]:
+        if len(sample) == 2:
+            src, tgt = sample
+            constraints = []
+        elif len(sample) == 3:
+            src, tgt, constraints = sample
+        else:
+            return None, None, []
+
         src_ids = self._tokenize_plain(src)
         tgt_ids = self._tokenize_plain(tgt)
+
+        # Basic sanity: src must end with <|fim_middle|>
+        if not src_ids or src_ids[-1] != self.fim_middle_id:
+            print("Skipping src without <|fim_middle|> at end")
+            return None, None, []
+
+        # Verify we still have a FIM structure in src
+        pfx_pos = self._find(src_ids, self.fim_prefix_id)
+        sfx_pos = self._find(src_ids, self.fim_suffix_id)
+        mid_pos = len(src_ids) - 1  # by construction
+
+        if not pfx_pos or not sfx_pos or not (pfx_pos[0] < sfx_pos[0] < mid_pos):
+            print("The FIM structure in src is broken: missing or misordered special tokens. Skipping.")
+            return None, None, []
+
         tail = [self.eos_id] if (self.append_eos and self.eos_id is not None) else []
-        # Assemble input and labels (eos if present)
+
+        # Length management: never cut tgt
+        needed_len = len(src_ids) + len(tgt_ids) + len(tail)
+        if needed_len > self.max_len:
+            # We can only shorten src_ids (right-truncate the *left* side)
+            keep_for_src = self.max_len - len(tgt_ids) - len(tail)
+            if keep_for_src <= 0:
+                return (None, None, []) if self.drop_long else (None, None, [])
+
+            # Minimal src span we must keep to preserve FIM structure
+            min_src_needed = len(src_ids) - pfx_pos[0]
+            if keep_for_src < min_src_needed:
+                return (None, None, []) if self.drop_long else (None, None, [])
+
+            # Prefer to keep the tail of src (near the hole) but include <|fim_prefix|>
+            start_idx = len(src_ids) - keep_for_src
+            if start_idx > pfx_pos[0]:
+                start_idx = pfx_pos[0]
+            src_ids = src_ids[start_idx:]
+
+            # Re-check structure after truncation
+            pfx_pos2 = self._find(src_ids, self.fim_prefix_id)
+            sfx_pos2 = self._find(src_ids, self.fim_suffix_id)
+            if not pfx_pos2 or not sfx_pos2 or not (pfx_pos2[0] < sfx_pos2[0] < len(src_ids) - 1):
+                return (None, None, []) if self.drop_long else (None, None, [])
+
+        # Assemble input and labels
         input_ids = src_ids + tgt_ids + tail
-        # Only the target tokens contribute to loss
-        labels = [IGNORE_INDEX] * len(src_ids) + tgt_ids + tail
-        # Manage max length policy: drop vs truncate
+        labels = [IGNORE_INDEX] * len(src_ids) + tgt_ids
+
+        if tail:
+            labels += ([self.eos_id] if self.predict_eos else [IGNORE_INDEX])
+
+        # Final guard (should be redundant now)
         if len(input_ids) > self.max_len:
-            # Discard the sample if `drop_long` policy is set to `True`
             if self.drop_long:
-                return None, None
-            # Truncate the input and labels to the max_len (this implementation implies that
-            # both the input and the labels has the same max_len - this is an assumption that
-            # does not always hold)
-            input_ids = input_ids[:self.max_len]
-            labels = labels[:self.max_len]
-        return np.array(input_ids, dtype=np.int32), np.array(labels, dtype=np.int32)
+                return None, None, []
+            return None, None, []
+
+        return np.array(input_ids, dtype=np.int32), np.array(labels, dtype=np.int32), constraints
 
 
-def build_tokenizer(model_name_or_path: str, max_length: int, revision: str, special_tokens: List[str]) -> Tuple[AutoTokenizer,int,int]:
+def build_tokenizer(model_name_or_path: str, max_length: int, revision: str, special_tokens: List[str]) -> Tuple[
+    AutoTokenizer, int, int]:
     tok = AutoTokenizer.from_pretrained(
         model_name_or_path,
         revision=revision,
@@ -395,21 +513,225 @@ def build_tokenizer(model_name_or_path: str, max_length: int, revision: str, spe
         model_max_length=max_length,
         padding_side="right",
     )
+
     vocab_size_before = len(tok)
+
     if tok.pad_token_id is None:
         tok.pad_token = tok.eos_token
+
+    # Add FIM tokens if using CSV format
+    fim_tokens = ["<|fim_prefix|>", "<|fim_suffix|>", "<|fim_middle|>"]
+    all_special_tokens = list(special_tokens) + fim_tokens
+
     if special_tokens:
-        tok.add_special_tokens({"additional_special_tokens": special_tokens})
+        # Remove duplicates while preserving order
+        unique_tokens = []
+        for token in all_special_tokens:
+            if token not in unique_tokens:
+                unique_tokens.append(token)
+        tok.add_special_tokens({"additional_special_tokens": unique_tokens})
+
     return tok, vocab_size_before, len(tok)
 
 
-def read_split_csv(
-        path: str
-) -> Dict[str, Dict]:
+def iter_project_samples(
+        file_paths: List[str],
+        encoding_type: str = "jsonl",
+        wrap: bool = False
+) -> Iterator[Sample]:
+    """
+    encoding_type: 'jsonl' --> Iterates over a list of .jsonl file paths, reading each file line by line. Each line is expected to contain a
+    JSON object representing a conversation between a user and an assistant.
+    encoding_type: 'csv' --> Iterates over a list of .csv file paths, reading the rows of each file.
+    Each row is expected to contain a sample object representing an input to the model (src), the corresponding
+    target answer (tgt), and the unmask_tokens (a list of tokens that the model should consider during generation).
+    The function yields the messages from these conversations as lists of dictionaries, allowing
+    for efficient processing of potentially large datasets.
+    """
+    for p in file_paths:
+        # Iterate over the `.jsonl` file paths
+        if encoding_type == "jsonl":
+            # Read the current file path (the content of the file is a list of json objects corresponding to
+            # conversations between the `user` and the `assistant`
+            with io.open(p, "r", encoding="utf-8") as f:
+                # Iterate over each line in the file path (it corresponds to a single conversation)
+                for line in f:
+                    try:
+                        # Load the current conversation as a json object
+                        obj = orjson.loads(line)
+                    except Exception:
+                        # Skip the conversation sample if not able to process it as a json object
+                        continue
+                    # Collect the messages between the user and the assistant within the conversation
+                    msgs = obj["messages"] if "messages" in obj else obj
+                    if isinstance(msgs, list) and msgs:
+                        yield (msgs, "", [])
+
+        elif encoding_type == "csv":
+            # Read CSV with pandas - handles large fields automatically
+            df = pd.read_csv(p, encoding="utf-8", engine="python", on_bad_lines="skip")
+
+            # Normalize column names to lowercase
+            df.columns = df.columns.str.lower()
+
+            # Check for required columns
+            required_cols = ['src', 'tgt', 'unmask_tokens']
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            if missing_cols:
+                raise ValueError(f"CSV {p} missing columns: {missing_cols}")
+
+            for _, row in df.iterrows():
+                src = str(row.get("src", "")) if not pd.isna(row.get("src")) else ""
+                tgt = str(row.get("tgt", "")) if not pd.isna(row.get("tgt")) else ""
+
+                # Parse unmask_tokens (assuming it's a JSON string or comma-separated)
+                unmask_raw = row.get("unmask_tokens", "")
+                if pd.isna(unmask_raw) or not unmask_raw:
+                    unmask_tokens = []
+                else:
+                    try:
+                        # Try parsing as JSON first
+                        unmask_tokens = json.loads(unmask_raw) if isinstance(unmask_raw, str) else unmask_raw
+                        if not isinstance(unmask_tokens, list):
+                            unmask_tokens = [str(unmask_tokens)]
+                    except json.JSONDecodeError:
+                        # Fallback to comma-separated string
+                        unmask_tokens = [token.strip() for token in str(unmask_raw).split(',') if token.strip()]
+                # Add json structure tokens to unmask_tokens if on stage 1 (at least an unmask token is in the list)
+                if not len(unmask_tokens) == 0:
+                    for token in json_structure_tokens:
+                        if token not in unmask_tokens:
+                            unmask_tokens.append(token)
+                if src.strip() and tgt.strip():
+                    yield (src, tgt, unmask_tokens)
+
+
+def sample_project_tokenized(
+        files: List[str],
+        target_tokens: int,             # token budget for the project
+        encoding_type: str,             # 'jsonl' or 'csv'
+        encoder: EncoderInterface,      # encodes one conversation -> (ids, labels, unmask_tokens)
+        rng: random.Random,
+        short_cut: int,
+        med_cut: int,
+        target_mix=(0.2, 0.4, 0.4),     # desired token share per bucket (short/med/long)
+        min_len: int = 300,
+        per_bucket_buf: float = 0.10,   # allow up to +10% over each bucket cap
+        overflow_keep_p: float = 0.25,  # keep some over-cap items as reservoir
+        early_stop_buf: float = 0.15,   # stop scanning around 115% of budget (like before)
+        wrap: bool = False
+) -> Tuple[List[np.ndarray], List[np.ndarray], List[List[str]], int]:
+    """
+    Samples datapoints from a given project, according to a distribution determined by the conversation lengths, up to
+    the limit imposed by the `target_tokens` cap assigned to the project.
+    Returns: (input_ids_list, labels_list, constraints_list, total_tokens)
+    """
+    # `target_tokens` define the maximum number of tokens assigned to the project
+    # The total number of tokens is distributed in 3 buckets, considering samples
+    # of `small`, `medium`, and `large` dimension. The `target_mix` determines the
+    # distribution of tokens cap assigned to each bucket. The dimension of the sample
+    # is determined by the `short_cut` and `med_cut` values that represents the thresholds
+    # between `short` and `medium` samples, and `medium` and `large` samples
+    cap = [int(target_tokens * p) for p in target_mix]
+    cap_plus = [int(c * (1 + per_bucket_buf)) for c in cap]
+    # Tokens counter per bucket
+    tok_sum = [0, 0, 0]
+    soft_total = 0
+
+    # Buckets of samples (it initially accept values <= the soft cap, per bucket)
+    soft_buckets = [[], [], []]
+    # Buckets of overflow samples (over-cap samples)
+    overflow = [[], [], []]
+    # Iterate over the samples of the project
+    for sample in iter_project_samples(files, encoding_type, wrap):
+        # Encode the messages in the conversation and retrieve the encoded `input_ids` and `label_ids` to
+        # fine-tune the model
+        ids, lbl, constraints = encoder.encode(sample)
+        # Discard empty samples
+        if ids is None:
+            continue
+        # Count the tokens within the input
+        L = int(len(ids))
+        # Filter ultra-short samples (often noise)
+        if L < min_len:
+            continue
+        # Determine the bucket of the sample
+        b = bucket_from_len(L, short_cut, med_cut)
+        # Prefer filling deficit buckets, but keep additional samples until soft cap
+        if tok_sum[b] <= cap_plus[b]:
+            # Append the candidate to the corresponding soft bucket (save both the encoded `input_ids`,
+            # `label_ids` and tokens length `L` of the `input_ids`
+            soft_buckets[b].append((ids, lbl, constraints, L))
+            # Update the total counter of tokens of the bucket to which the sample belongs
+            tok_sum[b] += L
+            # Update the soft total
+            soft_total += L
+        else:
+            # Keep some overflow as backfill reservoir (helps skewed corpora)
+            if rng.random() < overflow_keep_p:
+                overflow[b].append((ids, lbl, constraints, L))
+        # Early stop: once pools roughly cover the whole project budget, stop scanning
+        if soft_total >= int(target_tokens * (1 + early_stop_buf)):
+            break
+
+    # Iterate over the three buckets and the overflows backfill reservoir and shuffle them for variety
+    for k in range(len(soft_buckets)):
+        rng.shuffle(soft_buckets[k])
+        rng.shuffle(overflow[k])
+    # Define final lists of selected samples (input_ids, labels).
+    # Written counts the total number of tokens selected, overall, and per bucket (`written_by_bucket`)
+    sel_ids, sel_lbls, sel_constraints, written = [], [], [], 0
+    written_by_bucket = [0, 0, 0]
+    # Keep track of unused samples
+    leftovers = []
+    # Iterate over the buckets to select the samples
+    for k in range(len(soft_buckets)):
+        # Iterate over the samples in the current bucket
+        for ids, lbl, constraints, L in soft_buckets[k]:
+            # If the limit of tokens assigned to the project has been overcome, exit the loop
+            if written >= target_tokens:
+                break
+            # If the soft limit of token for the current bucket has not been overcome, add the sample
+            # and update the relative and absolute counters
+            if written_by_bucket[k] <= cap_plus[k]:
+                sel_ids.append(ids)
+                sel_lbls.append(lbl)
+                sel_constraints.append(constraints)
+                written += L
+                written_by_bucket[k] += L
+            else:
+                leftovers.append((ids, lbl, constraints, L))
+        # If the limit of tokens assigned to the project has been overcome, exit the loop even if one or more
+        # buckets have not been processed yet
+        if written >= target_tokens:
+            break
+
+    # Fill remaining capacity with overflow
+    if written < target_tokens:
+        for k in range(len(soft_buckets)):
+            leftovers.extend(overflow[k])
+        # Shuffle and greedily fill to target (allow tiny overshoot for small samples)
+        rng.shuffle(leftovers)
+        # Iterate over the leftover samples and add them up to the limit of tokens assigned to project, if any
+        for ids, lbl, constraints, L in leftovers:
+            if written < target_tokens:
+                sel_ids.append(ids)
+                sel_lbls.append(lbl)
+                sel_constraints.append(constraints)
+                written += L
+            if written >= target_tokens:
+                break
+    # Returns the selected samples
+    return sel_ids, sel_lbls, sel_constraints, written
+
+
+# ... (rest of the helper functions remain the same)
+def read_split_csv(path: str) -> Dict[str, Dict]:
     """
     Reads the original csv file containing the list of projects to process (`project_id`), the number of oracles
     retrieved from each project (`num_oracles`) and the dimension of the project (3 possible values admitted: `Small`,
-    `Medium`, `Large`. Returns a corresponding dictionary containing the information read, in the following format:
+    `Medium`, `Large`.
+    Returns a corresponding dictionary containing the information read, in the following format:
         {
             project_id: {
                 'num_oracles': int,
@@ -429,11 +751,7 @@ def read_split_csv(
     return out
 
 
-def find_project_files_by_ext(
-        data_dir: str,
-        pids: List[str],
-        ext: str = "jsonl"
-) -> Dict[str, List[str]]:
+def find_project_files_by_ext(data_dir: str, pids: List[str], ext: str = "jsonl") -> Dict[str, List[str]]:
     """
     Searches the files containing the datapoints corresponding to the given project ids (`pids`), and collect them.
     """
@@ -456,9 +774,7 @@ def find_project_files_by_ext(
     return by
 
 
-def split_by_bins(
-        meta: Dict[str, Dict]
-) -> Dict[str, List[str]]:
+def split_by_bins(meta: Dict[str, Dict]) -> Dict[str, List[str]]:
     """
     Split the projects processed from `.csv` in bins, representing their dimension.
     """
@@ -466,17 +782,15 @@ def split_by_bins(
     for pid, m in meta.items():
         b = m["size_bin"]
         # If the size label is not recognized, the dimension is set to `Medium`
-        if b not in bins: b = "Medium"
+        if b not in bins:
+            b = "Medium"
         bins[b].append(pid)
-    for k in bins: bins[k].sort()
+    for k in bins:
+        bins[k].sort()
     return bins
 
 
-def allocate_bin_budgets(
-        meta: Dict[str, Dict],
-        total_token_budget: int,
-        mode: str = "sqrt"
-) -> Dict[str, int]:
+def allocate_bin_budgets(meta: Dict[str, Dict], total_token_budget: int, mode: str = "sqrt") -> Dict[str, int]:
     """
     Starting from a `total_token_budget` number of tokens, allocate a token budget to each bin in the dataset,
     according to the given `mode`.
@@ -502,14 +816,11 @@ def allocate_bin_budgets(
     # to the total number of oracles within it
     elif mode == "proportional":
         w = {b: float(sizes[b]) for b in bins}
-    # If `mode` is `sqrt`, each bin contribute to the dataset with a weight corresponding
-    # to the square root of the total number of oracles within it. In this way, each bin contribute
-    # proportionally to their dimension, but without "submerging" the smaller bins
     else:
         w = {b: math.sqrt(max(1, sizes[b])) for b in bins}
     sw = sum(w.values()) or 1.0
     # Assign the total token budget to each bin, according to the weight previously computed
-    return {b: int(total_token_budget * (w[b]/sw)) for b in bins}
+    return {b: int(total_token_budget * (w[b] / sw)) for b in bins}
 
 
 def allocate_project_budgets(
@@ -534,8 +845,8 @@ def allocate_project_budgets(
     # Iterate over each bin collection (b is the dimension, pids is the list of projects of that dimension)
     for b, pids in bins.items():
         # If the bin does not contain projects skip the bin
-        if not pids: continue
-        # Assign the bin according to the alpha value
+        if not pids:
+            continue
         weights = [(pid, max(1, meta[pid]["num_oracles"]) ** alpha) for pid in pids]
         sw = sum(w for _, w in weights) or 1.0
         # Iterate over each tuple of project id (`pid`) and corresponding weight (`w`)
@@ -544,204 +855,16 @@ def allocate_project_budgets(
             # to the bin and the weights computed for the given project
             share = int(bin_tokens[b] * (w / sw))
             budgets[pid] = max(share, min_tokens_per_project)
-    # Return the dictionary of token budget for each project in the bin
+
     return budgets
 
 
-def iter_project_samples(
-        file_paths: List[str],
-        encoding_type: str = "jsonl",
-        wrap: bool = False
-) -> Iterator[Sample]:
-    """
-    encoding_type: 'jsonl' --> Iterates over a list of .jsonl file paths, reading each file line by line. Each line is expected to contain a
-    JSON object representing a conversation between a user and an assistant.
-    encoding_type: 'csv' --> Iterates over a list of .csv file paths, reading the rows of each file. Each row is expected to contain a
-    sample object representing an input to the model (src) and the corresponding target answer (tgt).
-    The function yields the messages
-    from these conversations as lists of dictionaries, allowing for efficient processing of potentially large datasets.
-    """
-    # Iterate over the `.jsonl` file paths
-    for p in file_paths:
-        # Read the current file path (the content of the file is a list of json objects corresponding to
-        # conversations between the `user` and the `assistant`
-        with io.open(p, "r", encoding="utf-8") as f:
-            if encoding_type == "jsonl":
-                # Iterate over each line in the file path (it corresponds to a single conversation)
-                for line in f:
-                    try:
-                        # Load the current conversation as a json object
-                        obj = orjson.loads(line)
-                    except Exception:
-                        # Skip the conversation sample if not able to process it as a json object
-                        continue
-                    # Collect the messages between the user and the assistant within the conversation
-                    msgs = obj["messages"] if "messages" in obj else obj
-                    if isinstance(msgs, list) and msgs:
-                        yield msgs
-            elif encoding_type == "csv":
-                # Read CSV with pandas - handles large fields automatically
-                df = pd.read_csv(p, encoding="utf-8", engine="python", on_bad_lines="skip")
-                # Normalize column names to lowercase
-                df.columns = df.columns.str.lower()
-
-                # Check for required columns
-                if "src" not in df.columns or "tgt" not in df.columns:
-                    raise ValueError(f"CSV {p} must contain 'src' and 'tgt' columns (case-insensitive).")
-
-                # Iterate over rows
-                for _, row in df.iterrows():
-                    src = row.get("src", "")
-                    tgt = row.get("tgt", "")
-                    # Handle NaN values
-                    if pd.isna(src):
-                        src = ""
-                    if pd.isna(tgt):
-                        tgt = ""
-                    # Convert to string
-                    src = str(src) if src else ""
-                    tgt = str(tgt) if tgt else ""
-                    # Skip empty pairs
-                    if (src.strip() == "") and (tgt.strip() == ""):
-                        continue
-                    if wrap:
-                        tgt = "<|type_mask_token|>" + tgt.split(":")[0] + "<|type_mask_token|>" + "<|value_mask_token|>" + tgt.split(":")[1].strip() + "<|value_mask_token|>"
-                    src = src.replace("<mask_id>", "<|fill_mask_token|>")
-                    src = src.replace("// Junit Version\n", "// Junit Version: ")
-                    yield (src, tgt)
-
-
-def bucket_from_len(
-        L: int,
-        s_cut: int,
-        m_cut: int
-) -> int:
-    """
-    Determines the bucket of a sample, given its token length `L` and the thresholds `s_cut` and `m_cut`.
-    Returns the bucket of the sample as integer (0=`short`, 1=`medium`, 2`long`).
-    """
-    # 0=short,1=med,2=long
-    if L <= s_cut: return 0
-    if L <= m_cut: return 1
+def bucket_from_len(L: int, s_cut: int, m_cut: int) -> int:
+    if L <= s_cut:
+        return 0
+    if L <= m_cut:
+        return 1
     return 2
-
-
-def sample_project_tokenized(
-        files: List[str],
-        target_tokens: int,             # token budget for the project
-        encoding_type: str,             # 'jsonl' or 'csv'
-        encoder: EncoderInterface,      # encodes one conversation -> (ids, labels)
-        rng: random.Random,             # token length thresholds for buckets
-        short_cut: int,
-        med_cut: int,
-        target_mix=(0.2,0.4,0.4),       # desired token share per bucket (short/med/long)
-        min_len: int = 300,
-        per_bucket_buf: float = 0.10,   # allow up to +10% over each bucket cap
-        overflow_keep_p: float = 0.25,  # keep some over-cap items as reservoir
-        early_stop_buf: float = 0.15,   # stop scanning around 115% of budget (like before)
-        wrap: bool = False
-) -> Tuple[List[np.ndarray], List[np.ndarray], int]:
-    """
-    Samples datapoints from a given project, according to a distribution determined by the conversation lengths, up to
-    the limit imposed by the `target_tokens` cap assigned to the project.
-    """
-    # `target_tokens` define the maximum number of tokens assigned to the project
-    # The total number of tokens is distributed in 3 buckets, considering samples
-    # of `small`, `medium`, and `large` dimension. The `target_mix` determines the
-    # distribution of tokens cap assigned to each bucket. The dimension of the sample
-    # is determined by the `short_cut` and `med_cut` values that represents the thresholds
-    # between `short` and `medium` samples, and `medium` and `large` samples
-    cap = [int(target_tokens*p) for p in target_mix]
-    # Soft cap for additional samples in the bucket
-    cap_plus = [int(c * (1 + per_bucket_buf)) for c in cap]
-    # Tokens counter per bucket
-    tok_sum = [0,0,0]
-    # Soft total tokens counter (it initially accept a value > `target_tokens`, considering the soft cap)
-    soft_total = 0
-    # Buckets of samples (it initially accept values <= the soft cap, per bucket)
-    soft_buckets = [[],[],[]]
-    # Buckets of overflow samples (over-cap samples)
-    overflow = [[], [], []]
-
-    # Iterate over the samples of the project
-    for sample in iter_project_samples(files, encoding_type, wrap):
-        # Encode the messages in the conversation and retrieve the encoded `input_ids` and `label_ids` to
-        # fine-tune the model
-        ids, lbl = encoder.encode(sample)
-        # Discard empty samples
-        if ids is None:
-            continue
-        # Count the tokens within the input
-        L = int(len(ids))
-        # Filter ultra-short samples (often noise)
-        if L < min_len:
-            continue
-        # Determine the bucket of the sample
-        b = bucket_from_len(L, short_cut, med_cut)
-        # Prefer filling deficit buckets, but keep additional samples until soft cap
-        if tok_sum[b] <= cap_plus[b]:
-            # Append the candidate to the corresponding soft bucket (save both the encoded `input_ids`,
-            # `label_ids` and tokens length `L` of the `input_ids`
-            soft_buckets[b].append((ids,lbl,L))
-            # Update the total counter of tokens of the bucket to which the sample belongs
-            tok_sum[b] += L
-            # Update the soft total
-            soft_total += L
-        else:
-            # Keep some overflow as backfill reservoir (helps skewed corpora)
-            if rng.random() < overflow_keep_p:
-                overflow[b].append((ids, lbl, L))
-        # Early stop: once pools roughly cover the whole project budget, stop scanning
-        if soft_total >= int(target_tokens * (1 + early_stop_buf)):
-            break
-    # Iterate over the three buckets and the overflows backfill reservoir and shuffle them for variety
-    for k in range(len(soft_buckets)):
-        rng.shuffle(soft_buckets[k])
-        rng.shuffle(overflow[k])
-    # Define final lists of selected samples (input_ids, labels).
-    # Written counts the total number of tokens selected, overall, and per bucket (`written_by_bucket`)
-    sel_ids, sel_lbls, written = [], [], 0
-    written_by_bucket = [0, 0, 0]
-    # Keep track of unused samples
-    leftovers = []
-    # Iterate over the buckets to select the samples
-    for k in range(len(soft_buckets)):
-        # Iterate over the samples in the current bucket
-        for ids,lbl,L in soft_buckets[k]:
-            # If the limit of tokens assigned to the project has been overcome, exit the loop
-            if written >= target_tokens:
-                break
-            # If the soft limit of token for the current bucket has not been overcome, add the sample
-            # And update the relative and absolute counters
-            if written_by_bucket[k] <= cap_plus[k]:
-                sel_ids.append(ids)
-                sel_lbls.append(lbl)
-                written += L
-                written_by_bucket[k] += L
-            else:
-                leftovers.append((ids,lbl,L))
-        # If the limit of tokens assigned to the project has been overcome, exit the loop even if one or more
-        # buckets have not been processed yet
-        if written >= target_tokens:
-            break
-    # If after the selection the limit of tokens assigned to the project has not been reached yet, adds additional
-    # samples from the backup buckets, if any
-    if written < target_tokens:
-        # Plus overflow reservoirs
-        for k in range(len(soft_buckets)):
-            leftovers.extend(overflow[k])
-        # Shuffle and greedily fill to target (allow tiny overshoot for small samples)
-        rng.shuffle(leftovers)
-        # Iterate over the leftover samples and add them up to the limit of tokens assigned to project, if any
-        for ids, lbl, L in leftovers:
-            if written < target_tokens:
-                sel_ids.append(ids)
-                sel_lbls.append(lbl)
-                written += L
-            if written >= target_tokens:
-                break
-    # Returns the selected samples
-    return sel_ids, sel_lbls, written
 
 
 def build_split(
@@ -759,7 +882,7 @@ def build_split(
         alpha: float,
         drop_long: bool,
         tokens_per_shard: int,
-        target_mix: Tuple[float,float,float],
+        target_mix: Tuple[float, float, float],
         short_cut_frac: float,
         med_cut_frac: float,
         seed: int,
@@ -767,33 +890,25 @@ def build_split(
 ):
     # Initalize pseudo-random with seed for reproducibility
     rng = random.Random(seed)
-    # Get the tokenizer
+    # Get the tokenizer with FIM tokens
     tok, tok_vocab_len_before, tok_vocab_len_after = build_tokenizer(
         model_name_or_path,
         max_length,
         model_revision,
-        special_tokens,
+        special_tokens
     )
+
     # Initialize encoder
     if encoding_type == "jsonl":
-        enc = ChatEncoder(
-            tok,
-            max_len=max_length,
-            only_last_turn_loss=True,
-            drop_long=drop_long
-        )
+        enc = ChatEncoder(tok, max_len=max_length, only_last_turn_loss=True, drop_long=drop_long)
     else:
-        enc = PairEncoder(
-            tok,
-            max_len=max_length,
-            drop_long=drop_long,
-            append_eos=True
-        )
-    # Read .csv with the identifiers of projects to process, and the relative metadata
+        enc = PairEncoder(tok, max_len=max_length, drop_long=drop_long, append_eos=True)
+
+    # Read csv with the identifiers of projects to process, and the relative metadata
     meta = read_split_csv(pids_path)
     # Get the list of project identifiers
     pids = sorted(meta.keys())
-    # Get the list of files per project, in the dataset
+
     files_by_pid = find_project_files_by_ext(data_dir, pids, encoding_type)
     # Allocate tokens budget for each bin (`Small`, `Medium`, `Large`, determined by the total number
     # of oracles in each project and the policy applied - `mode`)
@@ -801,9 +916,9 @@ def build_split(
     # Allocate the total number of tokens assigned to each project
     proj_budget = allocate_project_budgets(meta, bin_tokens, alpha=alpha, min_tokens_per_project=max(max_length, 4096))
     # Define thresholds to consider dimension of conversations within project (`small`, `medium`, `large` conversations)
-    short_cut = int(max_length * short_cut_frac)   # e.g., 0.33 * 4096
-    med_cut   = int(max_length * med_cut_frac)     # e.g., 0.66 * 4096
-    # Collect meta data
+    short_cut = int(max_length * short_cut_frac) # e.g., 0.33 * 4096
+    med_cut = int(max_length * med_cut_frac)     # e.g., 0.66 * 4096
+    # Collect metadata
     meta_out = {
         "split": split_name,
         "model_name_or_path": model_name_or_path,
@@ -819,7 +934,8 @@ def build_split(
         "special_tokens_map": tok.special_tokens_map,
         "vocab_size_before": tok_vocab_len_before,
         "vocab_size": tok_vocab_len_after,
-        "special_token_ids": { t: tok(t).input_ids[0] for t in special_tokens },
+        "special_token_ids": {t: tok(t).input_ids[0] for t in
+                              (special_tokens + ["<|fim_prefix|>", "<|fim_suffix|>", "<|fim_middle|>"])},
         "wrap": wrap,
         "drop_long": drop_long,
         "num_projects": len(pids),
@@ -836,10 +952,11 @@ def build_split(
     with open(os.path.join(out_dir, f"{split_name}.meta.json"), "w") as f:
         json.dump(meta_out, f, indent=2)
     with open(os.path.join(out_dir, "base_model.json"), "w") as bf:
-        json.dump({"base_model_name_or_path": model_name_or_path,
-                   "base_model_revision": model_revision or "main"}, bf, indent=2)
-    # Initialize shard writer and auxiliary variables to take into account how many tokens have been written
-    # in total and per project
+        json.dump({
+            "base_model_name_or_path": model_name_or_path,
+            "base_model_revision": model_revision or "main"
+        }, bf, indent=2)
+    # Process samples
     writer = ShardWriter(out_dir, split_name, tokens_per_shard=tokens_per_shard)
     total_written = 0
     per_project = {}
@@ -852,8 +969,8 @@ def build_split(
         # Skip project if no budget is assigned or the projects does not have samples
         if tokens_cap <= 0 or not files:
             continue
-        # Collect samples from the project
-        ids_list, lbl_list, got = sample_project_tokenized(
+        # Get samples with constraints
+        ids_list, lbl_list, constraints_list, got = sample_project_tokenized(
             files,
             tokens_cap,
             encoding_type,
@@ -862,11 +979,11 @@ def build_split(
             short_cut,
             med_cut,
             target_mix=target_mix,
-            wrap=wrap,
+            wrap=wrap
         )
-        # Write samples in the current shard
-        for ids, lbl in zip(ids_list, lbl_list):
-            writer.write(ids, lbl)
+        # Write samples with constraints
+        for ids, lbl, constraints in zip(ids_list, lbl_list, constraints_list):
+            writer.write(ids, lbl, constraints)
         # Update written tokens per project and in total
         total_written += got
         per_project[pid] = got
@@ -884,7 +1001,7 @@ def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model_name_or_path", required=True, help="Path to pretrained model or model identifier from huggingface.co")
     ap.add_argument("--model_revision", type=str, default=None, help="HF revision (commit hash or tag) to pin the base tokenizer.")
-    ap.add_argument("--encoding_type", choices=["jsonl","csv"], default="jsonl", help="Type of files to process (jsonl with chat messages or csv with src/tgt pairs).")
+    ap.add_argument("--encoding_type", choices=["jsonl", "csv"], default="jsonl", help="Type of files to process (jsonl with chat messages or csv with src/tgt pairs).")
     ap.add_argument("--data_dir", required=True, help="Path to data directory where JSON files are stored.")
     ap.add_argument("--train_csv", required=True, help="Path to training CSV (the csv contains the list of project identifers to use for training).")
     ap.add_argument("--val_csv", required=True, help="Path to validation CSV (the csv contains the list of project identifers to use for validation).")
@@ -893,18 +1010,19 @@ def parse_args():
     ap.add_argument("--start_id", type=str, default="<|im_start|>", help="Opening token for a message block (fallback formatter).")
     ap.add_argument("--end_id", type=str, default="<|im_end|>", help="Closing token for a message block (fallback formatter).")
     ap.add_argument("--train_token_budget", type=int, default=2_000_000_000, help="Token budget for training.")
-    ap.add_argument("--val_token_budget",   type=int, default=40_000_000, help="Token budget for validation.")
-    ap.add_argument("--bin_allocation", choices=["proportional","equal","sqrt"], default="sqrt", help="How to allocate tokens across Small/Medium/Large bins.")
+    ap.add_argument("--val_token_budget", type=int, default=40_000_000, help="Token budget for validation.")
+    ap.add_argument("--bin_allocation", choices=["proportional", "equal", "sqrt"], default="sqrt", help="How to allocate tokens across Small/Medium/Large bins.")
     ap.add_argument("--alpha", type=float, default=0.5, help="Within-bin per-project weighting exponent on num_oracles.")
     ap.add_argument("--target_mix", type=str, default="0.4,0.4,0.2", help="Short,Medium,Long token share per project (comma).")
     ap.add_argument("--short_cut_frac", type=float, default=0.33, help="Short ≤ frac*max_length.")
-    ap.add_argument("--med_cut_frac",   type=float, default=0.66, help="Medium ≤ frac*max_length.")
+    ap.add_argument("--med_cut_frac", type=float, default=0.66, help="Medium ≤ frac*max_length.")
     ap.add_argument("--tokens_per_shard", type=int, default=50_000_000, help="Number of tokens per shard.")
     ap.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     ap.add_argument("--train_drop_long", action="store_true", help="Whether to drop long tokens in training bins.")
     ap.add_argument("--val_drop_long", action="store_true", help="Whether to drop long tokens in validation bins.")
     ap.add_argument("--wrap", action="store_true", help="Whether to wrap each message in [token][/token] format.")
     return ap.parse_args()
+
 
 def resolve_snapshot(model_name_or_path: str, model_revision: Optional[str]):
     # Resolve snapshot (commit SHA) for reproducibility
@@ -920,16 +1038,17 @@ def resolve_snapshot(model_name_or_path: str, model_revision: Optional[str]):
         used_revision = Path(resolved_path).name
     return resolved_path, used_revision
 
+
 def main():
     # Parse arguments passed to the script
     args = parse_args()
-    # Process distribution of bins (`Small`, `Medium`, `Large`)
     mix = tuple(float(x) for x in args.target_mix.split(","))
-    assert len(mix) == 3 and abs(sum(mix) - 1.0) < 1e-6, "--target_mix must have 3 values summing to 1.0"
-    assert 0.0 < args.short_cut_frac < args.med_cut_frac < 1.0, "Expected 0 < --short_cut_frac < --med_cut_frac < 1"
-    # Resolve snapshot once (commit SHA) for reproducibility
+    assert len(mix) == 3 and abs(sum(mix) - 1.0) < 1e-6
+    assert 0.0 < args.short_cut_frac < args.med_cut_frac < 1.0
     resolved_path, used_revision = resolve_snapshot(args.model_name_or_path, args.model_revision)
-    # Process projects for training and encode selected samples. Save them in shards
+    # Determine special tokens based on encoding type
+    special_tokens = [args.start_id, args.end_id] if args.encoding_type == "jsonl" else []
+    # Build train split
     build_split(
         "train",
         args.encoding_type,
@@ -939,7 +1058,7 @@ def main():
         resolved_path,
         used_revision,
         args.max_length,
-        [ args.start_id, args.end_id, "<|fill_mask_token|>", "<|type_mask_token|>", "<|value_mask_token|>" ] if args.encoding_type == "jsonl" else [ "<|fill_mask_token|>", "<|type_mask_token|>", "<|value_mask_token|>" ],
+        special_tokens,
         args.train_token_budget,
         args.bin_allocation,
         args.alpha,
@@ -951,7 +1070,7 @@ def main():
         args.seed,
         args.wrap
     )
-    # Process projects for validation and encode selected samples. Save them in shards
+    # Build val split
     build_split(
         "val",
         args.encoding_type,
@@ -961,7 +1080,7 @@ def main():
         resolved_path,
         used_revision,
         args.max_length,
-        [ args.start_id, args.end_id, "<|fill_mask_token|>", "<|type_mask_token|>", "<|value_mask_token|>" ] if args.encoding_type == "jsonl" else [ "<|fill_mask_token|>", "<|type_mask_token|>", "<|value_mask_token|>" ],
+        special_tokens,
         args.val_token_budget,
         args.bin_allocation,
         args.alpha,
@@ -973,6 +1092,7 @@ def main():
         args.seed + 1,
         args.wrap
     )
+
 
 if __name__ == "__main__":
     main()
