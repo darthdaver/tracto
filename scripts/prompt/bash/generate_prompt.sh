@@ -27,9 +27,9 @@ fi
 declare -a config_paths
 
 # Check if an argument is passed
-if [ $# -eq 1 ]; then
+if [ $# -eq 3 ]; then
     # If an argument is provided, add it to the array
-    config_paths=("$1")
+    config_paths=("$3")
 else
     # Otherwise, populate the array with all subfolder paths
     config_paths=("${PROMPT_DIR}/resources/config/"*/)
