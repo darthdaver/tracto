@@ -625,165 +625,308 @@ class ConstraintTrie:
         return True
 
 
-class AdvancedConstrainedLogitsProcessor(LogitsProcessor):
-    """Trie-based constrained decoding with training and inference support"""
+class StringBasedConstraintTrie:
+    """String-based constraint trie with proper EOS handling"""
 
-    def __init__(self, tokenizer, constraint_sequences: List[List[int]], stage: str = "selection",
-                 enable_training_constraints: bool = True, stage_patterns: MappingProxyType = STAGE_PATTERNS):
+    def __init__(self, target_strings: List[str], tokenizer, eos_token_id: Optional[int] = None):
+        self.target_strings = target_strings
+        self.tokenizer = tokenizer
+        self.eos_token_id = eos_token_id
+
+        logging.info(f"\n[DEBUG] Building StringBasedConstraintTrie with {len(target_strings)} targets")
+        for i, target in enumerate(target_strings[:5]):
+            logging.info(f"  Target {i + 1}: '{target}'")
+        if len(target_strings) > 5:
+            logging.info(f"  ... and {len(target_strings) - 5} more")
+
+    def get_valid_continuations(self, current_token_prefix: List[int]) -> Set[int]:
+        """
+        Given current token prefix, return all tokens that could validly continue
+        toward any target output.
+        """
+        # Decode current prefix to string
+        if not current_token_prefix:
+            current_text = ""
+        else:
+            current_text = self.tokenizer.decode(current_token_prefix, skip_special_tokens=False)
+
+        # Find targets that start with this prefix
+        valid_targets = [t for t in self.target_strings if t.startswith(current_text)]
+
+        if not valid_targets:
+            # Try fuzzy matching
+            close_targets = []
+            for target in self.target_strings:
+                max_len = min(len(current_text) + 2, len(target))
+                if target[:max_len].replace('"', '').startswith(current_text.replace('"', '')):
+                    close_targets.append(target)
+
+            if close_targets:
+                logging.warning(f"⚠️ Using fuzzy match for prefix '{current_text}'")
+                valid_targets = close_targets
+            else:
+                return set()
+
+        # Collect all possible next tokens
+        valid_next_tokens = set()
+        has_completed_target = False
+
+        # DEBUG: Log the matching process
+        logging.debug(f"[Trie] Current text: '{current_text}'")
+        logging.debug(f"[Trie] Valid targets: {valid_targets}")
+
+        for target in valid_targets:
+            remaining = target[len(current_text):]
+
+            logging.debug(f"[Trie]   Target: '{target}', Remaining: '{remaining}'")
+
+            if not remaining or remaining == "":
+                # We've completed this target
+                has_completed_target = True
+                logging.debug(f"[Trie]   ✓ Target completed, EOS will be allowed")
+                continue
+
+            # Try encoding next 1 to 10 characters
+            for num_chars in range(1, min(len(remaining) + 1, 11)):
+                next_chunk = remaining[:num_chars]
+                hypothetical_text = current_text + next_chunk
+                hypothetical_tokens = self.tokenizer.encode(hypothetical_text, add_special_tokens=False)
+
+                if len(hypothetical_tokens) == len(current_token_prefix) + 1:
+                    next_token_id = hypothetical_tokens[-1]
+                    valid_next_tokens.add(next_token_id)
+                elif len(hypothetical_tokens) > len(current_token_prefix):
+                    next_token_id = hypothetical_tokens[len(current_token_prefix)]
+                    valid_next_tokens.add(next_token_id)
+
+        # CRITICAL: Only add EOS if we've completed at least one target
+        if has_completed_target:
+            if self.eos_token_id is not None:
+                logging.debug(f"[Trie] Adding EOS token {self.eos_token_id}")
+                valid_next_tokens.add(self.eos_token_id)
+        else:
+            logging.debug(f"[Trie] NOT adding EOS (no completed targets)")
+
+        logging.debug(f"[Trie] Final valid tokens: {valid_next_tokens}")
+
+        return valid_next_tokens
+
+
+class AdvancedConstrainedLogitsProcessor(LogitsProcessor):
+    """
+    Constrained logits processor using string-based trie.
+    Handles tokenization variations and includes safety checks.
+    """
+
+    def __init__(self, tokenizer, constraint_sequences: List[List[int]],
+                 stage: str = "selection", enable_training_constraints: bool = True):
+        """
+        Initialize the constrained logits processor.
+
+        Args:
+            tokenizer: The tokenizer instance
+            constraint_sequences: List of token ID sequences representing valid outputs
+            stage: Either "selection" or "generation"
+            enable_training_constraints: Whether to apply constraints
+        """
         self.processing_class = tokenizer
         self.stage = stage
         self.enable_training_constraints = enable_training_constraints
-        # Build constraint trie
-        self.constraint_trie = ConstraintTrie(
-            constraint_sequences,
-            processing_class=tokenizer,
-            eos_token_id=tokenizer.eos_token_id
-        ) if constraint_sequences else None
-        # JSON structure tokens (always allowed)
-        self.json_tokens = self._get_json_token_ids()
-        # Special tokens that should always be allowed
-        self.special_tokens = self._get_special_token_ids()
-        # Stage detection patterns
-        self.stage_patterns = stage_patterns
 
-        # Debug: Track how many times this processor is called
+        # Build string-based trie from constraint sequences
+        if constraint_sequences:
+            target_strings = []
+            for seq in constraint_sequences:
+                # Remove EOS token if present
+                seq_without_eos = [t for t in seq if t != tokenizer.eos_token_id]
+                if seq_without_eos:
+                    target_str = tokenizer.decode(seq_without_eos, skip_special_tokens=False)
+                    target_strings.append(target_str)
+
+            self.constraint_trie = StringBasedConstraintTrie(
+                target_strings=target_strings,
+                tokenizer=tokenizer,
+                eos_token_id=tokenizer.eos_token_id
+            )
+        else:
+            self.constraint_trie = None
+
+        # Store special token IDs that should always be allowed (like PAD)
+        self.always_allowed_tokens = self._get_always_allowed_tokens()
+
         self.call_count = 0
 
-    def _get_json_token_ids(self) -> Set[int]:
-        """Get token IDs for JSON structure"""
-        json_elements = ['{', '}', '"', ':', ' ', 'choice', '\\']
-        token_ids = set()
+    def _get_always_allowed_tokens(self) -> Set[int]:
+        """
+        Get token IDs that should always be allowed.
 
-        for elem in json_elements:
-            # Handle different tokenization patterns
-            tokens = self.processing_class.encode(elem, add_special_tokens=False)
-            token_ids.update(tokens)
+        NOTE: We do NOT include EOS here - it's handled by the trie.
+        Only include PAD if it's different from EOS.
+        """
+        always_allowed = set()
 
-            # Also handle as part of larger JSON structures
-            json_variants = [f'"{elem}"', f' {elem}', f'{elem} ']
-            for variant in json_variants:
-                variant_tokens = self.processing_class.encode(variant, add_special_tokens=False)
-                token_ids.update(variant_tokens)
+        # Only add PAD if it's different from EOS
+        if (self.processing_class.pad_token_id is not None and
+                self.processing_class.pad_token_id != self.processing_class.eos_token_id):
+            always_allowed.add(self.processing_class.pad_token_id)
 
-        return token_ids
-
-    def _get_special_token_ids(self) -> Set[int]:
-        """Get IDs for special tokens"""
-        special_ids = set()
-
-        if self.processing_class.eos_token_id is not None:
-            special_ids.add(self.processing_class.eos_token_id)
-        if self.processing_class.pad_token_id is not None:
-            special_ids.add(self.processing_class.pad_token_id)
-        if hasattr(self.processing_class, 'fim_middle_id'):
-            special_ids.add(self.processing_class.fim_middle_id)
-
-        return special_ids
-
-    def _detect_generation_stage(self, text: str) -> str:
-        """Detect which stage we're in based on prompt content"""
-        if self.stage_patterns["generation"].search(text):
-            return "generation"
-        elif self.stage_patterns["selection"].search(text):
-            return "selection"
-        else:
-            # Fallback: check for choice pattern
-            if re.search(r'\{"choice":\s*"([^"]*)"}$', text):
-                return "selection"
-            return "generation"
+        return always_allowed
 
     def _extract_current_json_context(self, text: str) -> List[int]:
         """
         Extract the complete token sequence generated so far after <|fim_middle|>.
-        This should exactly match the prefixes built into the constraint trie.
+
+        Args:
+            text: The complete text including prompt and generated content
+
+        Returns:
+            List of token IDs representing the generated portion
         """
         fim_middle_marker = '<|fim_middle|>'
-        # Check if we have the marker
+
         if fim_middle_marker not in text:
-            logging.debug("[Context] No fim_middle marker found, returning empty context")
             return []
+
         # Get everything after the last occurrence of the marker
         generated_text = text.split(fim_middle_marker)[-1]
-        # Handle empty generation
+
         if not generated_text:
-            logging.debug("[Context] No text generated yet, returning empty context")
             return []
+
         # Encode the complete generated sequence
         generated_tokens = self.processing_class.encode(generated_text, add_special_tokens=False)
-        # Debug logging
-        if len(generated_tokens) <= 10:
-            decoded = [self.processing_class.decode([t], skip_special_tokens=False) for t in generated_tokens]
-            logging.info(f"[Context] Generated: '{generated_text[:50]}' → tokens: {decoded}")
+
         return generated_tokens
 
+    def _detect_generation_stage(self, text: str) -> str:
+        """
+        Detect which stage we're in based on prompt content.
+
+        Args:
+            text: The complete text
+
+        Returns:
+            "selection" or "generation"
+        """
+        if "# EMIT a" in text or "EMIT a" in text:
+            return "generation"
+        elif "# TASK: Choose exactly one" in text or "Choose exactly one" in text:
+            return "selection"
+        else:
+            return self.stage  # Fallback to initialization value
+
     def __call__(self, input_ids: torch.Tensor, scores: torch.Tensor) -> torch.Tensor:
-        """Apply constraints to logits"""
+        """
+        Apply constraints to logits.
+
+        Args:
+            input_ids: Tensor of input token IDs (batch_size, seq_len)
+            scores: Tensor of logits (batch_size, vocab_size)
+
+        Returns:
+            Modified scores tensor with constraints applied
+        """
         self.call_count += 1
 
-        if not self.enable_training_constraints:
+        # Early exit if constraints are disabled or no trie
+        if not self.enable_training_constraints or self.constraint_trie is None:
             return scores
 
         # Get current text context
         current_text = self.processing_class.decode(input_ids[0], skip_special_tokens=False)
+
+        # Detect stage
         current_stage = self._detect_generation_stage(current_text)
 
-        # Debug logging (only first few calls to avoid spam)
-        if self.call_count <= 5:
-            logging.info(f"🔍 ConstraintProcessor Call #{self.call_count}:")
-            logging.info(f"   Detected stage: {current_stage}")
-            logging.info(f"   Has trie: {self.constraint_trie is not None}")
-            logging.info(f"   Input IDs length: {input_ids.shape[0]} tokens")
-            logging.info(f"   Text length: {len(current_text)} chars")
-
-        # Stage 2: Free generation for literal values (less constrained)
+        # Skip constraints for generation stage (free text generation)
         if current_stage == "generation":
             if self.call_count <= 5:
-                logging.info(f"   Action: Skipping constraints (generation stage)")
-            return self._apply_generation_constraints(input_ids, scores, current_text)
+                logging.info(f"🔍 Call #{self.call_count}: Generation stage, skipping constraints")
+            return scores
 
-        # Stage 1: Strict constraint enforcement
-        if self.call_count <= 5:
-            logging.info(f"   Action: Applying selection constraints")
-        return self._apply_selection_constraints(input_ids, scores, current_text)
+        # Extract generated tokens
+        json_context = self._extract_current_json_context(current_text)
 
-    def _apply_selection_constraints(self, input_ids: torch.Tensor, scores: torch.Tensor, text: str) -> torch.Tensor:
-        """Apply strict constraints for token selection stage"""
-        if self.constraint_trie is None:
-            return scores  # No constraints available
-
-        # Extract current JSON context
-        json_context = self._extract_current_json_context(text)
-        #logging.info(f"[DEBUG] Selection constraints call #{self.call_count}")
-        #logging.info(f"Json Context encoded: {json_context}")
-        #logging.info(f"Json Context decoded: {[self.processing_class.decode(j, skip_special_tokens=False) for j in json_context if self.processing_class]}")
-
-        # Get valid continuations from trie
+        # Get valid continuations from string-based trie
         valid_tokens = self.constraint_trie.get_valid_continuations(json_context)
-        # Always allow JSON structure and special tokens
-        #allowed_tokens = valid_tokens.union(self.json_tokens).union(self.special_tokens)
-        allowed_tokens = valid_tokens
-        # Debug: Show what's allowed (only first few times)
-        #if self.call_count <= 5:
-        logging.info(f"   JSON context length: {len(json_context)}")
-        logging.info(f"   Valid continuations: {len(valid_tokens)}")
-        logging.info(f"   Total allowed: {len(allowed_tokens)}")
-        logging.info(f"   Json Context encoded: {json_context}")
-        logging.info(f"   Json Context decoded: {[self.processing_class.decode(j, skip_special_tokens=False) for j in json_context if self.processing_class]}")
-        logging.info(f"   All allowed tokens encoded: {allowed_tokens}")
-        logging.info(f"   All allowed tokens decoded: {[self.processing_class.decode(t, skip_special_tokens=False) for t in allowed_tokens if self.processing_class]}")
+
+        # Safety check: If no valid tokens found
+        if not valid_tokens:
+            decoded_context = self.processing_class.decode(json_context, skip_special_tokens=False)
+            logging.warning(f"⚠️ No valid continuations at call #{self.call_count}")
+            logging.warning(f"   Context: '{decoded_context}' (tokens: {json_context})")
+            logging.warning(
+                f"   Targets: {self.constraint_trie.target_strings[:3] if self.constraint_trie.target_strings else 'None'}")
+
+            # Fallback: Allow EOS to prevent crash
+            if self.processing_class.eos_token_id is not None:
+                valid_tokens = {self.processing_class.eos_token_id}
+                logging.warning(f"   Fallback: Allowing only EOS token")
+            else:
+                # Last resort: return unconstrained scores
+                logging.error(f"❌ No EOS token available, returning unconstrained scores")
+                return scores
+
+        # Combine valid tokens from trie with always-allowed tokens (like PAD)
+        allowed_tokens = valid_tokens.union(self.always_allowed_tokens)
+
+        # Debug logging (first 10 calls)
+        if self.call_count <= 10:
+            decoded_context = self.processing_class.decode(json_context, skip_special_tokens=False)
+            decoded_allowed = [self.processing_class.decode([t], skip_special_tokens=False)
+                               for t in list(allowed_tokens)[:10]]
+            logging.info(f"\n🔍 ConstraintProcessor Call #{self.call_count}:")
+            logging.info(f"   Context: '{decoded_context}' (tokens: {json_context})")
+            logging.info(f"   Valid continuations: {len(valid_tokens)}")
+            logging.info(f"   Sample allowed: {decoded_allowed}")
 
         # Create constraint mask
         constraint_mask = torch.full_like(scores, float('-inf'))
+
+        # Apply constraints only for valid token indices
+        valid_count = 0
         for token_id in allowed_tokens:
-            if token_id < scores.shape[-1]:
+            if 0 <= token_id < scores.shape[-1]:
                 constraint_mask[:, token_id] = 0.0
+                valid_count += 1
+            else:
+                logging.warning(f"⚠️ Token ID {token_id} out of range (vocab size: {scores.shape[-1]})")
+
+        # Final safety check: Ensure at least one token is allowed
+        if valid_count == 0 or torch.all(torch.isinf(constraint_mask)):
+            logging.error(f"❌ All logits would be -inf after constraints, returning unconstrained scores")
+            return scores
 
         return scores + constraint_mask
 
+    def _apply_selection_constraints(self, input_ids: torch.Tensor, scores: torch.Tensor, text: str) -> torch.Tensor:
+        """
+        Apply strict constraints for token selection stage.
+        This method is now just a wrapper around __call__ for backward compatibility.
+
+        Args:
+            input_ids: Input token IDs
+            scores: Logits
+            text: Current text
+
+        Returns:
+            Constrained logits
+        """
+        return self.__call__(input_ids, scores)
+
     def _apply_generation_constraints(self, input_ids: torch.Tensor, scores: torch.Tensor, text: str) -> torch.Tensor:
-        """Apply relaxed constraints for literal generation stage"""
-        # Let the model generate freely during literal phase
-        # The trie-based constraints already ensure valid JSON structure
+        """
+        Apply relaxed constraints for literal generation stage.
+        Returns unconstrained logits for free text generation.
+
+        Args:
+            input_ids: Input token IDs
+            scores: Logits
+            text: Current text
+
+        Returns:
+            Unconstrained logits
+        """
         return scores
 
 
@@ -1631,55 +1774,47 @@ class SampleGenerationCallback(transformers.TrainerCallback):
 
     def _extract_constraint_sequences(self, prompt: str) -> List[List[int]]:
         """
-        Extract constraint sequences from the prompt based on the candidate tokens list.
-        This parses the # NEXT TOKEN CANDIDATES section and builds constraint sequences.
+        Extract constraint sequences - now just returns the encoded target strings.
+        The StringBasedConstraintTrie will handle tokenization variations.
         """
         import re
-        # Check if this is a selection stage prompt
+
         if "# TASK: Choose exactly one" not in prompt:
-            return []  # Generation stage, no constraints
-        # Extract all candidate tokens from the three lists
+            return []
+
         candidate_tokens = []
-        # Find the NEXT TOKEN CANDIDATES section
+
+        # Extract candidates
         candidates_match = re.search(
             r'# NEXT TOKEN CANDIDATES.*?(?=# TASK:|$)',
             prompt,
             re.DOTALL
         )
+
         if not candidates_match:
             return []
+
         candidates_section = candidates_match.group(0)
-        # Parse PROJECT TOKENS
-        project_match = re.search(r'# PROJECT TOKENS:\s*\[(.*?)\]', candidates_section, re.DOTALL)
-        if project_match:
-            tokens_str = project_match.group(1)
-            # Extract quoted strings
-            tokens = re.findall(r'"([^"]+)"', tokens_str)
-            candidate_tokens.extend(tokens)
-        # Parse JAVA TOKENS
-        java_match = re.search(r'# JAVA TOKENS:\s*\[(.*?)\]', candidates_section, re.DOTALL)
-        if java_match:
-            tokens_str = java_match.group(1)
-            tokens = re.findall(r'"([^"]+)"', tokens_str)
-            candidate_tokens.extend(tokens)
-        # Parse GENERIC TOKENS
-        generic_match = re.search(r'# GENERIC TOKENS:\s*\[(.*?)\]', candidates_section, re.DOTALL)
-        if generic_match:
-            tokens_str = generic_match.group(1)
-            tokens = re.findall(r'"([^"]+)"', tokens_str)
-            candidate_tokens.extend(tokens)
 
-        logging.info(f"Extracted candidate tokens for constraints: {candidate_tokens}")
+        for pattern in [r'# PROJECT TOKENS:\s*\[(.*?)\]',
+                        r'# JAVA TOKENS:\s*\[(.*?)\]',
+                        r'# GENERIC TOKENS:\s*\[(.*?)\]']:
+            match = re.search(pattern, candidates_section, re.DOTALL)
+            if match:
+                tokens_str = match.group(1)
+                tokens = re.findall(r'"([^"]+)"', tokens_str)
+                candidate_tokens.extend(tokens)
 
-        # Convert candidate tokens to token ID sequences
+        logging.info(f"\n[DEBUG] Extracted {len(candidate_tokens)} candidates")
+
+        # Build constraint sequences (one per candidate)
         constraint_sequences = []
-        for token_str in candidate_tokens:
-            # Encode each candidate token
-            token_ids = self.tok.encode(token_str, add_special_tokens=False)
-            if token_ids:  # Only add non-empty sequences
+        for candidate_token in candidate_tokens:
+            complete_output = f'{{"choice":"{candidate_token}"}}'
+            token_ids = self.tok.encode(complete_output, add_special_tokens=False)
+            if token_ids:
                 constraint_sequences.append(token_ids)
-            logging.info(f"Encoded candidate seq: {token_ids}")
-            logging.info(f"Decoded sequence: {[self.tok.decode(j, skip_special_tokens=False) for j in token_ids if self.tok]}")
+
         return constraint_sequences
 
     def _create_constrained_logits_processor(self, prompt: str) -> Optional[transformers.LogitsProcessorList]:
