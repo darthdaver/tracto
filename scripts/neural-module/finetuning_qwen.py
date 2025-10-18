@@ -31,7 +31,7 @@ torch.backends.cudnn.allow_tf32 = True
 
 from torch.utils.data import Dataset
 import transformers
-from transformers import Trainer, LogitsProcessor
+from transformers import Trainer, LogitsProcessor, AutoTokenizer
 from transformers import BitsAndBytesConfig
 from torch.utils.data import DataLoader
 from peft.utils import prepare_model_for_kbit_training
@@ -42,36 +42,429 @@ IGNORE_INDEX = -100
 # Sample queries for generation testing
 sample_query_1 = """<|fim_prefix|>
 // Test prefix
-public void testExample() {
-String result = processData("test");
-<|fim_suffix|>
+public void testToJson() throws IOException {
+    List<WorkflowRuleTarget> targets = Collections.singletonList(new WorkflowRuleTarget.Builder("WQaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").priority(54333).timeout(30).build());
+    List<WorkflowRule> rules = Collections.singletonList(new WorkflowRule.Builder("skill == \"HR\"", targets).friendlyName("4354").build());
+    WorkflowRuleTarget defaultTarget = new WorkflowRuleTarget.Builder("WQaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").build();
+    Workflow workflow = new Workflow(rules, defaultTarget);
+    assertEquals(<|fim_suffix|>
+
+# The program uses Junit Version: JUnit 4
 
 # NEXT TOKEN CANDIDATES
-# JAVA_TOKENS: ["assertEquals", "assertTrue", "assertFalse", "assertNotNull"]
-# TASK: Choose exactly one among the candidates as the NEXT token.
-# OUTPUT: Generate a JSON on one line: {"choice":""}
+# PROJECT TOKENS: ["WorkflowRuleTargetTestSTARSplitTest", "TaskRouterResource", "WorkflowTestSTARSplitTestPrefix", "WorkflowRuleTarget", "Workflow", "IOException", "TaskRouting", "WorkflowTestSTARNormalizedTest", "WorkflowRuleTargetTestSTARSplitTestPrefix", "WorkflowRuleTargetTestSTARNormalizedTest", "Assert", "WorkflowTestSTARSplitTest", "WorkflowRule", "Collections", "WorkflowRuleTargetTest", "ObjectMapper", "WorkflowTest", "getClass", "wait", "hashCode", "notifyAll", "equals", "clone", "toString", "finalize", "registerNatives", "notify", "defaultTarget", "rules", "workflow", "targets"]
+# JAVA TOKENS: ["-", "@", "boolean", "byte", "char", "double", "float", "int", "long", "new", "short", "super", "switch", "this", "void", "module", "open", "requires", "exports", "opens", "to", "uses", "provides", "with", "transitive", "var", "yield", "record", "sealed", "permits", "true", "false", "TEXT_BLOCK", "null", "(", "<", "!", "~", "++", "--", "+"]
+# GENERIC TOKENS: ["DECIMAL_LITERAL", "HEX_LITERAL", "OCT_LITERAL", "BINARY_LITERAL", "FLOAT_LITERAL", "HEX_FLOAT_LITERAL", "CHAR_LITERAL", "STRING_LITERAL"]
+
+# TASK: Choose exactly one among the three given list as the NEXT token/type.
+# OUTPUT: Generate a JSON on one line: {"choice":"<candidate>"}
+
+# ADDITIONAL CONTEXTUAL INFORMATION (CAN GUIDE THE CHOICE):
+// Invoked methods in test prefix
+/**
+ * Returns an immutable list containing only the specified object.
+ * The returned list is serializable.
+ *
+ * @param  <T> the class of the objects in the list
+ * @param o the sole object to be stored in the returned list.
+ * @return an immutable list containing only the specified object.
+ * @since 1.3
+ */
+public static <T> List<T> singletonList(T o){
+    return new SingletonList<>(o);
+}
+
+public WorkflowRuleTarget build(){
+    return new WorkflowRuleTarget(this);
+}
+
+public Builder timeout(Integer timeout){
+    this.timeout = timeout;
+    return this;
+}
+
+public Builder priority(Integer priority){
+    this.priority = priority;
+    return this;
+}
+
+public Builder(String queue){
+    this.queue = queue;
+}
+
+public WorkflowRule build(){
+    return new WorkflowRule(this);
+}
+
+public Builder friendlyName(String friendlyName){
+    this.friendlyName = friendlyName;
+    return this;
+}
+
+public Builder(String expression, List<WorkflowRuleTarget> targets){
+    this.expression = expression;
+    this.targets = targets;
+}
+
+/**
+ * Define a workflow.
+ *
+ * @param workflowRules list of workflow rules (in order they will be processed)
+ * @param defaultTarget default filter
+ */
+public Workflow(List<WorkflowRule> workflowRules, WorkflowRuleTarget defaultTarget){
+    taskRouting = new TaskRouting(workflowRules, defaultTarget);
+}
+
+// Constructors and methods defined in focal class
+public List<WorkflowRule> getWorkflowRules(){
+    return taskRouting.getWorkflowRules();
+}
+
+public WorkflowRuleTarget getDefaultTarget(){
+    return taskRouting.getDefaultTarget();
+}
+
+/**
+ * Converts a JSON workflow configuration to a workflow object.
+ *
+ * @param json JSON for workflow
+ * @return a workflow rule target object
+ * @throws IOException if unable to create object
+ */
+public static Workflow fromJson(String json) throws IOException{
+    ObjectMapper mapper = new ObjectMapper();
+    return mapper.readValue(json, Workflow.class);
+}
+
+// Fields defined in focal class
+private final TaskRouting taskRouting;
+
 <|fim_middle|>"""
 
 sample_query_2 = """<|fim_prefix|>
-// Test method
-public void testValidation() {
-ValidationResult result = validator.validate(input);
-<|fim_suffix|>
+// Test prefix
+public void testFromJson() throws IOException {
+    WorkflowRuleTarget target = WorkflowRuleTarget.fromJson("{\"queue\":\"QS123\",\"expression\":\"1==1\",\"priority\":5,\"timeout\":30,\"order_by\":\"worker.english_level ASC\",\"skip_if\":\"workers.available == 0\",\"known_worker_friendly_name\":\"task.requested_agent\",\"known_worker_sid\":\"task.requested_agent_id\"}");
+    assertEquals("QS123", target.getQueue());
+    assertEquals(<|fim_suffix|>
 
-# NEXT TOKEN CANDIDATES
-# JAVA_TOKENS: ["assertTrue", "assertFalse", "assertEquals", "assertNotNull"]
-# TASK: Choose exactly one among the candidates as the NEXT token.
-# OUTPUT: Generate a JSON on one line: {"choice":""}
+# The program uses Junit Version: JUnit 4
+
+# EMIT a Java STRING_LITERAL as the next token
+Output ONLY the literal including quotes, with valid Java escapes. Nothing else.
+
+# ADDITIONAL CONTEXTUAL INFORMATION (CAN HELP THE GENERATION):
+// Invoked methods in test prefix
+/**
+ * Converts a JSON workflow configuration to a workflow configuration object.
+ *
+ * @param json JSON for workflow rule target
+ * @return a workflow rule target object
+ * @throws IOException if unable to create object
+ */
+public static WorkflowRuleTarget fromJson(String json) throws IOException{
+    ObjectMapper mapper = new ObjectMapper();
+    return mapper.readValue(json, WorkflowRuleTarget.class);
+}
+
+/**
+ * Get the queue for the workflow rule target.
+ *
+ * @return queue sid
+ */
+public String getQueue(){
+    return queue;
+}
+
+// Constructors and methods defined in focal class
+/**
+ * Get the queue for the workflow rule target.
+ *
+ * @return queue sid
+ */
+public String getQueue(){
+    return queue;
+}
+
+/**
+ * Get the expression for the workflow rule target to limit the workers selected.
+ *
+ * @return the expression
+ */
+public String getExpression(){
+    return expression;
+}
+
+/**
+ * Get the priority for the workflow rule target.
+ *
+ * @return the priority
+ */
+public Integer getPriority(){
+    return priority;
+}
+
+/**
+ * Get the timeout for the workflow rule target.
+ *
+ * @return the timeout
+ */
+public Integer getTimeout(){
+    return timeout;
+}
+
+/**
+ * Get the orderBy for the workflow rule target.
+ *
+ * @return the orderBy
+ */
+public String getOrderBy(){
+    return orderBy;
+}
+
+/**
+ * Get the skipIf for the workflow rule target.
+ *
+ * @return the skipIf
+ */
+public String getSkipIf(){
+    return skipIf;
+}
+
+/**
+ * Get the knownWorkerSid expression for the workflow rule target.
+ *
+ * @return the knownWorkerSid expression
+ */
+public String getKnownWorkerSid(){
+    return knownWorkerSid;
+}
+
+/**
+ * Get the knownWorkerFriendlyName expression for the workflow rule target.
+ *
+ * @return the knownWorkerFriendlyName expression
+ */
+public String getKnownWorkerFriendlyName(){
+    return knownWorkerFriendlyName;
+}
+
+/**
+ * Converts a JSON workflow configuration to a workflow configuration object.
+ *
+ * @param json JSON for workflow rule target
+ * @return a workflow rule target object
+ * @throws IOException if unable to create object
+ */
+public static WorkflowRuleTarget fromJson(String json) throws IOException{
+    ObjectMapper mapper = new ObjectMapper();
+    return mapper.readValue(json, WorkflowRuleTarget.class);
+}
+
+// Fields defined in focal class
+private final String queue;
+
+private final String expression;
+
+private final Integer priority;
+
+private final Integer timeout;
+
+private final String orderBy;
+
+private final String skipIf;
+
+private final String knownWorkerSid;
+
+private final String knownWorkerFriendlyName;
+
+private String queue;
+
+private String expression;
+
+private Integer priority;
+
+private Integer timeout;
+
+private String orderBy;
+
+private String skipIf;
+
+private String knownWorkerSid;
+
+private String knownWorkerFriendlyName;
+
 <|fim_middle|>"""
 
 sample_query_3 = """<|fim_prefix|>
-// Test case
-public void testStringGeneration() {
-String generated = generator.createString();
-assertEquals(<|fim_suffix|>
+// Test prefix
+public void testFromJson() throws IOException {
+    WorkflowRuleTarget target = WorkflowRuleTarget.fromJson("{\"queue\":\"QS123\",\"expression\":\"1==1\",\"priority\":5,\"timeout\":30,\"order_by\":\"worker.english_level ASC\",\"skip_if\":\"workers.available == 0\",\"known_worker_friendly_name\":\"task.requested_agent\",\"known_worker_sid\":\"task.requested_agent_id\"}");
+    assertEquals("QS123", target.getQueue());
+    assertEquals("1==1", target.getExpression());
+    assertEquals(5,(int )<|fim_suffix|>
 
-# EMIT a Java STRING_LITERAL as the next token.
-# OUTPUT: Generate a JSON on one line: {"choice":""}
+# The program uses Junit Version: JUnit 4
+
+# NEXT TOKEN CANDIDATES
+# PROJECT TOKENS: ["WorkflowRuleTargetTestSTARSplitTest", "TaskRouterResource", "WorkflowTestSTARSplitTestPrefix", "WorkflowRuleTarget", "Workflow", "IOException", "TaskRouting", "WorkflowTestSTARNormalizedTest", "WorkflowRuleTargetTestSTARSplitTestPrefix", "WorkflowRuleTargetTestSTARNormalizedTest", "Assert", "WorkflowTestSTARSplitTest", "WorkflowRule", "WorkflowRuleTargetTest", "ObjectMapper", "WorkflowTest", "getClass", "wait", "hashCode", "notifyAll", "equals", "clone", "toString", "registerNatives", "finalize", "notify", "target"]
+# JAVA TOKENS: ["-", "@", "boolean", "byte", "char", "double", "float", "int", "long", "new", "short", "super", "switch", "this", "void", "module", "open", "requires", "exports", "opens", "to", "uses", "provides", "with", "transitive", "var", "yield", "record", "sealed", "permits", "true", "false", "TEXT_BLOCK", "null", "(", "<", "!", "~", "++", "--", "+"]
+# GENERIC TOKENS: ["DECIMAL_LITERAL", "HEX_LITERAL", "OCT_LITERAL", "BINARY_LITERAL", "FLOAT_LITERAL", "HEX_FLOAT_LITERAL", "CHAR_LITERAL", "STRING_LITERAL"]
+
+# TASK: Choose exactly one among the three given list as the NEXT token/type.
+# OUTPUT: Generate a JSON on one line: {"choice":"<candidate>"}
+
+# ADDITIONAL CONTEXTUAL INFORMATION (CAN GUIDE THE CHOICE):
+// Invoked methods in test prefix
+/**
+ * Converts a JSON workflow configuration to a workflow configuration object.
+ *
+ * @param json JSON for workflow rule target
+ * @return a workflow rule target object
+ * @throws IOException if unable to create object
+ */
+public static WorkflowRuleTarget fromJson(String json) throws IOException{
+    ObjectMapper mapper = new ObjectMapper();
+    return mapper.readValue(json, WorkflowRuleTarget.class);
+}
+
+/**
+ * Get the queue for the workflow rule target.
+ *
+ * @return queue sid
+ */
+public String getQueue(){
+    return queue;
+}
+
+/**
+ * Get the expression for the workflow rule target to limit the workers selected.
+ *
+ * @return the expression
+ */
+public String getExpression(){
+    return expression;
+}
+
+// Constructors and methods defined in focal class
+/**
+ * Get the queue for the workflow rule target.
+ *
+ * @return queue sid
+ */
+public String getQueue(){
+    return queue;
+}
+
+/**
+ * Get the expression for the workflow rule target to limit the workers selected.
+ *
+ * @return the expression
+ */
+public String getExpression(){
+    return expression;
+}
+
+/**
+ * Get the priority for the workflow rule target.
+ *
+ * @return the priority
+ */
+public Integer getPriority(){
+    return priority;
+}
+
+/**
+ * Get the timeout for the workflow rule target.
+ *
+ * @return the timeout
+ */
+public Integer getTimeout(){
+    return timeout;
+}
+
+/**
+ * Get the orderBy for the workflow rule target.
+ *
+ * @return the orderBy
+ */
+public String getOrderBy(){
+    return orderBy;
+}
+
+/**
+ * Get the skipIf for the workflow rule target.
+ *
+ * @return the skipIf
+ */
+public String getSkipIf(){
+    return skipIf;
+}
+
+/**
+ * Get the knownWorkerSid expression for the workflow rule target.
+ *
+ * @return the knownWorkerSid expression
+ */
+public String getKnownWorkerSid(){
+    return knownWorkerSid;
+}
+
+/**
+ * Get the knownWorkerFriendlyName expression for the workflow rule target.
+ *
+ * @return the knownWorkerFriendlyName expression
+ */
+public String getKnownWorkerFriendlyName(){
+    return knownWorkerFriendlyName;
+}
+
+/**
+ * Converts a JSON workflow configuration to a workflow configuration object.
+ *
+ * @param json JSON for workflow rule target
+ * @return a workflow rule target object
+ * @throws IOException if unable to create object
+ */
+public static WorkflowRuleTarget fromJson(String json) throws IOException{
+    ObjectMapper mapper = new ObjectMapper();
+    return mapper.readValue(json, WorkflowRuleTarget.class);
+}
+
+// Fields defined in focal class
+private final String queue;
+
+private final String expression;
+
+private final Integer priority;
+
+private final Integer timeout;
+
+private final String orderBy;
+
+private final String skipIf;
+
+private final String knownWorkerSid;
+
+private final String knownWorkerFriendlyName;
+
+private String queue;
+
+private String expression;
+
+private Integer priority;
+
+private Integer timeout;
+
+private String orderBy;
+
+private String skipIf;
+
+private String knownWorkerSid;
+
+private String knownWorkerFriendlyName;
+
 <|fim_middle|>"""
 
 logging.basicConfig(level=logging.INFO)
@@ -166,14 +559,17 @@ class TrieNode:
 class ConstraintTrie:
     """Trie structure for efficient constraint lookup with training support"""
 
-    def __init__(self, constraint_sequences: List[List[int]], eos_token_id: Optional[int] = None):
+    def __init__(self, constraint_sequences: List[List[int]], processing_class: Optional[AutoTokenizer] = None, eos_token_id: Optional[int] = None):
         self.root = TrieNode()
         self.eos_token_id = eos_token_id
+        self.processing_class = processing_class
         self._build_trie(constraint_sequences)
 
     def _build_trie(self, sequences: List[List[int]]):
         """Build trie from pre-computed constraint sequences"""
         for seq in sequences:
+            # logging.info(f"Seq encoded: {seq}")
+            # logging.info(f"Seq decoded: {[self.processing_class.decode(s, skip_special_tokens=False) for s in seq if self.processing_class]}")
             if not seq:  # Skip empty sequences
                 continue
             current = self.root
@@ -206,7 +602,10 @@ class ConstraintTrie:
         # If we're at a terminal node and EOS is configured, ensure it's available
         if current.is_terminal and self.eos_token_id is not None:
             valid_tokens.add(self.eos_token_id)
-
+        # logging.info(f"Prefix encoded: {prefix}")
+        # logging.info(f"Prefix decoded: {[self.processing_class.decode(p, skip_special_tokens=False) for p in prefix if self.processing_class ]}")
+        # logging.info(f"Valid tokens encoded: {valid_tokens}")
+        # logging.info(f"Valid tokens decoded: {[self.processing_class.decode(v, skip_special_tokens=False) for v in list(valid_tokens) if self.processing_class]}")
         return valid_tokens
 
     def is_prefix_valid(self, prefix: List[int]) -> bool:
@@ -224,7 +623,7 @@ class AdvancedConstrainedLogitsProcessor(LogitsProcessor):
 
     def __init__(self, tokenizer, constraint_sequences: List[List[int]], stage: str = "selection",
                  enable_training_constraints: bool = True):
-        self.tokenizer = tokenizer
+        self.processing_class = tokenizer
         self.stage = stage
         self.enable_training_constraints = enable_training_constraints
 
@@ -245,18 +644,18 @@ class AdvancedConstrainedLogitsProcessor(LogitsProcessor):
 
     def _get_json_token_ids(self) -> Set[int]:
         """Get token IDs for JSON structure"""
-        json_elements = ['{', '}', '"', ':', ' ', 'choice']
+        json_elements = ['{', '}', '"', ':', ' ', 'choice', '\\']
         token_ids = set()
 
         for elem in json_elements:
             # Handle different tokenization patterns
-            tokens = self.tokenizer.encode(elem, add_special_tokens=False)
+            tokens = self.processing_class.encode(elem, add_special_tokens=False)
             token_ids.update(tokens)
 
             # Also handle as part of larger JSON structures
             json_variants = [f'"{elem}"', f' {elem}', f'{elem} ']
             for variant in json_variants:
-                variant_tokens = self.tokenizer.encode(variant, add_special_tokens=False)
+                variant_tokens = self.processing_class.encode(variant, add_special_tokens=False)
                 token_ids.update(variant_tokens)
 
         return token_ids
@@ -264,12 +663,12 @@ class AdvancedConstrainedLogitsProcessor(LogitsProcessor):
     def _get_special_token_ids(self) -> Set[int]:
         """Get IDs for special tokens"""
         special_ids = set()
-        if self.tokenizer.eos_token_id is not None:
-            special_ids.add(self.tokenizer.eos_token_id)
-        if self.tokenizer.pad_token_id is not None:
-            special_ids.add(self.tokenizer.pad_token_id)
-        if hasattr(self.tokenizer, 'fim_middle_id'):
-            special_ids.add(self.tokenizer.fim_middle_id)
+        if self.processing_class.eos_token_id is not None:
+            special_ids.add(self.processing_class.eos_token_id)
+        if self.processing_class.pad_token_id is not None:
+            special_ids.add(self.processing_class.pad_token_id)
+        if hasattr(self.processing_class, 'fim_middle_id'):
+            special_ids.add(self.processing_class.fim_middle_id)
         return special_ids
 
     def _detect_generation_stage(self, text: str) -> str:
@@ -281,6 +680,7 @@ class AdvancedConstrainedLogitsProcessor(LogitsProcessor):
         else:
             # Fallback: check for choice pattern
             if re.search(r'\{"choice":\s*"([^"]*)"}$', text):
+                logging.info("Detected selection stage based on JSON pattern.")
                 return "selection"
             return "generation"
 
@@ -288,10 +688,11 @@ class AdvancedConstrainedLogitsProcessor(LogitsProcessor):
         """Extract current JSON generation context for trie lookup"""
         # Find the last JSON structure being built
         json_match = re.search(r'\{"choice":\s*"([^"]*)"}$', text)
+        # logging.info(f"Extracting current JSON context from {text}")
         if json_match:
             partial_value = json_match.group(1)
             # Convert to token IDs for trie traversal
-            return self.tokenizer.encode(partial_value, add_special_tokens=False)
+            return self.processing_class.encode(partial_value, add_special_tokens=False)
 
         # Look for opening brace
         if '{"choice":' in text:
@@ -305,7 +706,7 @@ class AdvancedConstrainedLogitsProcessor(LogitsProcessor):
             return scores
 
         # Get current text context
-        current_text = self.tokenizer.decode(input_ids[0], skip_special_tokens=False)
+        current_text = self.processing_class.decode(input_ids[0], skip_special_tokens=False)
         current_stage = self._detect_generation_stage(current_text)
 
         # Stage 2: Free generation for literal values (less constrained)
@@ -328,6 +729,9 @@ class AdvancedConstrainedLogitsProcessor(LogitsProcessor):
 
         # Always allow JSON structure and special tokens
         allowed_tokens = valid_tokens.union(self.json_tokens).union(self.special_tokens)
+
+        # logging.info(f"Allowed tokens encoded: {allowed_tokens}")
+        # logging.info(f"Allowed tokens decoded: {[self.processing_class.decode(t, skip_special_tokens=False) for t in list(allowed_tokens) if self.processing_class]}")
 
         # Create constraint mask
         constraint_mask = torch.full_like(scores, float('-inf'))
@@ -739,7 +1143,7 @@ def assert_meta_compatible(
 @dataclass
 class ConstraintAwareDataCollator:
     """Data collator that properly handles constraint sequences"""
-    tokenizer: transformers.PreTrainedTokenizer
+    processing_class: transformers.PreTrainedTokenizer
     pad_to_multiple_of: int = 8
     static_pad_to: Optional[int] = None
 
@@ -750,7 +1154,7 @@ class ConstraintAwareDataCollator:
 
         # Standard padding
         ids = torch.nn.utils.rnn.pad_sequence(
-            input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
+            input_ids, batch_first=True, padding_value=self.processing_class.pad_token_id
         )
         lbl = torch.nn.utils.rnn.pad_sequence(
             labels, batch_first=True, padding_value=IGNORE_INDEX
@@ -769,13 +1173,13 @@ class ConstraintAwareDataCollator:
                 ids = ids[:, :target_len]
                 lbl = lbl[:, :target_len]
             else:
-                ids = torch.nn.functional.pad(ids, (0, pad), value=self.tokenizer.pad_token_id)
+                ids = torch.nn.functional.pad(ids, (0, pad), value=self.processing_class.pad_token_id)
                 lbl = torch.nn.functional.pad(lbl, (0, pad), value=IGNORE_INDEX)
 
         return {
             "input_ids": ids,
             "labels": lbl,
-            "attention_mask": ids.ne(self.tokenizer.pad_token_id),
+            "attention_mask": ids.ne(self.processing_class.pad_token_id),
             "constraint_sequences": constraint_sequences,  # Pass through as-is
         }
 
@@ -790,8 +1194,9 @@ class ConstrainedTrainer(transformers.Trainer):
     def __init__(self, constraint_weight: float = 0.1, **kwargs):
         super().__init__(**kwargs)
         self.constraint_weight = constraint_weight
+        self.model_accepts_loss_kwargs = True
 
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         """Compute loss with constraint penalties"""
         labels = inputs.get("labels")
         constraint_sequences = inputs.get("constraint_sequences", [])
@@ -823,7 +1228,10 @@ class ConstrainedTrainer(transformers.Trainer):
         return (total_loss, outputs) if return_outputs else total_loss
 
     def _compute_constraint_loss(self, logits, labels, constraint_sequences):
-        """FIXED: Compute constraint violation penalty using predicted tokens instead of labels"""
+        """
+        Compute constraint violation penalty using ground truth labels for prefix construction.
+        This ensures stable gradient signals and proper constraint learning during training.
+        """
         batch_size, seq_len, vocab_size = logits.shape
         constraint_penalty = 0.0
 
@@ -831,40 +1239,43 @@ class ConstrainedTrainer(transformers.Trainer):
             if not sequences:  # No constraints for this sample
                 continue
 
-            # sequences is already List[List[int]] from the binary format
-            # Build constraint trie for this sample
-            constraint_trie = ConstraintTrie(sequences, eos_token_id=self.tokenizer.eos_token_id)
-
-            # Apply constraints position by position
             for pos in range(seq_len):
                 if labels[batch_idx, pos] == IGNORE_INDEX:
                     continue
 
-                # CRITICAL FIX: Use predicted tokens up to current position, not ground truth labels
-                # Get predicted tokens up to but not including current position
+                # CRITICAL FIX: Use ground truth labels for prefix, not predictions
                 if pos > 0:
-                    predicted_tokens = torch.argmax(logits[batch_idx, :pos], dim=-1).tolist()
-                    # Filter out any IGNORE_INDEX tokens (shouldn't occur in predictions, but safety check)
-                    current_prefix = [t for t in predicted_tokens if t != IGNORE_INDEX]
+                    # Extract valid label tokens up to current position (excluding IGNORE_INDEX)
+                    label_prefix = []
+                    for i in range(pos):
+                        if labels[batch_idx, i] != IGNORE_INDEX:
+                            label_prefix.append(labels[batch_idx, i].item())
                 else:
-                    current_prefix = []  # No prefix for first position
+                    label_prefix = []  # No prefix for first position
 
-                # Get valid continuations from trie
-                valid_tokens = constraint_trie.get_valid_continuations(current_prefix)
+                # Build constraint trie for this sample
+                constraint_trie = ConstraintTrie(sequences, eos_token_id=self.processing_class.eos_token_id, processing_class=self.processing_class)
 
-                if valid_tokens:  # If there are constraints for this position
-                    # Create constraint mask - only allow valid tokens
-                    constraint_mask = torch.zeros(vocab_size, device=logits.device)
-                    for token_id in valid_tokens:
-                        if 0 <= token_id < vocab_size:
-                            constraint_mask[token_id] = 1.0
+                # Get valid continuations from current prefix
+                valid_tokens = constraint_trie.get_valid_continuations(label_prefix)
 
-                    # Compute penalty for violating constraints
-                    probs = torch.softmax(logits[batch_idx, pos], dim=-1)
-                    constraint_prob = (probs * constraint_mask).sum()
+                if not valid_tokens:
+                    # If no valid continuations, apply maximum penalty
+                    constraint_penalty += 10.0  # High penalty for invalid states
+                    continue
 
-                    # Add penalty (negative log probability of valid tokens)
-                    constraint_penalty += -torch.log(constraint_prob + 1e-8)
+                # Create constraint mask - only allow valid tokens
+                constraint_mask = torch.zeros(vocab_size, device=logits.device)
+                for token_id in valid_tokens:
+                    if 0 <= token_id < vocab_size:
+                        constraint_mask[token_id] = 1.0
+
+                # Compute penalty for violating constraints
+                probs = torch.softmax(logits[batch_idx, pos], dim=-1)
+                constraint_prob = (probs * constraint_mask).sum()
+
+                # Add penalty: negative log probability of valid tokens
+                constraint_penalty += -torch.log(constraint_prob + 1e-8)
 
         return constraint_penalty / batch_size if batch_size > 0 else torch.tensor(0.0)
 
@@ -1018,14 +1429,14 @@ class LoggingCallback(transformers.TrainerCallback):
             return
 
         now = time.time()
-        world = getattr(args, "world_size", 1)
+        world = getattr(args, 'world_size', 1)
 
         if self.last_time is None:
             self.last_time = now
 
-        include_tok_seen = getattr(args, "include_num_input_tokens_seen", False)
-        if include_tok_seen and getattr(state, "num_input_tokens_seen", None) is not None:
-            delta_tokens = (state.num_input_tokens_seen - self.total_tokens_seen) * world
+        include_toks_seen = getattr(args, 'include_num_input_tokens_seen', False)
+        if include_toks_seen and getattr(state, 'num_input_tokens_seen', None) is not None:
+            delta_tokens = state.num_input_tokens_seen - self.total_tokens_seen * world
             self.total_tokens_seen = state.num_input_tokens_seen
         else:
             steps_elapsed = state.global_step - self.last_step
@@ -1036,20 +1447,34 @@ class LoggingCallback(transformers.TrainerCallback):
         dt = max(1e-6, now - self.last_time)
         tps = int(delta_tokens / dt)
 
-        msg = {"step": state.global_step, "epoch": state.epoch,
-               "loss": logs.get("loss"), "eval_loss": logs.get("eval_loss"),
-               "lr": logs.get("learning_rate"), "tokens_per_sec": tps}
+        msg = (f"step {state.global_step}, epoch {state.epoch}, "
+               f"loss {logs.get('loss')}, eval_loss {logs.get('eval_loss')}, "
+               f"lr {logs.get('learning_rate')}, tokens_per_sec {tps}")
 
         if self.log_memory and torch.cuda.is_available():
             try:
-                mem = torch.cuda.max_memory_allocated() // 1_000_000
-                msg["gpu_mem_MiB"] = int(mem)
+                mem = torch.cuda.max_memory_allocated() / 1000000
+                msg += f", gpu_mem_MiB {int(mem)}"
                 torch.cuda.reset_peak_memory_stats()
             except Exception:
                 pass
 
-        if self.trainer.is_world_process_zero():
-            print("\n------------------")
+        # FIXED: Use proper distributed check instead of self.trainer
+        try:
+            # Check if we're in distributed mode and if this is rank 0
+            if torch.distributed.is_available() and torch.distributed.is_initialized():
+                if torch.distributed.get_rank() == 0:
+                    print("------------------")
+                    print(msg)
+                    print("------------------")
+            else:
+                # Single process mode
+                print("------------------")
+                print(msg)
+                print("------------------")
+        except Exception:
+            # Fallback for any distributed issues
+            print("------------------")
             print(msg)
             print("------------------")
 
@@ -1263,7 +1688,7 @@ def train():
 
     # Enhanced data collator with constraint support
     data_collator = ConstraintAwareDataCollator(
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         pad_to_multiple_of=8,
         static_pad_to=None,
     )
@@ -1294,7 +1719,7 @@ def train():
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=eval_ds,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         data_collator=data_collator,
         callbacks=callbacks,
         constraint_weight=training_args.constraint_weight,
