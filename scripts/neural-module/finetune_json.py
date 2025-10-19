@@ -1347,7 +1347,7 @@ class DetailedSubstitutionStatsCallback(transformers.TrainerCallback):
 
 class SaveModelCallback(transformers.TrainerCallback):
     def on_save(self, args, state, control, **kwargs):
-        if self.trainer.is_world_process_zero():
+        if torch.distributed.get_rank() == 0:
             logging.info(f"[save] {args.output_dir}/checkpoint-{state.global_step}/")
 
         if dist.is_available() and dist.is_initialized():
