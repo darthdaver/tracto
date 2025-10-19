@@ -579,9 +579,9 @@ class ConstraintTrie:
         for seq_idx, seq in enumerate(sequences):
             if not seq:  # Skip empty sequences
                 continue
-            logging.info(f"  Sequence {seq_idx + 1}: {seq}")
-            if self.processing_class:
-                logging.info(f"  Decoded: '{[self.processing_class.decode(s, skip_special_tokens=False) for s in seq]}'")
+            # logging.info(f"  Sequence {seq_idx + 1}: {seq}")
+            # if self.processing_class:
+            #     logging.info(f"  Decoded: '{[self.processing_class.decode(s, skip_special_tokens=False) for s in seq]}'")
             # Add the complete sequence to trie (no sub-sequences)
             current = self.root
             for depth, token_id in enumerate(seq):
@@ -1184,8 +1184,8 @@ class ConstrainedTrainer(transformers.Trainer):
             # Show constraint targets (in the _apply_token_substitution_with_debug method)
             logging.info(f"🎯 Constraint targets:")
             for i, seq in enumerate(constraint_sequences[batch_idx]):
-                #if len(constraint_sequences[batch_idx]) < 5:
-                logging.info(f"   Target {i + 1}: {seq} → '{[self.processing_class.decode(s, skip_special_tokens=False) for s in seq]}'")
+                if len(constraint_sequences[batch_idx]) < 5:
+                    logging.info(f"   Target {i + 1}: {seq} → '{[self.processing_class.decode(s, skip_special_tokens=False) for s in seq]}'")
             if len(constraint_sequences[batch_idx]) > 5:
                 logging.info(f"   ... and {len(constraint_sequences[batch_idx]) - 5} more")
 

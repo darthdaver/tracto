@@ -587,7 +587,9 @@ def iter_project_samples(
                         #             unmask_tokens = [str(parsed).strip()]
                         #     except (orjson.JSONDecodeError, TypeError):
                         # Fallback to comma-separated parsing
-                        unmask_tokens = [token.strip() for token in str(unmask_raw[1:-1]).split(',') if token.strip()]
+                        unmask_tokens = [token.strip() for token in str(unmask_raw[1:-1]).split(', ') if token.strip()]
+                        if "\",\"" in unmask_raw or "','" in unmask_raw and not "','" in unmask_tokens:
+                            unmask_tokens.append("','")
                         # Add JSON structure tokens for constraint stages (when unmask_tokens is not empty)
                         if unmask_tokens:
                             unmask_tokens = [

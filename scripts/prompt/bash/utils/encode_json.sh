@@ -25,7 +25,7 @@ for config_path in "${config_paths[@]}"; do
   i=$(basename "${config_path}")
   echo "Processing config: ${i}"
   echo "${OUTPUT_DIR}/${i}/prompt"
-  "$PY_ENV" "${PROMPT_DIR}/utils/encode.py" \
+  "$PY_ENV" "${PROMPT_DIR}/utils/encode_json.py" \
     --model_name_or_path "${MODEL_NAME:-Qwen/Qwen2.5-Coder-7B}" \
     --encoding_type "${ENCODING_TYPE}" \
     --data_dir   "${OUTPUT_DIR}/${i}/prompt" \
