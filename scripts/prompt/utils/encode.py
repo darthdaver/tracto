@@ -29,6 +29,7 @@ python build_tokenized_dataset_bins.py \
 """
 
 import io, csv, glob, math, random, argparse, logging
+from sys import prefix
 from typing import Dict, List, Tuple, Optional, Iterator, Union, Any
 import pandas as pd
 import orjson
@@ -45,8 +46,12 @@ logger = logging.getLogger(__name__)
 # --------------------------
 
 IGNORE_INDEX = -100
-
 Sample = Union[List[Dict[str, Any]], Tuple[str, str], Tuple[str, str, List[str]]]
+
+tgt_JSON_structure = {
+    "prefix": "{\"choice\": \"",
+    "suffix": "\"}"
+}
 
 # JSON structure tokens - these should always be available for JSON output
 JSON_STRUCTURE_TOKENS = {
@@ -98,7 +103,7 @@ class ShardWriter:
         self.constraints_f = open(self.constraints_path, 'wb', buffering=65536)
 
         # Track cumulative token counts and constraint positions
-        self.idx = []  # Cumulative token count per sample
+        self.idx = [0]  # Cumulative token count per sample
         self.constraints_idx = []  # (offset, length) for each sample's constraints
         self.tok_count = 0
         self.n_samples = 0
@@ -302,6 +307,12 @@ class PairEncoder(EncoderInterface):
         if not text:
             return []
         try:
+            # If tgt selection stage
+            if text.startswith(tgt_JSON_structure["prefix"]):
+                prefix_ids = self.tok.encode(JSON_STRUCTURE_TOKENS["prefix"], add_special_tokens=False)
+                suffix_ids = self.tok.encode(JSON_STRUCTURE_TOKENS["suffix"], add_special_tokens=False)
+                core_ids = self.tok.encode(text.replace(tgt_JSON_structure["prefix"],"").replace(tgt_JSON_structure["suffix"], ""), add_special_tokens=False)
+                return prefix_ids + core_ids + suffix_ids
             return self.tok.encode(text, add_special_tokens=False)
         except Exception as e:
             logger.error(f"Tokenization failed for text length {len(text)}: {e}")
@@ -398,7 +409,10 @@ class PairEncoder(EncoderInterface):
         candidate_sequences = []
         for seq in constraints_seqs:
             # Encode as a sequence (may be multiple subwords)
-            token_ids = self.tok.encode(seq, add_special_tokens=False)
+            prefix_ids = self.tok.encode(JSON_STRUCTURE_TOKENS["prefix"], add_special_tokens=False)
+            suffix_ids = self.tok.encode(JSON_STRUCTURE_TOKENS["suffix"], add_special_tokens=False)
+            core_ids = self.tok.encode(seq, add_special_tokens=False)
+            token_ids = prefix_ids + core_ids + suffix_ids
             if token_ids and token_ids[0] != self.tok.unk_token_id:
                 # Append EOS if needed, at the end of each constraint sequence
                 if self.append_eos and self.eos_id is not None:
@@ -580,8 +594,9 @@ def iter_project_samples(
                             ]
                         complete_candidate_seqs = []
                         for token in unmask_tokens:
-                            seq = JSON_STRUCTURE_TOKENS["prefix"] + token + JSON_STRUCTURE_TOKENS["suffix"]
-                            complete_candidate_seqs.append(seq)
+                            #seq = JSON_STRUCTURE_TOKENS["prefix"] + token + JSON_STRUCTURE_TOKENS["suffix"]
+                            #complete_candidate_seqs.append(seq)
+                            complete_candidate_seqs.append(token)
                         # Only yield if both src and tgt are non-empty
                         if src and tgt:
                             yield (src, tgt, complete_candidate_seqs)

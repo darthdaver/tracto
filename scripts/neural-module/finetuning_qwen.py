@@ -545,8 +545,8 @@ class TrainingArguments(transformers.TrainingArguments):
     min_early_stopping_epochs: int = 1
     early_stopping_patience: int = 2
     seed: int = 42
-    constraint_weight: float = field(default=0.1, metadata={"help": "Weight for constraint loss"})
-    enable_training_constraints: bool = field(default=True, metadata={"help": "Enable constraints during training"})
+    # constraint_weight: float = field(default=0.1, metadata={"help": "Weight for constraint loss"})
+    # enable_training_constraints: bool = field(default=True, metadata={"help": "Enable constraints during training"})
 
 
 # -------------------------
@@ -563,22 +563,26 @@ class TrieNode:
 
 
 class ConstraintTrie:
-    """Trie structure for efficient constraint lookup with training support"""
+    """Simplified trie structure for complete constraint sequences only (Option 1)"""
 
-    def __init__(self, constraint_sequences: List[List[int]], processing_class: Optional[AutoTokenizer] = None, eos_token_id: Optional[int] = None):
+    def __init__(self, constraint_sequences: List[List[int]], processing_class: Optional[AutoTokenizer] = None,
+                 eos_token_id: Optional[int] = None):
         self.root = TrieNode()
         self.eos_token_id = eos_token_id
         self.processing_class = processing_class
-        self._build_trie(constraint_sequences)
+        self._build_simple_trie(constraint_sequences)
 
-    def _build_trie(self, sequences: List[List[int]]):
-        """Build trie from pre-computed constraint sequences"""
-        logging.info("\n[DEBUG] Building ConstraintTrie...")
-        for seq in sequences:
-            logging.info(f"Seq encoded: {seq}")
-            logging.info(f"Seq decoded: {[self.processing_class.decode(s, skip_special_tokens=False) for s in seq if self.processing_class]}")
+    def _build_simple_trie(self, sequences: List[List[int]]):
+        """Build trie from complete constraint sequences only (no sub-sequences)"""
+        logging.info(f"\n[DEBUG] Building simplified ConstraintTrie with {len(sequences)} sequences...")
+
+        for seq_idx, seq in enumerate(sequences):
             if not seq:  # Skip empty sequences
                 continue
+            logging.info(f"  Sequence {seq_idx + 1}: {seq}")
+            if self.processing_class:
+                logging.info(f"  Decoded: '{[self.processing_class.decode(s, skip_special_tokens=False) for s in seq]}'")
+            # Add the complete sequence to trie (no sub-sequences)
             current = self.root
             for depth, token_id in enumerate(seq):
                 if token_id not in current.children:
@@ -586,33 +590,40 @@ class ConstraintTrie:
                     current.children[token_id].depth = depth + 1
                 current = current.children[token_id]
 
-            # Mark as terminal
+            # Mark the final node as terminal
             current.is_terminal = True
-
-            # Add EOS token as valid continuation from terminal states
-            if self.eos_token_id is not None:
-                if self.eos_token_id not in current.children:
-                    current.children[self.eos_token_id] = TrieNode()
-                    current.children[self.eos_token_id].depth = len(seq) + 1
-                    current.children[self.eos_token_id].is_terminal = True
 
     def get_valid_continuations(self, prefix: List[int]) -> Set[int]:
         """Get valid token IDs that can continue the given prefix"""
         current = self.root
+
+        # Navigate to the current prefix position in the trie
         for token_id in prefix:
             if token_id not in current.children:
+                logging.debug(f"[Trie] Invalid prefix at token {token_id}")
                 return set()  # Invalid prefix
             current = current.children[token_id]
 
+        # Return all valid next tokens from this position
         valid_tokens = set(current.children.keys())
 
-        # If we're at a terminal node and EOS is configured, ensure it's available
+        # Add EOS if we're at a terminal node
         if current.is_terminal and self.eos_token_id is not None:
             valid_tokens.add(self.eos_token_id)
-        logging.info(f"Prefix encoded: {prefix}")
-        logging.info(f"Prefix decoded: {[self.processing_class.decode(p, skip_special_tokens=False) for p in prefix if self.processing_class ]}")
-        logging.info(f"Valid tokens encoded: {valid_tokens}")
-        logging.info(f"Valid tokens decoded: {[self.processing_class.decode(v, skip_special_tokens=False) for v in list(valid_tokens) if self.processing_class]}")
+
+        # Debug logging
+        if self.processing_class and prefix:
+            decoded_prefix = self.processing_class.decode(prefix, skip_special_tokens=False)
+            logging.debug(f"[Trie] Prefix: {prefix} → '{decoded_prefix}'")
+        else:
+            logging.debug(f"[Trie] Prefix: {prefix} (empty)")
+
+        logging.debug(f"[Trie] Valid continuations: {len(valid_tokens)} tokens")
+        if self.processing_class and valid_tokens:
+            sample_decoded = [self.processing_class.decode([t], skip_special_tokens=False)
+                              for t in list(valid_tokens)[:3]]
+            logging.debug(f"[Trie] Sample continuations: {sample_decoded}")
+
         return valid_tokens
 
     def is_prefix_valid(self, prefix: List[int]) -> bool:
@@ -625,309 +636,111 @@ class ConstraintTrie:
         return True
 
 
-class StringBasedConstraintTrie:
-    """String-based constraint trie with proper EOS handling"""
-
-    def __init__(self, target_strings: List[str], tokenizer, eos_token_id: Optional[int] = None):
-        self.target_strings = target_strings
-        self.tokenizer = tokenizer
-        self.eos_token_id = eos_token_id
-
-        logging.info(f"\n[DEBUG] Building StringBasedConstraintTrie with {len(target_strings)} targets")
-        for i, target in enumerate(target_strings[:5]):
-            logging.info(f"  Target {i + 1}: '{target}'")
-        if len(target_strings) > 5:
-            logging.info(f"  ... and {len(target_strings) - 5} more")
-
-    def get_valid_continuations(self, current_token_prefix: List[int]) -> Set[int]:
-        """
-        Given current token prefix, return all tokens that could validly continue
-        toward any target output.
-        """
-        # Decode current prefix to string
-        if not current_token_prefix:
-            current_text = ""
-        else:
-            current_text = self.tokenizer.decode(current_token_prefix, skip_special_tokens=False)
-
-        # Find targets that start with this prefix
-        valid_targets = [t for t in self.target_strings if t.startswith(current_text)]
-
-        if not valid_targets:
-            # Try fuzzy matching
-            close_targets = []
-            for target in self.target_strings:
-                max_len = min(len(current_text) + 2, len(target))
-                if target[:max_len].replace('"', '').startswith(current_text.replace('"', '')):
-                    close_targets.append(target)
-
-            if close_targets:
-                logging.warning(f"⚠️ Using fuzzy match for prefix '{current_text}'")
-                valid_targets = close_targets
-            else:
-                return set()
-
-        # Collect all possible next tokens
-        valid_next_tokens = set()
-        has_completed_target = False
-
-        # DEBUG: Log the matching process
-        logging.debug(f"[Trie] Current text: '{current_text}'")
-        logging.debug(f"[Trie] Valid targets: {valid_targets}")
-
-        for target in valid_targets:
-            remaining = target[len(current_text):]
-
-            logging.debug(f"[Trie]   Target: '{target}', Remaining: '{remaining}'")
-
-            if not remaining or remaining == "":
-                # We've completed this target
-                has_completed_target = True
-                logging.debug(f"[Trie]   ✓ Target completed, EOS will be allowed")
-                continue
-
-            # Try encoding next 1 to 10 characters
-            for num_chars in range(1, min(len(remaining) + 1, 11)):
-                next_chunk = remaining[:num_chars]
-                hypothetical_text = current_text + next_chunk
-                hypothetical_tokens = self.tokenizer.encode(hypothetical_text, add_special_tokens=False)
-
-                if len(hypothetical_tokens) == len(current_token_prefix) + 1:
-                    next_token_id = hypothetical_tokens[-1]
-                    valid_next_tokens.add(next_token_id)
-                elif len(hypothetical_tokens) > len(current_token_prefix):
-                    next_token_id = hypothetical_tokens[len(current_token_prefix)]
-                    valid_next_tokens.add(next_token_id)
-
-        # CRITICAL: Only add EOS if we've completed at least one target
-        if has_completed_target:
-            if self.eos_token_id is not None:
-                logging.debug(f"[Trie] Adding EOS token {self.eos_token_id}")
-                valid_next_tokens.add(self.eos_token_id)
-        else:
-            logging.debug(f"[Trie] NOT adding EOS (no completed targets)")
-
-        logging.debug(f"[Trie] Final valid tokens: {valid_next_tokens}")
-
-        return valid_next_tokens
-
-
 class AdvancedConstrainedLogitsProcessor(LogitsProcessor):
     """
-    Constrained logits processor using string-based trie.
-    Handles tokenization variations and includes safety checks.
+    Simplified constrained logits processor working directly with encoded sequences.
     """
 
     def __init__(self, tokenizer, constraint_sequences: List[List[int]],
                  stage: str = "selection", enable_training_constraints: bool = True):
-        """
-        Initialize the constrained logits processor.
-
-        Args:
-            tokenizer: The tokenizer instance
-            constraint_sequences: List of token ID sequences representing valid outputs
-            stage: Either "selection" or "generation"
-            enable_training_constraints: Whether to apply constraints
-        """
         self.processing_class = tokenizer
         self.stage = stage
         self.enable_training_constraints = enable_training_constraints
 
-        # Build string-based trie from constraint sequences
+        # Build constraint trie directly from encoded sequences
         if constraint_sequences:
-            target_strings = []
-            for seq in constraint_sequences:
-                # Remove EOS token if present
-                seq_without_eos = [t for t in seq if t != tokenizer.eos_token_id]
-                if seq_without_eos:
-                    target_str = tokenizer.decode(seq_without_eos, skip_special_tokens=False)
-                    target_strings.append(target_str)
-
-            self.constraint_trie = StringBasedConstraintTrie(
-                target_strings=target_strings,
-                tokenizer=tokenizer,
+            self.constraint_trie = ConstraintTrie(
+                constraint_sequences=constraint_sequences,
+                processing_class=tokenizer,
                 eos_token_id=tokenizer.eos_token_id
             )
         else:
             self.constraint_trie = None
 
-        # Store special token IDs that should always be allowed (like PAD)
-        self.always_allowed_tokens = self._get_always_allowed_tokens()
-
         self.call_count = 0
 
-    def _get_always_allowed_tokens(self) -> Set[int]:
-        """
-        Get token IDs that should always be allowed.
-
-        NOTE: We do NOT include EOS here - it's handled by the trie.
-        Only include PAD if it's different from EOS.
-        """
-        always_allowed = set()
-
-        # Only add PAD if it's different from EOS
-        if (self.processing_class.pad_token_id is not None and
-                self.processing_class.pad_token_id != self.processing_class.eos_token_id):
-            always_allowed.add(self.processing_class.pad_token_id)
-
-        return always_allowed
-
-    def _extract_current_json_context(self, text: str) -> List[int]:
-        """
-        Extract the complete token sequence generated so far after <|fim_middle|>.
-
-        Args:
-            text: The complete text including prompt and generated content
-
-        Returns:
-            List of token IDs representing the generated portion
-        """
-        fim_middle_marker = '<|fim_middle|>'
-
-        if fim_middle_marker not in text:
-            return []
-
-        # Get everything after the last occurrence of the marker
-        generated_text = text.split(fim_middle_marker)[-1]
-
-        if not generated_text:
-            return []
-
-        # Encode the complete generated sequence
-        generated_tokens = self.processing_class.encode(generated_text, add_special_tokens=False)
-
-        return generated_tokens
-
-    def _detect_generation_stage(self, text: str) -> str:
-        """
-        Detect which stage we're in based on prompt content.
-
-        Args:
-            text: The complete text
-
-        Returns:
-            "selection" or "generation"
-        """
-        if "# EMIT a" in text or "EMIT a" in text:
-            return "generation"
-        elif "# TASK: Choose exactly one" in text or "Choose exactly one" in text:
-            return "selection"
-        else:
-            return self.stage  # Fallback to initialization value
-
     def __call__(self, input_ids: torch.Tensor, scores: torch.Tensor) -> torch.Tensor:
-        """
-        Apply constraints to logits.
-
-        Args:
-            input_ids: Tensor of input token IDs (batch_size, seq_len)
-            scores: Tensor of logits (batch_size, vocab_size)
-
-        Returns:
-            Modified scores tensor with constraints applied
-        """
+        """Apply simplified constraints - only complete sequence continuations allowed."""
         self.call_count += 1
 
-        # Early exit if constraints are disabled or no trie
+        # Skip constraints if disabled or no trie
         if not self.enable_training_constraints or self.constraint_trie is None:
             return scores
 
-        # Get current text context
+        # Get current context
         current_text = self.processing_class.decode(input_ids[0], skip_special_tokens=False)
-
-        # Detect stage
         current_stage = self._detect_generation_stage(current_text)
+
+        logging.debug(f"[DEBUG] Current stage: {current_stage}")
 
         # Skip constraints for generation stage (free text generation)
         if current_stage == "generation":
-            if self.call_count <= 5:
-                logging.info(f"🔍 Call #{self.call_count}: Generation stage, skipping constraints")
             return scores
 
-        # Extract generated tokens
+        # Extract JSON context for constraint checking
         json_context = self._extract_current_json_context(current_text)
 
-        # Get valid continuations from string-based trie
+        # Get valid tokens from simplified trie
         valid_tokens = self.constraint_trie.get_valid_continuations(json_context)
 
-        # Safety check: If no valid tokens found
-        if not valid_tokens:
-            decoded_context = self.processing_class.decode(json_context, skip_special_tokens=False)
-            logging.warning(f"⚠️ No valid continuations at call #{self.call_count}")
-            logging.warning(f"   Context: '{decoded_context}' (tokens: {json_context})")
-            logging.warning(
-                f"   Targets: {self.constraint_trie.target_strings[:3] if self.constraint_trie.target_strings else 'None'}")
-
-            # Fallback: Allow EOS to prevent crash
-            if self.processing_class.eos_token_id is not None:
-                valid_tokens = {self.processing_class.eos_token_id}
-                logging.warning(f"   Fallback: Allowing only EOS token")
-            else:
-                # Last resort: return unconstrained scores
-                logging.error(f"❌ No EOS token available, returning unconstrained scores")
-                return scores
-
-        # Combine valid tokens from trie with always-allowed tokens (like PAD)
-        allowed_tokens = valid_tokens.union(self.always_allowed_tokens)
-
-        # Debug logging (first 10 calls)
+        # Debug logging
         if self.call_count <= 10:
             decoded_context = self.processing_class.decode(json_context, skip_special_tokens=False)
-            decoded_allowed = [self.processing_class.decode([t], skip_special_tokens=False)
-                               for t in list(allowed_tokens)[:10]]
-            logging.info(f"\n🔍 ConstraintProcessor Call #{self.call_count}:")
+            logging.info(f"🔍 Simplified Constraint Call #{self.call_count}:")
             logging.info(f"   Context: '{decoded_context}' (tokens: {json_context})")
             logging.info(f"   Valid continuations: {len(valid_tokens)}")
-            logging.info(f"   Sample allowed: {decoded_allowed}")
+            if valid_tokens:
+                decoded_allowed = [self.processing_class.decode([t], skip_special_tokens=False)
+                                 for t in list(valid_tokens)[:5]]
+                logging.info(f"   Sample allowed: {decoded_allowed}")
+            else:
+                logging.info(f"   No valid continuations found")
 
-        # Create constraint mask
+        # If no valid tokens, return scores unchanged
+        if not valid_tokens:
+            logging.warning(f"⚠️ No valid continuations at call #{self.call_count}")
+            logging.warning(f"   This will be handled by token substitution in trainer")
+            return scores
+
+        # Apply constraints - only allow valid tokens
         constraint_mask = torch.full_like(scores, float('-inf'))
-
-        # Apply constraints only for valid token indices
         valid_count = 0
-        for token_id in allowed_tokens:
+
+        for token_id in valid_tokens:
             if 0 <= token_id < scores.shape[-1]:
                 constraint_mask[:, token_id] = 0.0
                 valid_count += 1
-            else:
-                logging.warning(f"⚠️ Token ID {token_id} out of range (vocab size: {scores.shape[-1]})")
 
-        # Final safety check: Ensure at least one token is allowed
-        if valid_count == 0 or torch.all(torch.isinf(constraint_mask)):
-            logging.error(f"❌ All logits would be -inf after constraints, returning unconstrained scores")
+        # Safety check
+        if valid_count == 0:
+            logging.error(f"❌ No valid tokens in vocabulary range, returning unconstrained")
             return scores
 
         return scores + constraint_mask
 
-    def _apply_selection_constraints(self, input_ids: torch.Tensor, scores: torch.Tensor, text: str) -> torch.Tensor:
-        """
-        Apply strict constraints for token selection stage.
-        This method is now just a wrapper around __call__ for backward compatibility.
+    def _extract_current_json_context(self, text: str) -> List[int]:
+        """Extract current generated tokens for constraint checking."""
+        fim_middle_marker = "<|fim_middle|>"
+        if fim_middle_marker not in text:
+            return []
 
-        Args:
-            input_ids: Input token IDs
-            scores: Logits
-            text: Current text
+        generated_text = text.split(fim_middle_marker)[-1]
+        if not generated_text:
+            return []
 
-        Returns:
-            Constrained logits
-        """
-        return self.__call__(input_ids, scores)
+        generated_tokens = self.processing_class.encode(generated_text, add_special_tokens=False)
+        return generated_tokens
 
-    def _apply_generation_constraints(self, input_ids: torch.Tensor, scores: torch.Tensor, text: str) -> torch.Tensor:
-        """
-        Apply relaxed constraints for literal generation stage.
-        Returns unconstrained logits for free text generation.
+    def _detect_generation_stage(self, text: str) -> str:
+        """Detect which stage we're in."""
+        if "# EMIT a" in text:
+            return "generation"
+        elif "# TASK: Choose exactly one" in text:
+            return "selection"
+        else:
+            return self.stage
 
-        Args:
-            input_ids: Input token IDs
-            scores: Logits
-            text: Current text
 
-        Returns:
-            Unconstrained logits
-        """
-        return scores
 
 
 # -------------------------
@@ -1109,24 +922,30 @@ class ConstrainedMemmapShardDataset(Dataset):
         return shard_idx, local_idx
 
     def __getitem__(self, i: int) -> Dict[str, torch.Tensor]:
+        """Load sample including constraints."""
+        # FIXED: Use 'locate' instead of '_find_shard'
         shard_idx, j = self._locate(i)
+
         self._open_mm(shard_idx)
 
         off = self.shards[shard_idx]["offsets"]
         a = int(off[j])
         b = int(off[j + 1])
 
-        # Copy + cast to torch.long (int64)
         ids = torch.tensor(self._ids_mm[shard_idx][a:b], dtype=torch.long)
         lbl = torch.tensor(self._lbl_mm[shard_idx][a:b], dtype=torch.long)
 
-        # Load pre-computed constraint sequences from binary format
+        # Load constraints
         constraint_sequences = self._read_constraints_for_sample(shard_idx, j)
+
+        #logging.info(f"Input IDs: {ids.tolist()}")
+        #logging.info(f"Labels: {lbl.tolist()}")
+        #logging.info(f"Constraint Sequences: {constraint_sequences}")
 
         return {
             "input_ids": ids,
             "labels": lbl,
-            "constraint_sequences": constraint_sequences  # Already as token ID sequences
+            "constraint_sequences": constraint_sequences,
         }
 
 
@@ -1338,6 +1157,7 @@ class ConstraintAwareDataCollator:
         ids = torch.nn.utils.rnn.pad_sequence(
             input_ids, batch_first=True, padding_value=self.processing_class.pad_token_id
         )
+
         lbl = torch.nn.utils.rnn.pad_sequence(
             labels, batch_first=True, padding_value=IGNORE_INDEX
         )
@@ -1362,7 +1182,7 @@ class ConstraintAwareDataCollator:
             "input_ids": ids,
             "labels": lbl,
             "attention_mask": ids.ne(self.processing_class.pad_token_id),
-            "constraint_sequences": constraint_sequences,  # Pass through as-is
+            "constraint_sequences": constraint_sequences,
         }
 
 
@@ -1371,279 +1191,266 @@ class ConstraintAwareDataCollator:
 # -------------------------
 
 class ConstrainedTrainer(transformers.Trainer):
-    """Trainer with constraint-aware loss computation"""
+    """
+    Trainer implementing your exact approach with detailed debugging:
+    1. Model generates freely
+    2. Compute loss on actual predictions (including wrong ones)
+    3. If prediction is invalid, substitute with random valid token
+    4. Continue with corrected sequence to see full training examples
+    """
 
-    def __init__(self, constraint_weight: float = 0.1, **kwargs):
-        super().__init__(**kwargs)
-        self.constraint_weight = constraint_weight
-        self.model_accepts_loss_kwargs = True
+    def __init__(self, *args, **kwargs):
+        # Extract our custom parameters before calling super().__init__
+        self.constraint_weight = kwargs.pop('constraint_weight', 0.0)
+
+        # Initialize substitution stats
+        self.substitution_stats = {
+            'total_substitutions': 0,
+            'substitutions_per_step': [],
+        }
+
+        # Debug settings
+        self.debug_enabled = True
+        self.max_debug_samples = 2  # Only debug first 2 samples per batch to avoid spam
+
+        # Now call parent with cleaned kwargs
+        super().__init__(*args, **kwargs)
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         """
-        Compute loss with constraint penalties - compatible with transformers 4.45+
-        Properly handles mixed stages within a batch
+        Implement your exact approach with detailed debugging:
+        1. Forward pass with model predictions
+        2. Compute loss on actual predictions
+        3. Apply token substitution for next step context
         """
+
+        #logging.log("Inputs: " + self.processing_class.decode(inputs["input_ids"][0]))
+        #logging.log("Constraints: " + self.processing_class.decode(inputs.get("constraint_sequences", [])[0]))
+
         labels = inputs.get("labels")
         constraint_sequences = inputs.get("constraint_sequences", [])
 
-        # Remove constraint_sequences from inputs before forward pass
-        # This prevents HF Trainer from complaining about unexpected kwargs
+        # Remove constraint_sequences from model inputs
         inputs_for_model = {k: v for k, v in inputs.items() if k != "constraint_sequences"}
-        # Get model outputs first
+
+        # Step 1: Standard forward pass - get model's actual predictions
         outputs = model(**inputs_for_model)
-        # DEBUG: Log constraint information
-        if self.state.global_step % 50 == 0:
-            has_constraints = constraint_sequences and any(seq for seq in constraint_sequences)
-            logging.info(f"🔍 CONSTRAINT DEBUG @ Step {self.state.global_step}:")
-            logging.info(f"   Batch size: {len(constraint_sequences) if constraint_sequences else 0}")
-            logging.info(f"   Has constraints: {has_constraints}")
 
-        # Apply constraints per-sample in the batch ONLY during training
-        # NOT during generation (which is handled by SampleGenerationCallback)
-        if self.model.training and constraint_sequences and any(seq for seq in constraint_sequences):
-            batch_size = inputs_for_model["input_ids"].shape[0]
-            # Process each sample individually
-            for batch_idx in range(batch_size):
-                if batch_idx < len(constraint_sequences) and constraint_sequences[batch_idx]:
-                    # Decode the input text to determine the stage for THIS sample
-                    input_text = self.processing_class.decode(
-                        inputs_for_model["input_ids"][batch_idx],
-                        skip_special_tokens=False
-                    )
-                    # Detect stage for THIS specific sample
-                    stage_patterns = STAGE_PATTERNS
+        # Step 2: Compute loss on ORIGINAL predictions (including mistakes)
+        loss = self._compute_standard_loss(outputs, labels)
 
-                    if stage_patterns["generation"].search(input_text):
-                        detected_stage = "generation"
-                    elif stage_patterns["selection"].search(input_text):
-                        detected_stage = "selection"
-                    else:
-                        if re.search(r'\{"choice":\s*"([^"]*)"}$', input_text):
-                            detected_stage = "selection"
-                        else:
-                            detected_stage = "generation"
-                    # ONLY apply constraints for selection stage during training
-                    if detected_stage == "selection":
-                        logging.info(f"   Sample {batch_idx}: Stage={detected_stage}, applying constraints")
-                        # Create constraint processor for THIS sample's stage and constraints
-                        constraint_processor = AdvancedConstrainedLogitsProcessor(
-                            tokenizer=self.processing_class,
-                            constraint_sequences=constraint_sequences[batch_idx],
-                            stage=detected_stage,
-                            enable_training_constraints=True
-                        )
-                        # Apply constraints to THIS sample's logits at ALL positions
-                        with torch.no_grad():
-                            if hasattr(outputs, 'logits'):
-                                input_seq = inputs_for_model["input_ids"][batch_idx]
-                                seq_len = (input_seq != self.processing_class.pad_token_id).sum().item()
-                                # Apply constraints to ALL non-padding positions
-                                for pos in range(seq_len):
-                                    if labels[batch_idx, pos] != IGNORE_INDEX:
-                                        constrained_logits = constraint_processor(
-                                            input_seq[:pos + 1].unsqueeze(0),
-                                            outputs.logits[batch_idx, pos, :].unsqueeze(0)
-                                        )
-                                        outputs.logits[batch_idx, pos, :] = constrained_logits[0]
-                    else:
-                        if self.state.global_step % 50 == 0:
-                            logging.info(f"   Sample {batch_idx}: Stage={detected_stage}, skipping constraints")
-                elif self.state.global_step % 50 == 0:
-                    logging.info(f"   Sample {batch_idx}: No constraints available")
-        elif self.state.global_step % 50 == 0:
-            logging.info("   ❌ No constraints applied - no sequences or not training")
-        # Rest of loss computation
+        # Step 3: Apply token substitution ONLY for training context with detailed debugging
+        if self.model.training and labels is not None and constraint_sequences:
+            self._apply_token_substitution_with_debug(
+                inputs_for_model, outputs, labels, constraint_sequences
+            )
+
+        return (loss, outputs) if return_outputs else loss
+
+    def _compute_standard_loss(self, outputs, labels):
+        """Compute standard loss on model's actual predictions."""
         if labels is not None:
             logits = outputs.logits if hasattr(outputs, 'logits') else outputs[0]
             shift_logits = logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
+
             loss_fct = torch.nn.CrossEntropyLoss(ignore_index=IGNORE_INDEX)
-            standard_loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)),
-                                     shift_labels.view(-1))
-        else:
-            standard_loss = outputs.loss
-        # Add constraint loss
-        constraint_loss = torch.tensor(0.0, device=standard_loss.device)
-        if constraint_sequences and any(seq for seq in constraint_sequences):
-            constraint_loss = self._compute_constraint_loss(shift_logits, shift_labels, constraint_sequences)
-            logging.info(f"   Constraint loss: {constraint_loss.item():.6f}")
-        total_loss = standard_loss + self.constraint_weight * constraint_loss
-        logging.info(f"   Standard loss: {standard_loss.item():.6f}")
-        logging.info(f"   Total loss: {total_loss.item():.6f}")
-        logging.info("=" * 50)
-        return (total_loss, outputs) if return_outputs else total_loss
-
-    def _compute_constraint_loss(self, logits, labels, constraint_sequences):
-        """
-        Compute constraint violation penalty using ground truth labels for prefix construction.
-        This ensures stable gradient signals and proper constraint learning during training.
-        """
-        batch_size, seq_len, vocab_size = logits.shape
-        constraint_penalty = 0.0
-        num_constrained_positions = 0
-
-        for batch_idx, sequences in enumerate(constraint_sequences):
-            if not sequences:  # No constraints for this sample
-                continue
-            # Build constraint trie for this sample
-            constraint_trie = ConstraintTrie(
-                sequences,
-                eos_token_id=self.processing_class.eos_token_id,
-                processing_class=self.processing_class
+            loss = loss_fct(
+                shift_logits.view(-1, shift_logits.size(-1)),
+                shift_labels.view(-1)
             )
-            for pos in range(seq_len):
+        else:
+            loss = outputs.loss
+
+        return loss
+
+    def _apply_token_substitution_with_debug(self, inputs, outputs, labels, constraint_sequences):
+        """
+        Apply token substitution with comprehensive debugging output.
+        """
+        batch_size = inputs['input_ids'].shape[0]
+        step_substitutions = 0
+
+        logging.info(f"\n🔍 === TOKEN SUBSTITUTION DEBUG (Batch size: {batch_size}) ===")
+
+        for batch_idx in range(min(batch_size, self.max_debug_samples)):  # Limit debug output
+            if not constraint_sequences[batch_idx]:
+                logging.info(f"\n📋 Sample {batch_idx}: No constraint sequences, skipping")
+                continue
+
+            logging.info(f"\n📋 === PROCESSING SAMPLE {batch_idx} ===")
+
+            # Build constraint trie for this sample
+            constraint_trie = self._build_constraint_trie(constraint_sequences[batch_idx])
+            if constraint_trie is None:
+                logging.info(f"❌ Could not build constraint trie for sample {batch_idx}")
+                continue
+
+            # Show constraint targets
+            # Show constraint targets (in the _apply_token_substitution_with_debug method)
+            logging.info(f"🎯 Constraint targets:")
+            for i, seq in enumerate(constraint_sequences[batch_idx]):
+                #if len(constraint_sequences[batch_idx]) < 5:
+                logging.info(f"   Target {i + 1}: {seq} → '{[self.processing_class.decode(s, skip_special_tokens=False) for s in seq]}'")
+            if len(constraint_sequences[batch_idx]) > 5:
+                logging.info(f"   ... and {len(constraint_sequences[batch_idx]) - 5} more")
+
+            # Find generation start
+            input_text = self.processing_class.decode(inputs['input_ids'][batch_idx], skip_special_tokens=False)
+            #logging.info(f"   Input text: {input_text}")
+            generation_start_pos = self._find_generation_start_position(input_text, inputs['input_ids'][batch_idx])
+
+            if generation_start_pos is None:
+                logging.info(f"❌ Could not find generation start position for sample {batch_idx}")
+                continue
+
+            logging.info(f"🚀 Generation starts at position {generation_start_pos}")
+
+            # Process sequence token by token with detailed debug
+            corrected_prefix = []
+            sample_substitutions = 0
+
+            # Process each generated position
+            for pos in range(generation_start_pos, min(generation_start_pos + 10, len(labels[batch_idx]))):  # Limit to first 10 tokens for debug
                 if labels[batch_idx, pos] == IGNORE_INDEX:
                     continue
-                # Use ground truth labels for prefix, not predictions
-                label_prefix = []
-                if pos > 0:
-                    # Extract valid label tokens up to current position (excluding IGNORE_INDEX)
-                    for i in range(pos):
-                        if labels[batch_idx, i] != IGNORE_INDEX:
-                            label_prefix.append(labels[batch_idx, i].item())
-                # Get valid continuations from current prefix
-                valid_tokens = constraint_trie.get_valid_continuations(label_prefix)
+                logging.info(f"\n🔄 --- STEP {pos - generation_start_pos + 1} (Position {pos}) ---")
+                # Show current context (corrected prefix)
+                if corrected_prefix:
+                    current_context_decoded = self.processing_class.decode(corrected_prefix, skip_special_tokens=False)
+                    logging.info(f"📝 Current context: {corrected_prefix} → '{current_context_decoded}'")
+                else:
+                    logging.info(f"📝 Current context: [] → '' (empty)")
+
+                # Get model's prediction at this position
+                predicted_token = torch.argmax(outputs.logits[batch_idx, pos - 1]).item()
+                ground_truth_token = labels[batch_idx, pos].item()
+
+                # Decode tokens for display
+                predicted_decoded = self.processing_class.decode([predicted_token], skip_special_tokens=False)
+                ground_truth_decoded = self.processing_class.decode([ground_truth_token], skip_special_tokens=False)
+
+                logging.info(f"🤖 Model predicts: {predicted_token} → '{predicted_decoded}'")
+                logging.info(f"✅ Ground truth:   {ground_truth_token} → '{ground_truth_decoded}'")
+
+                # Get valid tokens for current prefix
+                valid_tokens = constraint_trie.get_valid_continuations(corrected_prefix)
+
+                if not ground_truth_token in valid_tokens:
+                    logging.warning(f"⚠️  Ground truth token {ground_truth_token} → '{ground_truth_decoded}' is NOT in valid continuations!")
                 if not valid_tokens:
-                    # If no valid continuations, apply maximum penalty
-                    constraint_penalty += 10.0  # High penalty for invalid states
-                    num_constrained_positions += 1
+                    logging.warning(f"⚠️  No valid continuations found! Using ground truth to recover.")
+                    corrected_prefix.append(ground_truth_token)
                     continue
-                # Create constraint mask - only allow valid tokens
-                constraint_mask = torch.zeros(vocab_size, device=logits.device)
-                for token_id in valid_tokens:
-                    if 0 <= token_id < vocab_size:
-                        constraint_mask[token_id] = 1.0
-                # Compute penalty for violating constraints
-                probs = torch.softmax(logits[batch_idx, pos], dim=-1)
-                constraint_prob = (probs * constraint_mask).sum()
-                # Add penalty: negative log probability of valid tokens
-                constraint_penalty += -torch.log(constraint_prob + 1e-8)
-                num_constrained_positions += 1
-        # Normalize by number of constrained positions
-        if num_constrained_positions > 0:
-            return constraint_penalty / num_constrained_positions
-        else:
-            return torch.tensor(0.0, device=logits.device)
+                # Show valid continuations
+                logging.info(f"🎯 Valid next tokens ({len(valid_tokens)}):")
+                valid_list = list(valid_tokens)
+                for i, token_id in enumerate(valid_list):  # Show first 5
+                    decoded = self.processing_class.decode([token_id], skip_special_tokens=False)
+                    logging.info(f"   {token_id} → '{decoded}'")
 
-    @staticmethod
-    def _num_items_from_batch(batch):
-        if isinstance(batch, dict):
-            for k in ("labels", "input_ids", "pixel_values", "input_values"):
-                v = batch.get(k)
-                if isinstance(v, torch.Tensor):
-                    return int(v.shape[0])
-                if isinstance(v, (list, tuple)) and v and isinstance(v[0], torch.Tensor):
-                    return int(v[0].shape[0])
+                # Check if prediction is valid
+                if predicted_token in valid_tokens:
+                    # Prediction is valid, use it
+                    corrected_prefix.append(predicted_token)
+                    logging.info(f"✅ VALID: Using model prediction {predicted_token} → '{predicted_decoded}'")
+                else:
+                    # Prediction is invalid, substitute with random valid token
+                    substitute_token = ground_truth_token #random.choice(list(valid_tokens))
+                    substitute_decoded = self.processing_class.decode([substitute_token], skip_special_tokens=False)
+                    corrected_prefix.append(substitute_token)
+                    sample_substitutions += 1
+                    step_substitutions += 1
+                    logging.warning(f"❌ INVALID: Model predicted {predicted_token} → '{predicted_decoded}'")
+                    logging.info(f"🔄 SUBSTITUTE: Using {substitute_token} → '{substitute_decoded}' from ground truth")
+                    logging.info(f"📊 Substitution #{sample_substitutions} in this sample")
+                # Show updated context after this step
+                updated_context_decoded = self.processing_class.decode(corrected_prefix, skip_special_tokens=False)
+                logging.info(f"📝 Updated context: {corrected_prefix} → '{updated_context_decoded}'")
+            logging.info(f"\n📊 Sample {batch_idx} complete: {sample_substitutions} substitutions")
 
-            for v in batch.values():
-                if isinstance(v, torch.Tensor):
-                    return int(v.shape[0])
-                if isinstance(v, (list, tuple)) and v and isinstance(v[0], torch.Tensor):
-                    return int(v[0].shape[0])
+        # Track substitution statistics
+        self.substitution_stats['total_substitutions'] += step_substitutions
+        self.substitution_stats['substitutions_per_step'].append(step_substitutions)
 
-        elif isinstance(batch, (list, tuple)) and batch and isinstance(batch[0], torch.Tensor):
-            return int(batch[0].shape[0])
+        logging.info(f"\n🎉 === BATCH COMPLETE ===")
+        logging.info(f"📊 Total substitutions in this batch: {step_substitutions}")
+        logging.info(f"📈 Running total substitutions: {self.substitution_stats['total_substitutions']}")
 
-        return 1
+        if step_substitutions > 0:
+            logging.info(f"✅ Applied {step_substitutions} token substitutions in this batch")
 
-    def get_num_items(self, batch):
-        # Prefer HF's implementation if present; otherwise use our fallback.
-        if hasattr(super(), "get_num_items"):
-            try:
-                return super().get_num_items(batch)
-            except Exception:
-                pass
+    def _build_constraint_trie(self, constraint_sequences):
+        """Build simplified constraint trie for a single sample - direct from encoded sequences."""
+        if not constraint_sequences:
+            return None
 
-        return self._num_items_from_batch(batch)
-
-    def get_batch_samples(self, epoch_iterator, num_batches, device: torch.device | None = None):
-        """
-        HF-compatible: returns (batch_samples: List[batch_dict], num_items_in_batch: int)
-        Works with both signatures: with or without the 'device' arg.
-        """
-        batch_samples = []
-        for _ in range(num_batches):
-            try:
-                batch_samples.append(next(epoch_iterator))
-            except StopIteration:
-                break
-
-        # Prefer token count if labels exist; else fall back to item count
-        num_items = None
-        if batch_samples and isinstance(batch_samples[0], dict) and "labels" in batch_samples[0]:
-            try:
-                # If labels are present, counts the number of non-IGNORE_INDEX tokens (i.e., real tokens, not padding)
-                # across all batches. This gives a true token count for throughput metrics.
-                num_items = sum((b["labels"].ne(IGNORE_INDEX)).sum() for b in batch_samples)
-            except Exception:
-                num_items = None
-
-        if num_items is None:
-            per_mb = [self.get_num_items(b) for b in batch_samples]
-            num_items = torch.tensor(sum(per_mb))
-
-        # Ensure CUDA + dense before any gather
-        if device is None:
-            device = getattr(self, "accelerator", None).device if hasattr(self, "accelerator") else torch.device(
-                "cuda" if torch.cuda.is_available() else "cpu")
-
-        if not torch.is_tensor(num_items):
-            num_items = torch.tensor(num_items, device=device)
-        else:
-            num_items = num_items.to(device=device)
-
-        if getattr(num_items, "is_sparse", False):
-            num_items = num_items.to_dense()
-
-        if getattr(self.args, "average_tokens_across_devices", False):
-            num_items = self.accelerator.gather(num_items).sum().item()
-        else:
-            num_items = int(num_items.item())
-
-        return batch_samples, num_items
-
-    def get_train_dataloader(self):
-        ds = self.train_dataset
-        bsz = self.args.per_device_train_batch_size
-        ws = torch.distributed.get_world_size() if torch.distributed.is_initialized() else 1
-        rk = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
-
-        # Use a real block size (number of samples per block), not the batch size
-        sampler = BlockDistributedSampler(
-            dataset=ds,
-            batch_size=bsz,
-            world_size=ws,
-            rank=rk,
-            block_size=2048,  # try 512; tune 256–2048 based on storage
-            sort_within_block=True,
-            seed=self.args.seed,
+        # No need to convert - sequences are already encoded!
+        return ConstraintTrie(
+            constraint_sequences=constraint_sequences,
+            processing_class=self.processing_class,
+            eos_token_id=self.processing_class.eos_token_id
         )
 
-        num_workers = int(self.args.dataloader_num_workers)
+    def _find_generation_start_position(self, text, input_ids):
+        """Find the position where generation starts (after <|fim_middle|>)."""
+        fim_middle_marker = "<|fim_middle|>"
+        if fim_middle_marker not in text:
+            return None
 
-        # Build kwargs so we only pass prefetch_factor/persistent_workers if legal
-        loader_kwargs = dict(
-            batch_size=bsz,
-            sampler=sampler,
-            collate_fn=self.data_collator,
-            num_workers=num_workers,
-            pin_memory=self.args.dataloader_pin_memory,
-            drop_last=self.args.dataloader_drop_last,
-        )
+        # Find the token position where <|fim_middle|> ends
+        marker_tokens = self.processing_class.encode(fim_middle_marker, add_special_tokens=False)
+        if not marker_tokens:
+            return None
 
-        if num_workers > 0:
-            loader_kwargs["persistent_workers"] = bool(self.args.dataloader_persistent_workers)
-            loader_kwargs["prefetch_factor"] = 8  # or 2–4 if you want it lighter in the smoke run
-        else:
-            # Must be False when num_workers == 0, and DO NOT pass prefetch_factor at all
-            loader_kwargs["persistent_workers"] = False
+        # Search for the marker in input_ids
+        input_list = input_ids.tolist()
+        for i in range(len(input_list) - len(marker_tokens) + 1):
+            if input_list[i:i + len(marker_tokens)] == marker_tokens:
+                return i + len(marker_tokens)
 
-        return DataLoader(ds, **loader_kwargs)
+        return None
+
+    def log_substitution_stats(self):
+        """Log statistics about token substitutions."""
+        total = self.substitution_stats['total_substitutions']
+        recent_steps = self.substitution_stats['substitutions_per_step'][-100:]  # Last 100 steps
+        avg_recent = sum(recent_steps) / len(recent_steps) if recent_steps else 0
+
+        logging.info(f"\n📊 === TOKEN SUBSTITUTION STATISTICS ===")
+        logging.info(f"   Total substitutions: {total}")
+        logging.info(f"   Average per step (last 100): {avg_recent:.2f}")
+        logging.info(f"   Steps processed: {len(self.substitution_stats['substitutions_per_step'])}")
+
+    def set_debug_level(self, enabled: bool = True, max_samples: int = 2):
+        """Control debug output level."""
+        self.debug_enabled = enabled
+        self.max_debug_samples = max_samples
+        logging.info(f"🔧 Debug level set: enabled={enabled}, max_samples={max_samples}")
 
 
 # -------------------------
 # Callbacks (unchanged from original)
 # -------------------------
+
+class DetailedSubstitutionStatsCallback(transformers.TrainerCallback):
+    """Enhanced callback for detailed substitution statistics."""
+
+    def __init__(self, log_every_n_steps: int = 50):
+        self.log_every_n_steps = log_every_n_steps
+
+    def on_step_end(self, args, state, control, **kwargs):
+        trainer = kwargs.get('trainer')
+        if trainer and hasattr(trainer, 'log_substitution_stats'):
+            if state.global_step % self.log_every_n_steps == 0:
+                trainer.log_substitution_stats()
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        trainer = kwargs.get('trainer')
+        if trainer and hasattr(trainer, 'log_substitution_stats'):
+            logging.info(f"\n🎯 === END OF EPOCH {state.epoch} ===")
+            trainer.log_substitution_stats()
+
 
 class SaveModelCallback(transformers.TrainerCallback):
     def on_save(self, args, state, control, **kwargs):
@@ -1929,6 +1736,42 @@ def make_datasets(tokenized_dir: str):
     return train_ds, eval_ds
 
 
+def debug_constraint_alignment(dataset, tokenizer, num_samples=20):
+    """Check if constraints match task types."""
+    print("\n" + "=" * 80)
+    print("CONSTRAINT ALIGNMENT DEBUG")
+    print("=" * 80)
+
+    mismatches = []
+
+    for i in range(min(num_samples, len(dataset))):
+        sample = dataset[i]
+        input_ids = sample['input_ids']
+        constraints = sample.get('constraint_sequences', [])
+
+        input_text = tokenizer.decode(input_ids, skip_special_tokens=False)
+
+        is_generation = "EMIT a" in input_text
+        is_selection = "TASK: Choose exactly one" in input_text
+
+        task_type = "generation" if is_generation else "selection" if is_selection else "unknown"
+
+        print(f"\nSample {i}: {task_type}, {len(constraints)} constraints", end="")
+
+        if is_generation and len(constraints) > 0:
+            print(f" ❌ MISMATCH")
+            mismatches.append(i)
+        elif is_selection and len(constraints) == 0:
+            print(f" ❌ MISMATCH")
+            mismatches.append(i)
+        else:
+            print(f" ✅")
+
+    print(f"\n{'=' * 80}")
+    print(f"SUMMARY: {len(mismatches)} mismatches out of {num_samples}")
+    return mismatches
+
+
 # -------------------------
 # Main Training Function
 # -------------------------
@@ -2027,16 +1870,29 @@ def train():
     ]
 
     # Enhanced trainer with constraint support
+    # Create trainer with enhanced debugging
     trainer = ConstrainedTrainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=eval_ds,
         processing_class=tokenizer,
-        data_collator=data_collator,
+        data_collator=ConstraintAwareDataCollator(
+            processing_class=tokenizer,
+            pad_to_multiple_of=8,
+        ),
         callbacks=callbacks,
-        constraint_weight=training_args.constraint_weight,
     )
+
+    # Add detailed callback
+    trainer.add_callback(DetailedSubstitutionStatsCallback(log_every_n_steps=1))
+
+    # Enable detailed debugging (set to False to reduce output)
+    trainer.set_debug_level(enabled=True, max_samples=2)
+
+    mismatches = debug_constraint_alignment(train_ds, tokenizer, 50)
+    if mismatches:
+        print("⚠️ Constraint alignment issues detected!")
 
     # Train
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
