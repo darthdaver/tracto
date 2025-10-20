@@ -8,7 +8,7 @@ Supports both training-time and inference-time constraint enforcement using effi
 
 import time, json, logging, glob, bisect, re
 from dataclasses import dataclass, field
-from typing import Dict, Optional, List, Tuple, Set
+from typing import Dict, Optional, List, Tuple, Set, Iterator, Any
 from types import MappingProxyType
 from torch.utils.data import Sampler
 from huggingface_hub import snapshot_download
@@ -691,7 +691,7 @@ class AdvancedConstrainedLogitsProcessor(LogitsProcessor):
             logging.info(f"   Valid continuations: {len(valid_tokens)}")
             if valid_tokens:
                 decoded_allowed = [self.processing_class.decode([t], skip_special_tokens=False)
-                                 for t in list(valid_tokens)[:5]]
+                                   for t in list(valid_tokens)[:5]]
                 logging.info(f"   Sample allowed: {decoded_allowed}")
             else:
                 logging.info(f"   No valid continuations found")
@@ -741,37 +741,57 @@ class AdvancedConstrainedLogitsProcessor(LogitsProcessor):
             return self.stage
 
 
-
-
 # -------------------------
 # Enhanced Dataset with Constraint Support - FIXED VERSION
 # -------------------------
 
 class ConstrainedJSONDataset(Dataset):
     """
-    Dataset that loads pre-tokenized data from JSON files.
-    Replaces ConstrainedMemmapShardDataset for JSON format compatibility.
+    Memory-efficient streaming dataset that loads JSON files on-demand.
+    Prevents RAM overflow by processing files individually during training.
     """
 
-    def __init__(self, root: str, split: str):
+    def __init__(
+            self,
+            root: str,
+            split: str,
+            shuffle: bool = True,
+            seed: int = 42,
+            max_samples_per_epoch: Optional[int] = None,
+            length_sort_buffer_size: int = 1000
+    ):
+        """
+        Initialize streaming dataset.
+
+        Args:
+            root: Directory containing JSON files
+            split: Split name (train/val)
+            shuffle: Whether to shuffle files and samples
+            seed: Random seed for shuffling
+            max_samples_per_epoch: Limit samples per epoch (None = use all)
+            length_sort_buffer_size: Buffer size for length-based sorting
+        """
         self.root = root
         self.split = split
-        self.samples = []
-        self.lengths = []
+        self.shuffle = shuffle
+        self.seed = seed
+        self.max_samples_per_epoch = max_samples_per_epoch
+        self.length_sort_buffer_size = length_sort_buffer_size
+        self.epoch = 0
 
-        # Load all JSON files for this split
-        self._load_json_files()
+        # Find all JSON files for this split
+        self.json_files = self._discover_json_files()
 
-        if len(self.samples) == 0:
-            raise RuntimeError(f"{split}: zero samples found in {root}")
+        # Load metadata for total sample count
+        self.total_samples, self.estimated_lengths = self._load_metadata()
 
-        logging.info(f"Successfully loaded {len(self.samples)} samples from JSON files")
+        logging.info(
+            f"StreamingDataset initialized: {len(self.json_files)} files, "
+            f"~{self.total_samples} samples for split '{split}'"
+        )
 
-    def _load_json_files(self):
-        """Load all JSON files for the split."""
-        import glob
-
-        # Find all JSON files for this split (excluding summary files)
+    def _discover_json_files(self) -> List[str]:
+        """Find all JSON files for the split."""
         pattern = os.path.join(self.root, f"{self.split}.*.json")
         json_files = sorted(glob.glob(pattern))
 
@@ -781,67 +801,181 @@ class ConstrainedJSONDataset(Dataset):
         if not json_files:
             raise FileNotFoundError(f"No {self.split} JSON files found in {self.root}")
 
-        logging.info(f"Found {len(json_files)} JSON files for split '{self.split}'")
+        return json_files
 
-        # Load samples from all files
-        for json_file in json_files:
+    def _load_metadata(self) -> tuple[int, List[int]]:
+        """Load metadata about total samples and length distribution."""
+        total_samples = 0
+        all_lengths = []
+
+        # Try loading from summary file first
+        summary_path = os.path.join(self.root, f"{self.split}.summary.json")
+        if os.path.exists(summary_path):
             try:
-                with open(json_file, 'r', encoding='utf-8') as f:
+                with open(summary_path, 'r') as f:
+                    summary = json.load(f)
+                return summary.get('total_samples', 0), []
+            except Exception as e:
+                logging.warning(f"Could not load summary file: {e}")
+
+        # Fallback: scan first few files to estimate
+        sample_files = self.json_files[:min(3, len(self.json_files))]
+
+        for json_file in sample_files:
+            try:
+                with open(json_file, 'r') as f:
                     data = json.load(f)
 
-                # Extract samples from the JSON structure
-                if 'samples' in data:
-                    file_samples = data['samples']
+                if 'metadata' in data and 'num_samples' in data['metadata']:
+                    file_samples = data['metadata']['num_samples']
                 else:
-                    # Handle case where JSON is just a list of samples
-                    file_samples = data if isinstance(data, list) else [data]
+                    samples = data.get('samples', data if isinstance(data, list) else [data])
+                    file_samples = len(samples)
 
-                for sample in file_samples:
-                    # Validate required fields
-                    if 'input_ids' not in sample or 'labels' not in sample:
-                        logging.warning(f"Skipping malformed sample in {json_file}")
-                        continue
+                    # Collect length info from first file
+                    if json_file == sample_files[0]:
+                        all_lengths.extend([
+                            sample.get('length', len(sample.get('input_ids', [])))
+                            for sample in samples[:100]  # Sample first 100
+                        ])
 
-                    # Convert lists back to tensors and add to dataset
-                    processed_sample = {
-                        'input_ids': sample['input_ids'],
-                        'labels': sample['labels'],
-                        'constraints': sample.get('constraints', []),
-                        'length': sample.get('length', len(sample['input_ids']))
-                    }
-
-                    self.samples.append(processed_sample)
-                    self.lengths.append(processed_sample['length'])
-
-                logging.info(f"Loaded {len(file_samples)} samples from {os.path.basename(json_file)}")
+                total_samples += file_samples
 
             except Exception as e:
-                logging.error(f"Error loading {json_file}: {e}")
+                logging.warning(f"Error reading metadata from {json_file}: {e}")
+
+        # Extrapolate to all files
+        if sample_files:
+            avg_samples_per_file = total_samples / len(sample_files)
+            estimated_total = int(avg_samples_per_file * len(self.json_files))
+        else:
+            estimated_total = 0
+
+        return estimated_total, all_lengths
+
+    def set_epoch(self, epoch: int):
+        """Set epoch for deterministic shuffling."""
+        self.epoch = epoch
+
+    def __iter__(self) -> Iterator[Dict[str, torch.Tensor]]:
+        """Stream samples from JSON files."""
+        # Set up random state for this epoch
+        rng = random.Random(self.seed + self.epoch)
+
+        # Shuffle file order if requested
+        files_to_process = list(self.json_files)
+        if self.shuffle:
+            rng.shuffle(files_to_process)
+
+        samples_yielded = 0
+        length_sort_buffer = []
+
+        for json_file in files_to_process:
+            # Check if we've reached the sample limit
+            if (self.max_samples_per_epoch is not None and
+                    samples_yielded >= self.max_samples_per_epoch):
+                break
+
+            try:
+                # Load file samples
+                file_samples = self._load_file_samples(json_file)
+
+                # Shuffle samples within file if requested
+                if self.shuffle:
+                    rng.shuffle(file_samples)
+
+                # Process samples with optional length sorting
+                for sample in file_samples:
+                    if (self.max_samples_per_epoch is not None and
+                            samples_yielded >= self.max_samples_per_epoch):
+                        break
+
+                    # Add to length sort buffer if enabled
+                    if self.length_sort_buffer_size > 1:
+                        length_sort_buffer.append(sample)
+
+                        # Yield from buffer when full
+                        if len(length_sort_buffer) >= self.length_sort_buffer_size:
+                            yield from self._yield_sorted_buffer(length_sort_buffer, rng)
+                            samples_yielded += len(length_sort_buffer)
+                            length_sort_buffer = []
+                    else:
+                        # Direct yield without buffering
+                        processed_sample = self._process_sample(sample)
+                        if processed_sample is not None:
+                            yield processed_sample
+                            samples_yielded += 1
+
+            except Exception as e:
+                logging.error(f"Error processing {json_file}: {e}")
                 continue
 
-        # Convert lengths to numpy array for compatibility
-        self.lengths = np.array(self.lengths, dtype=np.int32)
+        # Yield remaining buffered samples
+        if length_sort_buffer:
+            yield from self._yield_sorted_buffer(length_sort_buffer, rng)
+
+    def _load_file_samples(self, json_file: str) -> List[Dict[str, Any]]:
+        """Load samples from a single JSON file."""
+        with open(json_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        # Extract samples from JSON structure
+        if 'samples' in data:
+            return data['samples']
+        elif isinstance(data, list):
+            return data
+        else:
+            return [data]
+
+    def _yield_sorted_buffer(self, buffer: List[Dict[str, Any]], rng: random.Random) -> Iterator[
+        Dict[str, torch.Tensor]]:
+        """Sort buffer by length and yield samples."""
+        # Sort by length (longest first for better batching)
+        buffer.sort(key=lambda x: x.get('length', len(x.get('input_ids', []))), reverse=True)
+
+        # Add some randomness to avoid overly rigid sorting
+        if self.shuffle and len(buffer) > 10:
+            # Shuffle within length buckets
+            bucket_size = len(buffer) // 4
+            for i in range(0, len(buffer), bucket_size):
+                end_idx = min(i + bucket_size, len(buffer))
+                bucket = buffer[i:end_idx]
+                rng.shuffle(bucket)
+                buffer[i:end_idx] = bucket
+
+        # Yield processed samples
+        for sample in buffer:
+            processed_sample = self._process_sample(sample)
+            if processed_sample is not None:
+                yield processed_sample
+
+    def _process_sample(self, sample: Dict[str, Any]) -> Optional[Dict[str, torch.Tensor]]:
+        """Convert raw sample to tensors."""
+        try:
+            # Validate required fields
+            if 'input_ids' not in sample or 'labels' not in sample:
+                return None
+
+            # Convert to tensors
+            input_ids = torch.tensor(sample['input_ids'], dtype=torch.long)
+            labels = torch.tensor(sample['labels'], dtype=torch.long)
+            constraint_sequences = sample.get('constraints', [])
+
+            return {
+                "input_ids": input_ids,
+                "labels": labels,
+                "constraint_sequences": constraint_sequences,
+            }
+
+        except Exception as e:
+            logging.warning(f"Error processing sample: {e}")
+            return None
 
     def __len__(self) -> int:
-        return len(self.samples)
-
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        """Load a single sample."""
-        if idx >= len(self.samples):
-            raise IndexError(f"Index {idx} out of range for dataset of size {len(self.samples)}")
-
-        sample = self.samples[idx]
-
-        # Convert to tensors
-        input_ids = torch.tensor(sample['input_ids'], dtype=torch.long)
-        labels = torch.tensor(sample['labels'], dtype=torch.long)
-        constraint_sequences = sample['constraints']
-
-        return {
-            "input_ids": input_ids,
-            "labels": labels,
-            "constraint_sequences": constraint_sequences,
-        }
+        """Return estimated dataset size."""
+        if self.max_samples_per_epoch is not None:
+            return min(self.max_samples_per_epoch, self.total_samples)
+        return self.total_samples
 
 
 # -------------------------
@@ -850,85 +984,37 @@ class ConstrainedJSONDataset(Dataset):
 
 class BlockDistributedSampler(Sampler):
     """
-    Deterministic block sampler for DDP - updated for JSON dataset compatibility.
+    Simplified sampler for streaming datasets that works with DDP.
+    Since IterableDataset handles ordering, this mainly manages epoch state.
     """
+
     def __init__(
-        self,
-        dataset,
-        batch_size: int,
-        world_size: int = 1,
-        rank: int = 0,
-        block_size: int = 1024,
-        sort_within_block: bool = True,
-        seed: int = 42,
+            self,
+            dataset: ConstrainedJSONDataset,
+            batch_size: int,
+            world_size: int = 1,
+            rank: int = 0,
+            seed: int = 42,
     ):
-        self.ds = dataset
-        self.bs = int(batch_size)
-        self.ws = int(world_size)
-        self.rank = int(rank)
-        self.block_size = int(block_size)
-        self.sort_within_block = bool(sort_within_block)
-        self.seed = int(seed)
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.world_size = world_size
+        self.rank = rank
+        self.seed = seed
         self.epoch = 0
 
-        # Build blocks from the entire dataset
-        self.blocks = []
-        dataset_size = len(dataset)
-
-        # Create blocks of indices
-        full_blocks = (dataset_size // self.block_size) * self.block_size
-        if full_blocks > 0:
-            for i in range(0, full_blocks, self.block_size):
-                block_end = min(i + self.block_size, dataset_size)
-                blk = np.arange(i, block_end, dtype=np.int64)
-
-                if self.sort_within_block:
-                    # Sort by length (longest to shortest)
-                    lens = dataset.lengths[blk]
-                    blk = blk[np.argsort(-lens, kind="mergesort")]
-
-                self.blocks.append(blk)
-
-        if len(self.blocks) == 0:
-            raise RuntimeError(
-                "BlockDistributedSampler: no full blocks were constructed. "
-                "Decrease block_size or check dataset."
-            )
-
-        # Pre-compute per-rank length (stable across epochs)
-        usable_blocks = (len(self.blocks) // self.ws) * self.ws
-        per_rank_blocks = usable_blocks // self.ws
-        per_rank_samples = per_rank_blocks * self.block_size
-
-        # After drop_last at batch granularity
-        self._len = (per_rank_samples // self.bs) * self.bs
+        # Calculate samples per rank
+        total_samples = len(dataset)
+        samples_per_rank = total_samples // world_size
+        self._len = (samples_per_rank // batch_size) * batch_size
 
     def set_epoch(self, epoch: int):
-        self.epoch = int(epoch)
-
-    def __iter__(self):
-        # Same permutation on every rank for this epoch
-        rng = random.Random(self.seed + self.epoch)
-        blocks = list(self.blocks)
-        rng.shuffle(blocks)
-
-        # Trim to multiple of world_size; then deterministic partition by striding
-        usable = (len(blocks) // self.ws) * self.ws
-        blocks = blocks[:usable]
-        rank_blocks = blocks[self.rank::self.ws]
-
-        # Flatten indices for this rank
-        idx = np.concatenate(rank_blocks, axis=0)
-
-        # Ensure equal number of batches on every rank
-        if self.bs > 1:
-            idx = idx[: (len(idx) // self.bs) * self.bs]
-
-        return iter(idx.tolist())
+        """Set epoch for dataset."""
+        self.epoch = epoch
+        self.dataset.set_epoch(epoch)
 
     def __len__(self) -> int:
         return self._len
-
 
 
 # -------------------------
@@ -1080,10 +1166,116 @@ class ConstraintAwareDataCollator:
         }
 
 
+class StreamingDataLoader:
+    """Fixed DataLoader that works with streaming dataset and handles DDP."""
+
+    def __init__(self, dataset, batch_size: int, world_size: int = 1, rank: int = 0,
+                 collate_fn=None, drop_last: bool = True):
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.world_size = world_size
+        self.rank = rank
+        self.collate_fn = collate_fn
+        self.drop_last = drop_last
+        self.epoch = 0
+
+    def set_epoch(self, epoch: int):
+        """Set epoch for deterministic iteration."""
+        self.epoch = epoch
+        if hasattr(self.dataset, 'set_epoch'):
+            self.dataset.set_epoch(epoch)
+
+    def __iter__(self):
+        """Fixed iterator that properly resets each epoch."""
+        # Create a fresh dataset iterator for each epoch
+        dataset_iter = iter(self.dataset)
+
+        # Skip samples for DDP - simplified logic
+        samples_to_skip = self.rank
+        for _ in range(samples_to_skip):
+            try:
+                next(dataset_iter)
+            except StopIteration:
+                return  # No more data
+
+        batch = []
+        samples_collected = 0
+
+        while True:
+            try:
+                # Collect sample for this rank
+                sample = next(dataset_iter)
+                batch.append(sample)
+                samples_collected += 1
+
+                # Skip samples for other ranks
+                for _ in range(self.world_size - 1):
+                    try:
+                        next(dataset_iter)
+                    except StopIteration:
+                        break
+
+                # Yield batch when full
+                if len(batch) >= self.batch_size:
+                    yield_batch = batch[:self.batch_size]
+                    batch = batch[self.batch_size:]
+
+                    if self.collate_fn:
+                        yield self.collate_fn(yield_batch)
+                    else:
+                        yield yield_batch
+
+            except StopIteration:
+                # End of dataset - yield final batch if needed
+                if batch and not self.drop_last:
+                    if self.collate_fn:
+                        yield self.collate_fn(batch)
+                    else:
+                        yield batch
+                break
+
+    def __len__(self) -> int:
+        """Estimate number of batches."""
+        try:
+            total_samples = len(self.dataset) // self.world_size
+            return max(1, total_samples // self.batch_size)
+        except:
+            return 1000  # Fallback estimate
+
+
+# Updated dataset creation function
+def make_streaming_datasets(tokenized_dir: str, seed: int = 42):
+    """Create streaming train and validation datasets from JSON files."""
+    try:
+        train_ds = ConstrainedJSONDataset(
+            tokenized_dir,
+            "train",
+            shuffle=True,
+            seed=seed,
+            length_sort_buffer_size=1000  # Helps with batching efficiency
+        )
+    except FileNotFoundError:
+        raise FileNotFoundError(f"No training JSON files found in {tokenized_dir}")
+
+    # For validation, try to create it but fall back gracefully
+    try:
+        eval_ds = ConstrainedJSONDataset(
+            tokenized_dir,
+            "val",
+            shuffle=False,  # Don't shuffle validation data
+            seed=seed,
+            length_sort_buffer_size=100  # Smaller buffer for eval
+        )
+    except FileNotFoundError:
+        logging.info("No validation data found, using None for eval_dataset")
+        eval_ds = None
+
+    return train_ds, eval_ds
+
+
 # -------------------------
 # Enhanced Trainer with Constraint Loss - FIXED VERSION
 # -------------------------
-
 class ConstrainedTrainer(transformers.Trainer):
     """
     Trainer implementing your exact approach with detailed debugging:
@@ -1118,8 +1310,8 @@ class ConstrainedTrainer(transformers.Trainer):
         3. Apply token substitution for next step context
         """
 
-        #logging.log("Inputs: " + self.processing_class.decode(inputs["input_ids"][0]))
-        #logging.log("Constraints: " + self.processing_class.decode(inputs.get("constraint_sequences", [])[0]))
+        # logging.log("Inputs: " + self.processing_class.decode(inputs["input_ids"][0]))
+        # logging.log("Constraints: " + self.processing_class.decode(inputs.get("constraint_sequences", [])[0]))
 
         labels = inputs.get("labels")
         constraint_sequences = inputs.get("constraint_sequences", [])
@@ -1185,13 +1377,14 @@ class ConstrainedTrainer(transformers.Trainer):
             logging.info(f"🎯 Constraint targets:")
             for i, seq in enumerate(constraint_sequences[batch_idx]):
                 if len(constraint_sequences[batch_idx]) < 5:
-                    logging.info(f"   Target {i + 1}: {seq} → '{[self.processing_class.decode(s, skip_special_tokens=False) for s in seq]}'")
+                    logging.info(
+                        f"   Target {i + 1}: {seq} → '{[self.processing_class.decode(s, skip_special_tokens=False) for s in seq]}'")
             if len(constraint_sequences[batch_idx]) > 5:
                 logging.info(f"   ... and {len(constraint_sequences[batch_idx]) - 5} more")
 
             # Find generation start
             input_text = self.processing_class.decode(inputs['input_ids'][batch_idx], skip_special_tokens=False)
-            #logging.info(f"   Input text: {input_text}")
+            # logging.info(f"   Input text: {input_text}")
             generation_start_pos = self._find_generation_start_position(input_text, inputs['input_ids'][batch_idx])
 
             if generation_start_pos is None:
@@ -1205,7 +1398,8 @@ class ConstrainedTrainer(transformers.Trainer):
             sample_substitutions = 0
 
             # Process each generated position
-            for pos in range(generation_start_pos, min(generation_start_pos + 10, len(labels[batch_idx]))):  # Limit to first 10 tokens for debug
+            for pos in range(generation_start_pos, min(generation_start_pos + 10,
+                                                       len(labels[batch_idx]))):  # Limit to first 10 tokens for debug
                 if labels[batch_idx, pos] == IGNORE_INDEX:
                     continue
                 logging.info(f"\n🔄 --- STEP {pos - generation_start_pos + 1} (Position {pos}) ---")
@@ -1231,7 +1425,8 @@ class ConstrainedTrainer(transformers.Trainer):
                 valid_tokens = constraint_trie.get_valid_continuations(corrected_prefix)
 
                 if not ground_truth_token in valid_tokens:
-                    logging.warning(f"⚠️  Ground truth token {ground_truth_token} → '{ground_truth_decoded}' is NOT in valid continuations!")
+                    logging.warning(
+                        f"⚠️  Ground truth token {ground_truth_token} → '{ground_truth_decoded}' is NOT in valid continuations!")
                 if not valid_tokens:
                     logging.warning(f"⚠️  No valid continuations found! Using ground truth to recover.")
                     corrected_prefix.append(ground_truth_token)
@@ -1251,12 +1446,13 @@ class ConstrainedTrainer(transformers.Trainer):
                     corrected_prefix.append(predicted_token)
                 else:
                     # Prediction is invalid, substitute with random valid token
-                    substitute_token = ground_truth_token #random.choice(list(valid_tokens))
+                    substitute_token = ground_truth_token  # random.choice(list(valid_tokens))
                     substitute_decoded = self.processing_class.decode([substitute_token], skip_special_tokens=False)
                     corrected_prefix.append(substitute_token)
                     sample_substitutions += 1
                     step_substitutions += 1
-                    logging.warning(f"❌ WRONG: Model predicted a different token with respect to the ground truth {predicted_token} → '{predicted_decoded}'")
+                    logging.warning(
+                        f"❌ WRONG: Model predicted a different token with respect to the ground truth {predicted_token} → '{predicted_decoded}'")
                     logging.info(f"🔄 SUBSTITUTE: Using {substitute_token} → '{substitute_decoded}' from ground truth")
                     logging.info(f"📊 Substitution #{sample_substitutions} in this sample")
                 # Show updated context after this step
@@ -1322,6 +1518,57 @@ class ConstrainedTrainer(transformers.Trainer):
         logging.info(f"🔧 Debug level set: enabled={enabled}, max_samples={max_samples}")
 
 
+class StreamingConstrainedTrainer(ConstrainedTrainer):
+    """
+    Enhanced trainer that properly handles streaming datasets.
+    """
+
+    def get_train_dataloader(self):
+        """Create train dataloader for streaming dataset."""
+        if hasattr(self.train_dataset, '__iter__'):  # Streaming dataset
+            # Use custom streaming dataloader
+            world_size = getattr(self.args, 'world_size', 1)
+            rank = getattr(self.args, 'process_index', 0)
+
+            dataloader = StreamingDataLoader(
+                dataset=self.train_dataset,
+                batch_size=self.args.per_device_train_batch_size,
+                world_size=world_size,
+                rank=rank,
+                collate_fn=self.data_collator,
+                drop_last=True,
+            )
+
+            return dataloader
+        else:
+            # Fallback to parent implementation for regular datasets
+            return super().get_train_dataloader()
+
+    def get_eval_dataloader(self, eval_dataset=None):
+        """Create eval dataloader for streaming dataset."""
+        if eval_dataset is None:
+            eval_dataset = self.eval_dataset
+
+        if eval_dataset is not None and hasattr(eval_dataset, '__iter__'):
+            # Use custom streaming dataloader for eval
+            world_size = getattr(self.args, 'world_size', 1)
+            rank = getattr(self.args, 'process_index', 0)
+
+            dataloader = StreamingDataLoader(
+                dataset=eval_dataset,
+                batch_size=self.args.per_device_eval_batch_size,
+                world_size=world_size,
+                rank=rank,
+                collate_fn=self.data_collator,
+                drop_last=False,  # Don't drop last for evaluation
+            )
+
+            return dataloader
+        else:
+            # Fallback to parent implementation
+            return super().get_eval_dataloader(eval_dataset)
+
+
 # -------------------------
 # Callbacks (unchanged from original)
 # -------------------------
@@ -1347,19 +1594,16 @@ class DetailedSubstitutionStatsCallback(transformers.TrainerCallback):
 
 class SaveModelCallback(transformers.TrainerCallback):
     def on_save(self, args, state, control, **kwargs):
-        if torch.distributed.get_rank() == 0:
-            logging.info(f"[save] {args.output_dir}/checkpoint-{state.global_step}/")
-
-        if dist.is_available() and dist.is_initialized():
+        # Log from rank 0 if distributed; otherwise just log.
+        rank0 = True
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
             try:
-                if dist.get_backend() == "nccl" and torch.cuda.is_available():
-                    dist.barrier(device_ids=[torch.cuda.current_device()])
-                else:
-                    dist.barrier()
+                rank0 = (torch.distributed.get_rank() == 0)
             except Exception:
-                # don't let a barrier issue crash training
-                pass
-
+                rank0 = True
+        if rank0:
+            logging.info(f"[save] {args.output_dir}/checkpoint-{state.global_step}/")
+        # No barrier here — Trainer's save runs on rank 0 only.
         return control
 
 
@@ -1733,7 +1977,7 @@ def train():
         model.print_trainable_parameters()
 
     # Load JSON datasets
-    train_ds, eval_ds = make_datasets(data_args.tokenized_dir)
+    train_ds, eval_ds = make_streaming_datasets(data_args.tokenized_dir, seed=training_args.seed)
 
     # Tokenizer consistency checks (updated for JSON)
     assert_meta_compatible(data_args.tokenized_dir, tokenizer, [], "train")
@@ -1756,18 +2000,18 @@ def train():
             min_early_stopping_epochs=training_args.min_early_stopping_epochs,
             early_stopping_patience=training_args.early_stopping_patience,
         ),
-        SampleGenerationCallback(
-            tokenizer=tokenizer,
-            prompts=sample_prompts,
-            every_n_steps=5,
-            max_new_tokens=128,
-            temperature=0.7,
-            do_sample=True,
-        )
+        # SampleGenerationCallback(
+        #     tokenizer=tokenizer,
+        #     prompts=sample_prompts,
+        #     every_n_steps=5,
+        #     max_new_tokens=128,
+        #     temperature=0.7,
+        #     do_sample=True,
+        # )
     ]
 
     # Enhanced trainer with constraint support
-    trainer = ConstrainedTrainer(
+    trainer = StreamingConstrainedTrainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
@@ -1783,9 +2027,9 @@ def train():
     # Enable detailed debugging (set to False to reduce output)
     trainer.set_debug_level(enabled=True, max_samples=2)
 
-    mismatches = debug_constraint_alignment(train_ds, tokenizer, 50)
-    if mismatches:
-        print("⚠️ Constraint alignment issues detected!")
+    # mismatches = debug_constraint_alignment(train_ds, tokenizer, 50)
+    # if mismatches:
+    #     print("⚠️ Constraint alignment issues detected!")
 
     # Train
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
@@ -1801,7 +2045,6 @@ def train():
     else:
         # For full fine-tuning, save full model
         trainer.save_model()
-
 
 if __name__ == "__main__":
     import pathlib
