@@ -22,9 +22,9 @@ export CUDA_VISIBLE_DEVICES=${GPU_ID}
 echo "Running on GPU ${GPU_ID}"
 
 LOCAL_TOKENIZED="${OUTPUT_PROMPT_DIR}/${target_config}/local_nvme"
-LOCAL_TOKENIZED_PROMPT_BINARY="$(dirname "${LOCAL_TOKENIZED}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}-tmp")"
+LOCAL_TOKENIZED_PROMPT_BINARY="$(dirname "${LOCAL_TOKENIZED}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}")"
 mkdir -p "${LOCAL_TOKENIZED_PROMPT_BINARY}"
-rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}-tmp" "$LOCAL_TOKENIZED_PROMPT_BINARY/"
+rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" "$LOCAL_TOKENIZED_PROMPT_BINARY/"
 
 # Use GPU-specific output directory
 OUTPUT_DIR_GPU="${OUTPUT_FINE_TUNING_DIR}_gpu${GPU_ID}"
@@ -35,11 +35,11 @@ mkdir -p "${OUTPUT_DIR_GPU}"
   --model_name_or_path "${MODEL_NAME}" \
   --model_revision "${MODEL_REVISION}" \
   --use_flash_attention False \
-  --tokenized_dir "${LOCAL_TOKENIZED}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}-tmp" \
+  --tokenized_dir "${LOCAL_TOKENIZED}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" \
   --output_dir "${OUTPUT_DIR_GPU}" \
   --model_max_length ${MAX_LENGTH} \
-  --per_device_train_batch_size 4 \
-  --per_device_eval_batch_size 4 \
+  --per_device_train_batch_size 2 \
+  --per_device_eval_batch_size 2 \
   --gradient_accumulation_steps 8 \
   --bf16 True \
   --fp16 False \
@@ -56,8 +56,8 @@ mkdir -p "${OUTPUT_DIR_GPU}"
   --max_grad_norm 0.3 \
   --use_peft True \
   --num_train_epochs 3 \
-  --eval_strategy steps --eval_steps 50 \
-  --save_strategy steps --save_steps 50 --save_total_limit 3 \
+  --eval_strategy steps --eval_steps 3500 \
+  --save_strategy steps --save_steps 3500 --save_total_limit 3 \
   --prediction_loss_only True \
   --eval_accumulation_steps 1 \
   --load_best_model_at_end True \
