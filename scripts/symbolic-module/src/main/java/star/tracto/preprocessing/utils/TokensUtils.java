@@ -423,8 +423,10 @@ public class TokensUtils {
                                 tokenStepBuilder.setSyntaxCorrect(false);
                                 if (streamFlag) {
                                     tokenStepBuilder.setTarget("LAMBDA_PARAM" + ":" + token);
+                                    logger.info("Target: LAMBDA_PARAM" + ":" + token);
                                 } else {
                                     tokenStepBuilder.setTarget(Antlr4Utils.getAntlrToken(token) + ":" + token);
+                                    logger.info("Target: " + Antlr4Utils.getAntlrToken(token) + ":" + token);
                                 }
                                 //tokenStepBuilder.setContextualInfos(tokenIdentifiersStack.stream().map(t -> generateTokenStepContextualInfo(t.getValue1())).collect(Collectors.toList()));
                                 tokenStepBuilder.setContextualInfos(List.of(generateTokenStepContextualInfo(tokenIdentifiersStack.get(tokenIdentifiersStack.size()-1).getValue1(), true)));
