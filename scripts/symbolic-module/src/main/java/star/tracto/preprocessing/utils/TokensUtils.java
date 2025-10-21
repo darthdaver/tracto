@@ -292,7 +292,7 @@ public class TokensUtils {
             // Define list of token steps to return
             List<PartialOracleDatapoint> partialOraclesDatapoints = new ArrayList<>();
             // Commented if statement for debug
-            //if (testPrefixClass.getNameAsString().contains("MarcFactoryTestSTARSplitTestPrefix")) {
+            //if (testPrefixClass.getNameAsString().contains("Control008TestSTARSplitTestPrefix")) {
             // Iterate over the oracle datapoints and process each test prefix and associated target assertion
             for (OracleDatapoint datapoint : datapoints) {
                 // Get the test prefix from the datapoint
@@ -310,7 +310,7 @@ public class TokensUtils {
 
                         logger.info("Processing test class " + (testPrefixClass.getFullyQualifiedName().isPresent() ? testPrefixClass.getFullyQualifiedName().get() : testPrefixClass.getNameAsString()) + " - target assertion: " + targetAssertion);
                         // Commented if statement for debug
-                        //if (targetAssertion.contains("assertEquals(\"type, Leader, Leader_recordLength, Leader_recordStatus, Leader_typeOfRecord, \" + \"Leader_bibliographicLevel, Leader_typeOfControl, Leader_characterCodingScheme, \" + \"Leader_indicatorCount, Leader_subfieldCodeCount, Leader_baseAddressOfData, \" + \"Leader_encodingLevel, Leader_descriptiveCatalogingForm, Leader_multipartResourceRecordLevel, \" + \"Leader_lengthOfTheLengthOfFieldPortion, Leader_lengthOfTheStartingCharacterPositionPortion, \" + \"Leader_lengthOfTheImplementationDefinedPortion, Leader_undefined, ControlNumber, ControlNumberIdentifier, \" + \"LatestTransactionTime, PhysicalDescription, PhysicalDescription_categoryOfMaterial, \" + \"PhysicalDescription_specificMaterialDesignation, GeneralInformation, \" + \"GeneralInformation_dateEnteredOnFile, GeneralInformation_typeOfDateOrPublicationStatus, \" + \"GeneralInformation_date1, GeneralInformation_date2, \" + \"GeneralInformation_placeOfPublicationProductionOrExecution, GeneralInformation_language, \" + \"GeneralInformation_modifiedRecord, GeneralInformation_catalogingSource, \" + \"GeneralInformation_frequency, GeneralInformation_regularity, \" + \"GeneralInformation_typeOfContinuingResource, GeneralInformation_formOfOriginalItem, \" + \"GeneralInformation_formOfItem, GeneralInformation_natureOfEntireWork, \" + \"GeneralInformation_natureOfContents, GeneralInformation_governmentPublication, \" + \"GeneralInformation_conferencePublication, \" + \"GeneralInformation_originalAlphabetOrScriptOfTitle, GeneralInformation_entryConvention, \" + \"IdIntifiedByLocal_source, IdIntifiedByLocal, IdIntifiedByLocal_agency, \" + \"Issn_levelOfInternationalInterest, Issn, \" + \"SystemControlNumber_organizationCode, \" + \"SystemControlNumber, SystemControlNumber_recordNumber, SystemControlNumber_organization, \" + \"AdminMetadata_languageOfCataloging, \" + \"AdminMetadata_descriptionConventions, AdminMetadata_transcribingAgency, AdminMetadata_catalogingAgency, \" + \"Language_translationIndication, Language, Language_sourceOfCode, Place_country, ClassificationDdc_full, \" + \"ClassificationDdc_editionType, ClassificationDdc_classificationSource, ClassificationDdc, \" + \"Classification_classificationPortion, Classification_classificationPortion_zdbs, \" + \"Classification_source, Classification_full, Title_subtitle, \" + \"Title_responsibilityStatement, Title_mainTitle, Title_titleAddedEntry, \" + \"Title_nonfilingCharacters, Title_partName, ParallelTitle_mainTitle, ParallelTitle_type, \" + \"ParallelTitle_displayText, ParallelTitle_noteAndAddedEntry, \" + \"Publication_sequenceOfPublishingStatements, Publication_agent, Publication_place, \" + \"DatesOfPublication, DatesOfPublication_format, NumberingPeculiarities, \" + \"BemerkungenZurTitelaufnahme, \" + \"RSWKKette_nummerDesKettengliedes, RSWKKette_0, RSWKKette_a, \" + \"RSWKKette_nummerDerRSWKKette, RSWKKette_D, RSWKKette_5, AddedCorporateName, AddedCorporateName_full, \" + \"AddedCorporateName_authorityRecordControlNumber, \" + \"AddedCorporateName_authorityRecordControlNumber_recordNumber, \" + \"AddedCorporateName_authorityRecordControlNumber_organization, \" + \"AddedCorporateName_authorityRecordControlNumber_organizationCode, \" + \"AddedCorporateName_entryType, AddedCorporateName_nameType, PartOf_relation, PartOf_displayConstant, \" + \"PartOf_recordControlNumber, PartOf_noteController, PartOf_recordControlNumber_recordNumber, \" + \"PartOf_recordControlNumber_organization, PartOf_recordControlNumber_organizationCode, PartOf, \" + \"PrecededBy, PrecededBy_relation, PrecededBy_recordControlNumber_organization, \" + \"PrecededBy_recordControlNumber_recordNumber, PrecededBy_typeOfRelationship, \" + \"PrecededBy_recordControlNumber, PrecededBy_recordControlNumber_organizationCode, \" + \"PrecededBy_noteController, Bestandsinformationen, Bestandsinformationen_9, \" + \"Bestandsinformationen_d, \" + \"Bestandsinformationen_artDerRessource, Bestandsinformationen_b, Bestandsinformationen_c, \" + \"Bestandsinformationen_h, Bestandsinformationen_g\", StringUtils.join(keys, \", \"))")) {
+                        //if (targetAssertion.contains("assertEquals(Arrays.asList(\"008all00\", \"008all06\", \"008all07\", \"008all11\", \"008all15\", \"008all35\", \"008all38\", \"008all39\", \"008book18\", \"008book22\", \"008book23\", \"008book24\", \"008book28\", \"008book29\", \"008book30\", \"008book31\", \"008book33\", \"008book34\"), field.getMap().keySet().stream().map(x -> x.getId()).collect(Collectors.toList()));")) {
                         try {
                             // Setup error map for the test class
                             clazzDatapointsErrors.putIfAbsent(testPrefix.getNameAsString(), new HashMap<>());
@@ -355,6 +355,7 @@ public class TokensUtils {
                             for (int i = 0; i < tokens.size(); i++) {
                                 // Get the current token to process
                                 String token = tokens.get(i);
+                                logger.info("Partial Oracle: " + partialSnippet);
                                 logger.info("Processing token: " + token);
                                 // Define a new token step builder for the current token step
                                 TokenStepBuilder tokenStepBuilder = new TokenStepBuilder();
@@ -399,7 +400,7 @@ public class TokensUtils {
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.lambdaIdentifiers.keySet());
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.enumIdentifiers.keySet());
                                         }
-                                        if (streamFlag) {
+                                        if (streamFlag && Antlr4Utils.getAntlrToken(tokens.get(i - 1)).equals(AntlrToken.LPAREN) && !adjustedNextGenericTokens.contains(token) && !adjustedNextConcreteTokens.contains(token) && !adjustedNextJavaTokens.contains(token) && ((i-2) > 0) && !tokens.get(i-2).equals("collect")) {
                                             adjustedNextConcreteTokens.add("LAMBDA_PARAM");
                                         }
                                     } else {
@@ -434,9 +435,9 @@ public class TokensUtils {
                                 tokenStepBuilder.setNextPossibleProjectTokens(adjustedNextConcreteTokens);
                                 tokenStepBuilder.setNextPossibleJavaTokens(adjustedNextJavaTokens);
                                 tokenStepBuilder.setSyntaxCorrect(false);
-                                if (streamFlag) {
+                                if (streamFlag && Antlr4Utils.getAntlrToken(tokens.get(i - 1)).equals(AntlrToken.LPAREN) && !adjustedNextGenericTokens.contains(token) && !adjustedNextConcreteTokens.contains(token) && !adjustedNextJavaTokens.contains(token)  && ((i-2) > 0) && !tokens.get(i-2).equals("collect")) {
                                     tokenStepBuilder.setTarget("LAMBDA_PARAM" + ":" + token);
-                                    logger.info("Target: LAMBDA_PARAM" + ":" + token);
+                                    logger.info("Target: LAMBDA_PARAM" + ":" + token + "\n");
                                 } else {
                                     tokenStepBuilder.setTarget(Antlr4Utils.getAntlrToken(token) + ":" + token);
                                     logger.info("Target: " + Antlr4Utils.getAntlrToken(token) + ":" + token + "\n");
@@ -675,7 +676,8 @@ public class TokensUtils {
                                     break;
                                 }
                                 // Process the list of raw ANTLR next tokens
-                                for (String nextANTLRToken : nextANTLRTokens) {
+                                for (int i = 0; i < nextANTLRTokens.size(); i++) {
+                                    String nextANTLRToken = nextANTLRTokens.get(i);
                                     if (literalsSet.contains(nextANTLRToken)) {
                                         adjustedNextGenericTokens.add(nextANTLRToken);
                                     } else if (nextANTLRToken.equals("IDENTIFIER")) {
@@ -688,7 +690,7 @@ public class TokensUtils {
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.lambdaIdentifiers.keySet());
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.enumIdentifiers.keySet());
                                         }
-                                        if (streamFlag) {
+                                        if (streamFlag && Antlr4Utils.getAntlrToken(tokens.get(i - 1)).equals(AntlrToken.LPAREN) && ((i-2) > 0) && !tokens.get(i-2).equals("collect")) {
                                             adjustedNextConcreteTokens.add("LAMBDA_PARAM");
                                         }
                                     } else {
@@ -1928,6 +1930,7 @@ public class TokensUtils {
                             }
                         }
 
+
                         for (ResolvedType resolvedType: resolvedTypes) {
                             List<List<Pair<Modifier.Keyword,Boolean>>> modifiers = new ArrayList<>(List.of(
                                     List.of(new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))),
@@ -2061,7 +2064,7 @@ public class TokensUtils {
                         tokenReferences.setTypeParameterReferences(typeParameterReferences);
                         updateHashMapOfEnumConstantReferencesFromIdentifiers(enumReferences, enumIdentifiers);
                         tokenReferences.setEnums(enumReferences);
-                        if (currentClassReferences.containsKey(streamClassReference)) {
+                        if (currentClassReferences.containsKey(streamClassReference) && !(token.equals("collect") && contextualInfoType.equals(ContextualInfoType.METHOD_CALL))) {
                             streamFlag = true;
                         }
                 }
