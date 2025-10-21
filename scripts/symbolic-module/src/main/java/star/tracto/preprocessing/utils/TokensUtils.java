@@ -340,12 +340,16 @@ public class TokensUtils {
                                     continue;
                                 }
                             }
+                            // Log target assertion
+                            logger.info("Target assertion: " + targetAssertion);
+                            logger.info("Target assertion tokens: " + tokens.stream().map(t -> "\"" + t + "\"").collect(Collectors.joining(", ")));
                             // Start with an empty partial snippet
                             String partialSnippet = "";
                             // Iterate over the tokens to build the token steps
                             for (int i = 0; i < tokens.size(); i++) {
                                 // Get the current token to process
                                 String token = tokens.get(i);
+                                logger.info("Processing token: " + token);
                                 // Define a new token step builder for the current token step
                                 TokenStepBuilder tokenStepBuilder = new TokenStepBuilder();
                                 tokenStepBuilder.setPartialSnippet(partialSnippet);
@@ -396,6 +400,9 @@ public class TokensUtils {
                                         adjustedNextJavaTokens.add(nextANTLRToken);
                                     }
                                 }
+                                logger.info("Next java tokens: " + adjustedNextJavaTokens.stream().map(t -> "\"" + t + "\"").collect(Collectors.joining(", ")));
+                                logger.info("Next concrete tokens: " + adjustedNextConcreteTokens.stream().map(t -> "\"" + t + "\"").collect(Collectors.joining(", ")));
+                                logger.info("Next generic tokens: " + adjustedNextGenericTokens.stream().map(t -> "\"" + t + "\"").collect(Collectors.joining(", ")));
                                 // If the target token is not in the list of next possible tokens, warn about the
                                 // Impossibility to provide the target token among the candidates (it can happen for
                                 // example when the token is an identifier from an external library impossible to
@@ -426,7 +433,7 @@ public class TokensUtils {
                                     logger.info("Target: LAMBDA_PARAM" + ":" + token);
                                 } else {
                                     tokenStepBuilder.setTarget(Antlr4Utils.getAntlrToken(token) + ":" + token);
-                                    logger.info("Target: " + Antlr4Utils.getAntlrToken(token) + ":" + token);
+                                    logger.info("Target: " + Antlr4Utils.getAntlrToken(token) + ":" + token + "\n");
                                 }
                                 //tokenStepBuilder.setContextualInfos(tokenIdentifiersStack.stream().map(t -> generateTokenStepContextualInfo(t.getValue1())).collect(Collectors.toList()));
                                 tokenStepBuilder.setContextualInfos(List.of(generateTokenStepContextualInfo(tokenIdentifiersStack.get(tokenIdentifiersStack.size()-1).getValue1(), true)));
