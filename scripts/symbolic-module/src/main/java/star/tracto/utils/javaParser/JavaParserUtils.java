@@ -1756,10 +1756,10 @@ public class JavaParserUtils {
                         // If the type declaration is a class or an interface, add it to the map of existing classes
                         if (typeDecl.isClassOrInterfaceDeclaration()) {
                             ClassOrInterfaceDeclaration classOrInterfaceDecl = typeDecl.asClassOrInterfaceDeclaration();
-                            if (classOrInterfaceDecl.isInterface()) {
+                            // if (classOrInterfaceDecl.isInterface()) {
                                 // Skip interfaces that cannot be instantiated or used in test assertions
-                                continue;
-                            }
+                            //    continue;
+                            // }
                             if (!existingClasses.containsKey(classOrInterfaceDecl.getNameAsString())) {
                                 existingClasses.put(classOrInterfaceDecl.getNameAsString(), new ArrayList<>());
                             }

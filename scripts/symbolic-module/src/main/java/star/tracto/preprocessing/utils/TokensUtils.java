@@ -292,7 +292,7 @@ public class TokensUtils {
             // Define list of token steps to return
             List<PartialOracleDatapoint> partialOraclesDatapoints = new ArrayList<>();
             // Commented if statement for debug
-            //if (testPrefixClass.getNameAsString().contains("Control008TestSTARSplitTestPrefix")) {
+            //if (testPrefixClass.getNameAsString().contains("ShelfReadyCompletenessTestSTARSplitTest")) {
             // Iterate over the oracle datapoints and process each test prefix and associated target assertion
             for (OracleDatapoint datapoint : datapoints) {
                 // Get the test prefix from the datapoint
@@ -310,7 +310,7 @@ public class TokensUtils {
 
                         logger.info("Processing test class " + (testPrefixClass.getFullyQualifiedName().isPresent() ? testPrefixClass.getFullyQualifiedName().get() : testPrefixClass.getNameAsString()) + " - target assertion: " + targetAssertion);
                         // Commented if statement for debug
-                        //if (targetAssertion.contains("assertEquals(Arrays.asList(\"008all00\", \"008all06\", \"008all07\", \"008all11\", \"008all15\", \"008all35\", \"008all38\", \"008all39\", \"008book18\", \"008book22\", \"008book23\", \"008book24\", \"008book28\", \"008book29\", \"008book30\", \"008book31\", \"008book33\", \"008book34\"), field.getMap().keySet().stream().map(x -> x.getId()).collect(Collectors.toList()));")) {
+                        //if (targetAssertion.replaceAll(" ","").contains("assertEquals(List.of(\"a\", \"h\"), map.get(ShelfReadyFieldsBooks.TAG250).get(\"032@\"));".replaceAll(" ",""))) {
                         try {
                             // Setup error map for the test class
                             clazzDatapointsErrors.putIfAbsent(testPrefix.getNameAsString(), new HashMap<>());
@@ -663,7 +663,7 @@ public class TokensUtils {
                                 List<String> adjustedNextConcreteTokens = new ArrayList<>();
                                 List<String> adjustedNextGenericTokens = new ArrayList<>();
                                 // Collect the list of possible raw next tokens using ANTLR4 (they need to be processed afterward)
-                                List<String> nextANTLRTokens = Antlr4Utils.parseSnippet(JUnitAssertionType.fromString(tokens.get(0)), partialSnippet, 600);
+                                List<String> nextANTLRTokens = Antlr4Utils.parseSnippet(JUnitAssertionType.fromString(tokens.get(0)), partialSnippet, 300);
                                 // If ANTLR4 returns an empty list of candidates and the token is not a semicolon
                                 // (terminal symbol in Java statements), raise an exception because the expression
                                 // do not follow the Java syntax imposed by the grammar
