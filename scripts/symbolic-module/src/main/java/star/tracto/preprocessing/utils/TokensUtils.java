@@ -337,6 +337,12 @@ public class TokensUtils {
                                     String message = "Assertion do not start with JUnit api (do not implemented yet): " + targetAssertion + " - " + e.getMessage();
                                     logger.error(message);
                                     clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(message);
+                                    logger.error("********************************************************************");
+                                    logger.error("Stack trace:");
+                                    for (StackTraceElement ste : e.getStackTrace()) {
+                                        logger.error("\tat " + ste.toString());
+                                    }
+                                    logger.error("********************************************************************");
                                     continue;
                                 }
                             }
@@ -453,6 +459,12 @@ public class TokensUtils {
                         } catch (Exception e) {
                             logger.error(e.getMessage());
                             clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(e.getMessage());
+                            logger.error("********************************************************************");
+                            logger.error("Stack trace:");
+                            for (StackTraceElement ste : e.getStackTrace()) {
+                                logger.error("\tat " + ste.toString());
+                            }
+                            logger.error("********************************************************************");
                         }
                         //}
                         break;
@@ -463,6 +475,12 @@ public class TokensUtils {
             testClazzDatapointsBuilder.setDatapoints(partialOraclesDatapoints);
         } catch (IOException e) {
             logger.error("Error reading file: " + testPrefixClassPath);
+            logger.error("********************************************************************");
+            logger.error("Stack trace:");
+            for (StackTraceElement ste : e.getStackTrace()) {
+                logger.error("\tat " + ste.toString());
+            }
+            logger.error("********************************************************************");
         }
         return new Pair<>(testClazzDatapointsBuilder.build(), clazzDatapointsErrors);
     }
@@ -628,6 +646,12 @@ public class TokensUtils {
                                     String message = "Assertion do not start with JUnit api (do not implemented yet): " + targetAssertion + " - " + e.getMessage();
                                     logger.error(message);
                                     clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(message);
+                                    logger.error("********************************************************************");
+                                    logger.error("Stack trace:");
+                                    for (StackTraceElement ste : e.getStackTrace()) {
+                                        logger.error("\tat " + ste.toString());
+                                    }
+                                    logger.error("********************************************************************");
                                     oracleInference.add(partialSnippet);
                                     oracleInference.add("ERROR");
                                     oracleInference.add(message);
@@ -709,6 +733,12 @@ public class TokensUtils {
                             oracleInference.add(partialSnippet);
                             oracleInference.add("ERROR");
                             oracleInference.add(e.getMessage());
+                            logger.error("********************************************************************");
+                            logger.error("Stack trace:");
+                            for (StackTraceElement ste : e.getStackTrace()) {
+                                logger.error("\tat " + ste.toString());
+                            }
+                            logger.error("********************************************************************");
                         }
                         //}
                         break;
@@ -724,6 +754,12 @@ public class TokensUtils {
             //}
         } catch (IOException e) {
             logger.error("Error reading file: " + testPrefixClassPath);
+            logger.error("********************************************************************");
+            logger.error("Stack trace:");
+            for (StackTraceElement ste : e.getStackTrace()) {
+                logger.error("\tat " + ste.toString());
+            }
+            logger.error("********************************************************************");
         }
         return new Pair<>(inferenceList, clazzDatapointsErrors);
     }
@@ -789,6 +825,12 @@ public class TokensUtils {
             String message = "Error collecting root variables type identifiers for test case: " + tp.getNameAsString() + " - " + e.getMessage();
             logger.error(message);
             clazzDatapointsErrors.get(tp.getNameAsString()).get(targetAssertion).add(e.getMessage());
+            logger.error("********************************************************************");
+            logger.error("Stack trace:");
+            for (StackTraceElement ste : e.getStackTrace()) {
+                logger.error("\tat " + ste.toString());
+            }
+            logger.error("********************************************************************");
         }
         // Collect the list of classes imported within the test class and the focal class, and the ones defined within
         // the same package of the test class or the focal class (immediately accessible)
@@ -806,6 +848,12 @@ public class TokensUtils {
             String message = "Error collecting root type declaration identifiers for test case: " + tp.getNameAsString() + " - " + e.getMessage();
             logger.error(message);
             clazzDatapointsErrors.get(tp.getNameAsString()).get(targetAssertion).add(e.getMessage());
+            logger.error("********************************************************************");
+            logger.error("Stack trace:");
+            for (StackTraceElement ste : e.getStackTrace()) {
+                logger.error("\tat " + ste.toString());
+            }
+            logger.error("********************************************************************");
         }
         // Collect the parameters defined within try/catch statements within the test prefix
         HashMap<String, List<Type>> parameterIdentifiers = new HashMap<>();
@@ -815,6 +863,12 @@ public class TokensUtils {
             String message = "Error collecting parameter identifiers for test case: " + tp.getNameAsString() + " - " + e.getMessage();
             logger.error(message);
             clazzDatapointsErrors.get(tp.getNameAsString()).get(targetAssertion).add(e.getMessage());
+            logger.error("********************************************************************");
+            logger.error("Stack trace:");
+            for (StackTraceElement ste : e.getStackTrace()) {
+                logger.error("\tat " + ste.toString());
+            }
+            logger.error("********************************************************************");
         }
         // Collect the list of methods defined within the test class (immediately accessible)
         HashMap<String, List<MethodUsage>> methodUsageIdentifiers = new HashMap<>();
@@ -824,6 +878,12 @@ public class TokensUtils {
             String message = "Error collecting root method usage identifiers for test case: " + tp.getNameAsString() + " - " + e.getMessage();
             logger.error(message);
             clazzDatapointsErrors.get(tp.getNameAsString()).get(targetAssertion).add(e.getMessage());
+            logger.error("********************************************************************");
+            logger.error("Stack trace:");
+            for (StackTraceElement ste : e.getStackTrace()) {
+                logger.error("\tat " + ste.toString());
+            }
+            logger.error("********************************************************************");
         }
         // Setup the token identifiers map
         rootTokenIdentifiersCollector.setClassIdentifiersMap(typeDeclarationPathIdentifiers);
@@ -955,6 +1015,12 @@ public class TokensUtils {
                     }
                 } catch (Exception e) {
                     logger.error("Error resolving reference type " + type + " (from parameter " + parameterKey + "): " + e.getMessage() /*+ " - " + e.getStackTrace()*/);
+                    logger.error("********************************************************************");
+                    logger.error("Stack trace:");
+                    for (StackTraceElement ste : e.getStackTrace()) {
+                        logger.error("\tat " + ste.toString());
+                    }
+                    logger.error("********************************************************************");
                 }
             }
         }
@@ -1037,6 +1103,12 @@ public class TokensUtils {
                         }
                     } catch (IOException e) {
                         logger.error("Error reading compilation unit from file: " + classPath);
+                        logger.error("********************************************************************");
+                        logger.error("Stack trace:");
+                        for (StackTraceElement ste : e.getStackTrace()) {
+                            logger.error("\tat " + ste.toString());
+                        }
+                        logger.error("********************************************************************");
                     }
                 }
             }
@@ -1057,6 +1129,12 @@ public class TokensUtils {
                     }
                 } catch (IOException e) {
                     logger.error("Error reading compilation unit from file: " + classPath);
+                    logger.error("********************************************************************");
+                    logger.error("Stack trace:");
+                    for (StackTraceElement ste : e.getStackTrace()) {
+                        logger.error("\tat " + ste.toString());
+                    }
+                    logger.error("********************************************************************");
                 }
             }
         }
@@ -1110,6 +1188,12 @@ public class TokensUtils {
                     } catch (Exception e) {
                         String message = "Error processing field type declaration for field: " + variableDeclarator.getNameAsString() + " - " + e.getMessage();
                         logger.error(message);
+                        logger.error("********************************************************************");
+                        logger.error("Stack trace:");
+                        for (StackTraceElement ste : e.getStackTrace()) {
+                            logger.error("\tat " + ste.toString());
+                        }
+                        logger.error("********************************************************************");
                     }
                 }
             }
@@ -1389,6 +1473,12 @@ public class TokensUtils {
                             String message = "Error collecting variable type identifiers for test case: " + testPrefixName + " - " + e.getMessage();
                             logger.error(message);
                             clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(e.getMessage());
+                            logger.error("********************************************************************");
+                            logger.error("Stack trace:");
+                            for (StackTraceElement ste : e.getStackTrace()) {
+                                logger.error("\tat " + ste.toString());
+                            }
+                            logger.error("********************************************************************");
                         }
                         tokenIdentifiersCollector.setClassIdentifiersMap(new HashMap<>());
                         tokenIdentifiersCollector.setMethodIdentifiersMap(methodIdentifiers);
@@ -1442,6 +1532,12 @@ public class TokensUtils {
                                     }
                                 } catch (IOException e) {
                                     logger.error("Error reading compilation unit from file: " + path);
+                                    logger.error("********************************************************************");
+                                    logger.error("Stack trace:");
+                                    for (StackTraceElement ste : e.getStackTrace()) {
+                                        logger.error("\tat " + ste.toString());
+                                    }
+                                    logger.error("********************************************************************");
                                     if (!typeDeclarationPathIdentifiers.containsKey(key)) {
                                         typeDeclarationPathIdentifiers.put(key, new ArrayList<>());
                                     }
@@ -1645,6 +1741,12 @@ public class TokensUtils {
                                     }
                                 } catch (IOException e) {
                                     logger.error("Error reading compilation unit from file: " + classPath);
+                                    logger.error("********************************************************************");
+                                    logger.error("Stack trace:");
+                                    for (StackTraceElement ste : e.getStackTrace()) {
+                                        logger.error("\tat " + ste.toString());
+                                    }
+                                    logger.error("********************************************************************");
                                 }
                             }
                             tokenReferences.setReturnClasses(new HashMap<>());
@@ -1694,6 +1796,12 @@ public class TokensUtils {
                                     }
                                 } catch (Exception e) {
                                     logger.error("Error resolving reference type from lambda field: " + lambdaField);
+                                    logger.error("********************************************************************");
+                                    logger.error("Stack trace:");
+                                    for (StackTraceElement ste : e.getStackTrace()) {
+                                        logger.error("\tat " + ste.toString());
+                                    }
+                                    logger.error("********************************************************************");
                                 }
                             }
                             updateHashMapOfLambdaReferencesFromIdentifiers(lambdaReferences, lambdaIdentifiers);
@@ -1757,6 +1865,12 @@ public class TokensUtils {
                                                 String message = "Unable to resolve test class in the form of type declaration: " + testPrefixClassPath;
                                                 logger.error(message);
                                                 clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
+                                                logger.error("********************************************************************");
+                                                logger.error("Stack trace:");
+                                                for (StackTraceElement ste : e.getStackTrace()) {
+                                                    logger.error("\tat " + ste.toString());
+                                                }
+                                                logger.error("********************************************************************");
                                             }
                                             processDeclaringType(tokenReferences, declaringTypeQualifiedName, currentClassReferences, typeParameterReferences, resolvedType, ancestors);
                                         }
@@ -1764,6 +1878,12 @@ public class TokensUtils {
                                         String message = "Unable to process field " + token;
                                         logger.error(message);
                                         clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
+                                        logger.error("********************************************************************");
+                                        logger.error("Stack trace:");
+                                        for (StackTraceElement ste : e.getStackTrace()) {
+                                            logger.error("\tat " + ste.toString());
+                                        }
+                                        logger.error("********************************************************************");
                                     }
                                     contextualInfoType = ContextualInfoType.FIELD_CALL;
                                     updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, tempFieldIdentifiers);
@@ -1787,6 +1907,12 @@ public class TokensUtils {
                                             String message = "Unable to retrieve parameter reference from qualified name, for parameter " + token;
                                             logger.error(message);
                                             clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
+                                            logger.error("********************************************************************");
+                                            logger.error("Stack trace:");
+                                            for (StackTraceElement ste : e.getStackTrace()) {
+                                                logger.error("\tat " + ste.toString());
+                                            }
+                                            logger.error("********************************************************************");
                                         }
                                     }
                                 } else {
@@ -1891,6 +2017,12 @@ public class TokensUtils {
                                                 modifiers,
                                                 List.of(new Pair("Test", Boolean.valueOf(false)))
                                         );
+                                        logger.error("********************************************************************");
+                                        logger.error("Stack trace:");
+                                        for (StackTraceElement ste : e.getStackTrace()) {
+                                            logger.error("\tat " + ste.toString());
+                                        }
+                                        logger.error("********************************************************************");
                                     }
                                     //updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
                                     List<FieldDeclaration> fieldDeclarations =  resolvedType.asReferenceType().getTypeDeclaration().get().toAst().get().findAll(FieldDeclaration.class);
@@ -1900,6 +2032,12 @@ public class TokensUtils {
                                     String message = "Error resolving reference type: " + resolvedType + " - " + e.getMessage();
                                     logger.error(message);
                                     clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
+                                    logger.error("********************************************************************");
+                                    logger.error("Stack trace:");
+                                    for (StackTraceElement ste : e.getStackTrace()) {
+                                        logger.error("\tat " + ste.toString());
+                                    }
+                                    logger.error("********************************************************************");
                                 }
                             }
                         }
@@ -1947,10 +2085,22 @@ public class TokensUtils {
                             updateHashMapOfTypeDeclarationPathsIdentifiers(pathIdentifiers, List.of(javaLibPath), filePath, modifiersRules, false, false, null);
                         } catch (Exception e) {
                             logger.error("Failed to process compilation unit from file " + filePath);
+                            logger.error("********************************************************************");
+                            logger.error("Stack trace:");
+                            for (StackTraceElement ste : e.getStackTrace()) {
+                                logger.error("\tat " + ste.toString());
+                            }
+                            logger.error("********************************************************************");
                         }
                     });
         } catch (IOException e) {
             logger.error("Failed to walk through java classes in the java lib folder" + javaLibPath);
+            logger.error("********************************************************************");
+            logger.error("Stack trace:");
+            for (StackTraceElement ste : e.getStackTrace()) {
+                logger.error("\tat " + ste.toString());
+            }
+            logger.error("********************************************************************");
         }
     }
 
@@ -2018,6 +2168,12 @@ public class TokensUtils {
                     }
                 } catch (IOException e) {
                     logger.error("Error reading compilation unit from file: " + classPath);
+                    logger.error("********************************************************************");
+                    logger.error("Stack trace:");
+                    for (StackTraceElement ste : e.getStackTrace()) {
+                        logger.error("\tat " + ste.toString());
+                    }
+                    logger.error("********************************************************************");
                 }
             }
         }
@@ -2094,10 +2250,22 @@ public class TokensUtils {
                             updateHashMapOfTypeDeclarationIdentifiers(typeDeclarationIdentifiers, List.of(javaLibPath), javaFileCu, modifiersRules, false, false);
                         } catch (Exception e) {
                             logger.error("Failed to process compilation unit from file " + filePath);
+                            logger.error("********************************************************************");
+                            logger.error("Stack trace:");
+                            for (StackTraceElement ste : e.getStackTrace()) {
+                                logger.error("\tat " + ste.toString());
+                            }
+                            logger.error("********************************************************************");
                         }
                     });
         } catch (IOException e) {
             logger.error("Failed to walk through java classes in the java lib folder" + javaLibPath);
+            logger.error("********************************************************************");
+            logger.error("Stack trace:");
+            for (StackTraceElement ste : e.getStackTrace()) {
+                logger.error("\tat " + ste.toString());
+            }
+            logger.error("********************************************************************");
         }
     }
 
@@ -2165,6 +2333,12 @@ public class TokensUtils {
             }
         } catch (IOException e) {
             logger.error("Failed to process compilation unit from file " + cuFilePath, e);
+            logger.error("********************************************************************");
+            logger.error("Stack trace:");
+            for (StackTraceElement ste : e.getStackTrace()) {
+                logger.error("\tat " + ste.toString());
+            }
+            logger.error("********************************************************************");
         }
     }
 
@@ -2231,6 +2405,12 @@ public class TokensUtils {
             collectMethodUsages(methodUsageIdentifiers, methodUsages, modifiersRules, annotations);
         } catch (Exception e) {
             logger.error("Unable to resolve type declaration " + (typeDeclaration.getFullyQualifiedName().isPresent() ? typeDeclaration.getFullyQualifiedName().get() : typeDeclaration.getNameAsString()) + " and collect methods from it: " + e.getMessage() /*+ " - " + e.getStackTrace()*/);
+            logger.error("********************************************************************");
+            logger.error("Stack trace:");
+            for (StackTraceElement ste : e.getStackTrace()) {
+                logger.error("\tat " + ste.toString());
+            }
+            logger.error("********************************************************************");
         }
     }
 
@@ -2364,6 +2544,12 @@ public class TokensUtils {
                 } catch (Exception e) {
                     String message = "Unable to successfully resolve the type of the field to extract type parameters: " + e.getMessage() /*+ " - " + e.getStackTrace()*/;
                     logger.error(message);
+                    logger.error("********************************************************************");
+                    logger.error("Stack trace:");
+                    for (StackTraceElement ste : e.getStackTrace()) {
+                        logger.error("\tat " + ste.toString());
+                    }
+                    logger.error("********************************************************************");
                 }
             }
         }
@@ -2394,6 +2580,12 @@ public class TokensUtils {
             }
         } catch (Exception e) {
             logger.error("Unable to resolve the type declaration " + typeDeclaration.getFullyQualifiedName() + " to extract constructors from it: " + e.getMessage() /*+ " - " + e.getStackTrace()*/);
+            logger.error("********************************************************************");
+            logger.error("Stack trace:");
+            for (StackTraceElement ste : e.getStackTrace()) {
+                logger.error("\tat " + ste.toString());
+            }
+            logger.error("********************************************************************");
         }
     }
 
