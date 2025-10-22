@@ -153,7 +153,7 @@ public void testFromJson() throws IOException {
 # The program uses Junit Version: JUnit 4
 
 # EMIT a Java STRING_LITERAL as the next token
-Output ONLY the literal including quotes, with valid Java escapes. Nothing else.
+# OUTPUT ONLY the literal including quotes, with valid Java escapes. Nothing else.
 
 # ADDITIONAL CONTEXTUAL INFORMATION (CAN HELP THE GENERATION):
 // Invoked methods in test prefix

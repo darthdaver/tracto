@@ -53,7 +53,7 @@
     },
     "2": {
       "task": "# EMIT a Java <LITERAL_TYPE> as the next token\n",
-      "output": "Output ONLY the literal including quotes, with valid Java escapes. Nothing else.\n\n"
+      "output": "# OUTPUT ONLY the literal including quotes, with valid Java escapes. Nothing else.\n\n"
     }
   }
 }
