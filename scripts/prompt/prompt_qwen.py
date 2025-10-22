@@ -24,7 +24,7 @@ LITERALS = [
     "BOOL_LITERAL",
     "CHAR_LITERAL",
     "STRING_LITERAL",
-    "LAMDA_PARAM"
+    "LAMBDA_PARAM"
 ]
 
 
@@ -250,7 +250,7 @@ if __name__ == '__main__':
                                             })
                                             # Update stats
                                             update_stats(stats, tc['identifier'], tp['signature'], tgt, exceeded,num_tokens)
-                                            if not tgt.split(':')[0] == "LAMDA_PARAM":
+                                            if not tgt.split(':')[0] == "LAMBDA_PARAM":
                                                 src = src.replace(intros['guideline']['1']['task'], intros['guideline']['2']['task'].replace('<LITERAL_TYPE>', tgt.split(':')[0]))
                                             else:
                                                 src = src.replace(intros['guideline']['1']['task'], "EMIT a Java lambda parameter name (i.e., the variable used to represent the input in the following lambda expression).")

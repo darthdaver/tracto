@@ -1376,15 +1376,24 @@ class ConstrainedTrainer(transformers.Trainer):
             # Show constraint targets (in the _apply_token_substitution_with_debug method)
             logging.info(f"🎯 Constraint targets:")
             for i, seq in enumerate(constraint_sequences[batch_idx]):
-                if len(constraint_sequences[batch_idx]) < 5:
+                # if len(constraint_sequences[batch_idx]) < 5:
+                if i < 5:
                     logging.info(
                         f"   Target {i + 1}: {seq} → '{[self.processing_class.decode(s, skip_special_tokens=False) for s in seq]}'")
             if len(constraint_sequences[batch_idx]) > 5:
                 logging.info(f"   ... and {len(constraint_sequences[batch_idx]) - 5} more")
 
+            if "# EMIT a" in input_text:
+                stage = "generation"
+            else:
+                stage = "selection"
+
             # Find generation start
             input_text = self.processing_class.decode(inputs['input_ids'][batch_idx], skip_special_tokens=False)
-            # logging.info(f"   Input text: {input_text}")
+            logging.info(f"   Test prefix:\n{input_text.split("// Test prefix")[1].split("<|fim_suffix|>")[0].strip()}")
+            if stage == "selection":
+                logging.info(f"   Next candidate tokens:\n{input_text.split("# NEXT TOKEN CANDIDATES")[1].split("# TASK")[0].strip()}")
+            logging.info(f"   Stage: {stage}")
             generation_start_pos = self._find_generation_start_position(input_text, inputs['input_ids'][batch_idx])
 
             if generation_start_pos is None:
@@ -1396,10 +1405,9 @@ class ConstrainedTrainer(transformers.Trainer):
             # Process sequence token by token with detailed debug
             corrected_prefix = []
             sample_substitutions = 0
-
+            unexpected_token = False
             # Process each generated position
-            for pos in range(generation_start_pos, min(generation_start_pos + 10,
-                                                       len(labels[batch_idx]))):  # Limit to first 10 tokens for debug
+            for pos in range(generation_start_pos, min(generation_start_pos + 10, len(labels[batch_idx]))):  # Limit to first 10 tokens for debug
                 if labels[batch_idx, pos] == IGNORE_INDEX:
                     continue
                 logging.info(f"\n🔄 --- STEP {pos - generation_start_pos + 1} (Position {pos}) ---")
@@ -1425,6 +1433,7 @@ class ConstrainedTrainer(transformers.Trainer):
                 valid_tokens = constraint_trie.get_valid_continuations(corrected_prefix)
 
                 if not ground_truth_token in valid_tokens:
+                    unexpected_token = True
                     logging.warning(
                         f"⚠️  Ground truth token {ground_truth_token} → '{ground_truth_decoded}' is NOT in valid continuations!")
                 if not valid_tokens:
@@ -1459,6 +1468,8 @@ class ConstrainedTrainer(transformers.Trainer):
                 updated_context_decoded = self.processing_class.decode(corrected_prefix, skip_special_tokens=False)
                 logging.info(f"📝 Updated context: {corrected_prefix} → '{updated_context_decoded}'")
             logging.info(f"\n📊 Sample {batch_idx} complete: {sample_substitutions} substitutions")
+            if unexpected_token:
+                logging.info(f"⚠️  Ground truth had tokens outside valid continuations in this sample.")
         # Track substitution statistics
         self.substitution_stats['total_substitutions'] += step_substitutions
         self.substitution_stats['substitutions_per_step'].append(step_substitutions)

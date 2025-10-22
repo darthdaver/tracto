@@ -25,8 +25,9 @@ export PATH="$MAVEN_BIN:$PATH"
 export PATH="$GRADLE_BIN:$PATH"
 export PATH="$ANT_BIN:$PATH"
 
-GITHUB_REPOS_LIST_FILE=${1:-$GITHUB_REPOS_LIST_FILE}
-resolve_deps=${2:-"false"}
+mode=${1:-"training"}
+GITHUB_REPOS_LIST_FILE=${2:-$GITHUB_REPOS_LIST_FILE}
+resolve_deps=${3:-"false"}
 
 if [ ! -e "${SYMBOLIC_JAR}" ]; then
   cd "${SYMBOLIC_DIR}"
@@ -68,7 +69,7 @@ export -f scan_projects
 # Read the CSV file line by line and split into project_id, bug_id, and modified_classes field
 while IFS=, read -r repo_id repo_name; do
     # Define a log file at the top of the script
-    log_file="${OUTPUT_DIR}/logs/oracles-dataset-mvn_log_${repo_id}.log"
+    log_file="${OUTPUT_DIR}/logs/${mode}/oracles-dataset-mvn_log_${repo_id}.log"
     mkdir -p "$(dirname "$log_file")"
     cd "$ROOT_DIR"
     # Clean repo_name string from undesired white-spaces/line-breaks introduced with the CSV parsing
@@ -120,7 +121,11 @@ while IFS=, read -r repo_id repo_name; do
         cd "$SYMBOLIC_DIR"
         # Generate Oracle dataset
         sdk use java "$JAVA21"
-        java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" 24 "${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" >> "$log_file" 2>&1
+        if [ "$mode" == "training" ]; then
+          java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" 24 "${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" >> "$log_file" 2>&1
+        else
+          java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" 24 "${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" "${OUTPUT_MINER_DIR}/${repo_name}.json" >> "$log_file" 2>&1
+        fi
       else
         echo "Project ${repo_name} do not use JUnit library to test, skipping."  >> "$log_file"
       fi
