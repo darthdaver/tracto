@@ -21,7 +21,7 @@ for config_path in "${config_paths[@]}"; do
   config_num=$(basename "${config_path}")
   i=$(basename "$config_num")
   "$PY_ENV" "${PROMPT_DIR}/utils/split_dataset.py" \
-    --data-dir              "${OUTPUT_DIR}/${i}/prompt-jsonl" \
+    --data-dir              "${OUTPUT_DIR}/${i}/prompt" \
     --out-dir               "${OUTPUT_DIR}/${i}/split-dataset" \
     --min-oracles-for-test  "100" \
     --seed                  "42"  \
