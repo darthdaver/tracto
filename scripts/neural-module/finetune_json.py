@@ -1391,7 +1391,8 @@ class ConstrainedTrainer(transformers.Trainer):
                 stage = "selection"
             logging.info(f"   Test prefix:\n{input_text.split("// Test prefix")[1].split("<|fim_suffix|>")[0].strip()}")
             if stage == "selection":
-                logging.info(f"   Next candidate tokens:\n{input_text.split("# NEXT TOKEN CANDIDATES")[1].split("# TASK")[0].strip()}")
+                logging.info(
+                    f"   Next candidate tokens:\n{input_text.split("# NEXT TOKEN CANDIDATES")[1].split("# TASK")[0].strip()}")
             logging.info(f"   Stage: {stage}")
             generation_start_pos = self._find_generation_start_position(input_text, inputs['input_ids'][batch_idx])
 
@@ -1406,7 +1407,8 @@ class ConstrainedTrainer(transformers.Trainer):
             sample_substitutions = 0
             unexpected_token = False
             # Process each generated position
-            for pos in range(generation_start_pos, min(generation_start_pos + 10, len(labels[batch_idx]))):  # Limit to first 10 tokens for debug
+            for pos in range(generation_start_pos, min(generation_start_pos + 10,
+                                                       len(labels[batch_idx]))):  # Limit to first 10 tokens for debug
                 if labels[batch_idx, pos] == IGNORE_INDEX:
                     continue
                 logging.info(f"\n🔄 --- STEP {pos - generation_start_pos + 1} (Position {pos}) ---")
@@ -2047,14 +2049,39 @@ def train():
     else:
         trainer.train()
 
-    # Save final model
+    # Save final model with verification
     trainer.save_state()
+
     if training_args.use_peft:
         # For PEFT, save adapter only
+        os.makedirs(training_args.output_dir, exist_ok=True)
+        logging.info(f"Saving PEFT adapter to: {training_args.output_dir}")
+
         trainer.model.save_pretrained(training_args.output_dir)
+
+        # Check for both SafeTensors and binary formats
+        adapter_config_path = os.path.join(training_args.output_dir, "adapter_config.json")
+        adapter_safetensors_path = os.path.join(training_args.output_dir, "adapter_model.safetensors")
+        adapter_bin_path = os.path.join(training_args.output_dir, "adapter_model.bin")
+
+        config_exists = os.path.exists(adapter_config_path)
+        weights_exist = os.path.exists(adapter_safetensors_path) or os.path.exists(adapter_bin_path)
+
+        if config_exists and weights_exist:
+            logging.info("✅ PEFT adapter files saved successfully")
+            logging.info(f"  - Config: {adapter_config_path}")
+            if os.path.exists(adapter_safetensors_path):
+                logging.info(f"  - Weights: {adapter_safetensors_path} (SafeTensors format)")
+            else:
+                logging.info(f"  - Weights: {adapter_bin_path} (Binary format)")
+        else:
+            logging.error("❌ PEFT adapter files NOT saved!")
+            logging.error(f"  - Config exists: {config_exists}")
+            logging.error(f"  - Weights exist: {weights_exist}")
     else:
         # For full fine-tuning, save full model
         trainer.save_model()
+
 
 if __name__ == "__main__":
     import pathlib

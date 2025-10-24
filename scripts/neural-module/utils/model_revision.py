@@ -1,7 +1,7 @@
 import os, json
 from pathlib import Path
 
-repo = "Qwen/Qwen2.5-Coder-0.5B"
+repo = "Qwen/Qwen2.5-Coder-1.5B"
 cache = Path.home()/".cache"/"huggingface"/"hub"/f"models--{repo.replace('/','--')}"
 print("cache dir:", cache)
 refs_main = cache/"refs"/"main"
