@@ -1383,13 +1383,12 @@ class ConstrainedTrainer(transformers.Trainer):
             if len(constraint_sequences[batch_idx]) > 5:
                 logging.info(f"   ... and {len(constraint_sequences[batch_idx]) - 5} more")
 
+            # Find generation start
+            input_text = self.processing_class.decode(inputs['input_ids'][batch_idx], skip_special_tokens=False)
             if "# EMIT a" in input_text:
                 stage = "generation"
             else:
                 stage = "selection"
-
-            # Find generation start
-            input_text = self.processing_class.decode(inputs['input_ids'][batch_idx], skip_special_tokens=False)
             logging.info(f"   Test prefix:\n{input_text.split("// Test prefix")[1].split("<|fim_suffix|>")[0].strip()}")
             if stage == "selection":
                 logging.info(f"   Next candidate tokens:\n{input_text.split("# NEXT TOKEN CANDIDATES")[1].split("# TASK")[0].strip()}")
