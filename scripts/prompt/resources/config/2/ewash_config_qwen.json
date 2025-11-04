@@ -15,7 +15,7 @@
   "suffix_tag": "<|fim_suffix|>",
   "infix_tag": "<|fim_middle|>",
   "tokens": ["project_tokens", "java_tokens", "generic_tokens"],
-  "tokenizer" : "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+  "tokenizer" : "Qwen/Qwen2.5-Coder-30B-A3B-Instruct",
   "mask_token" : "<mask_id>",
   "sections" : ["test_prefix", "test_class", "focal_class"],
   "types" : ["methods", "fields"],

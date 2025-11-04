@@ -10,9 +10,6 @@ from huggingface_hub import snapshot_download
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-import predictor
-from predictor import TokenNotFoundException
-
 # Optional: safetensors for quick shape probing
 try:
     from safetensors.torch import load_file as safetensors_load_file
@@ -20,8 +17,16 @@ except Exception:
     safetensors_load_file = None
 
 # Your project modules
-import predictor_legacy
-from predictor_legacy import TokenNotFoundException
+import predictor
+from predictor import TokenNotFoundException
+
+
+# Generic literal tokens
+LITERALS = [
+    "DECIMAL_LITERAL", "HEX_LITERAL", "OCT_LITERAL", "BINARY_LITERAL",
+    "FLOAT_LITERAL", "HEX_FLOAT_LITERAL", "BOOL_LITERAL", "CHAR_LITERAL",
+    "STRING_LITERAL", "LAMDA_PARAM"
+]
 
 
 # -------------------------
@@ -29,9 +34,10 @@ from predictor_legacy import TokenNotFoundException
 # -------------------------
 
 class Server:
-    def __init__(self, device, model, tokenizer, max_src_length: int, max_tgt_length: int):
+    def __init__(self, device, model_name_or_path, model, tokenizer, max_src_length: int, max_tgt_length: int):
         self._app = Flask(__name__)
         self._device = device
+        self._model_name_or_path = model_name_or_path
         self._model = model
         self._tokenizer = tokenizer
         self._max_src_length = int(max_src_length)
@@ -56,25 +62,33 @@ class Server:
             except Exception:
                 return 'Invalid filepath', 400
 
-        script_prompt = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "prompt.py")
-        script_csv2jsonl = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "utils", "csv2jsonl.py")
-        output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "output-tracto")
-        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "resources", "config", prompt_config, "ewash_config.json")
+        script_prompt = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "prompt_qwen.py")
+        script_encode = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "utils", "encode_json_inference.py")
+        output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "output-tracto", prompt_config)
+        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "resources", "config", prompt_config, "ewash_config_qwen_inference.json")
         query_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "resources", "queries", "query-std.txt")
 
         subprocess.run(
-            [sys.executable, script_prompt, "--input", filepath, "--output", output_path, "--config", config_path],
+            [sys.executable, script_prompt, "--input", filepath, "--output", output_path, "--config", config_path, "--phase", "choice"],
             check=True  # raise CalledProcessError if the script exits non-zero
         )
 
         subprocess.run(
-            [sys.executable, script_csv2jsonl, f"{output_path}/prompt/token-step.csv", f"{output_path}/jsonl", query_path],
+            [
+                sys.executable,
+                script_encode,
+                "--tokenizer-name-or-path", self._model_name_or_path,
+                "--csv-path", f"{output_path}/prompt/token-step.csv",
+                "--output-path", f"{output_path}/encoded/token-step.json",
+                "--phase", "choice",
+                "--max-length", f"{self._max_src_length}"
+            ],
             check=True  # raise CalledProcessError if the script exits non-zero
         )
 
         # Enqueue and wait
         task_event = threading.Event()
-        self._request_queue.put({'filepath': f"{output_path}/jsonl/token-step.jsonl", 'event': task_event})
+        self._request_queue.put({'filepath': f"{output_path}/encoded/token-step.json", 'event': task_event})
         task_event.wait()
         task_result = getattr(task_event, "result", None) or {}
 
@@ -83,6 +97,42 @@ class Server:
             response.headers['Content-Type'] = 'text/plain'
             return response
         token = task_result.get('token', '')
+
+        if (token in LITERALS):
+            subprocess.run(
+                [
+                    sys.executable, script_prompt,
+                    "--input", filepath,
+                    "--output", output_path,
+                    "--config", config_path,
+                    "--phase", "emit",
+                    "--literal", token
+                ],
+                check=True  # raise CalledProcessError if the script exits non-zero
+            )
+            subprocess.run(
+                [
+                    sys.executable,
+                    script_encode,
+                    "--tokenizer-name-or-path", self._model_name_or_path,
+                    "--csv-path", f"{output_path}/prompt/token-step.csv",
+                    "--output-path", f"{output_path}/encoded/token-step.json",
+                    "--phase", "emit",
+                    "--max-length", f"{self._max_src_length}",
+                    "--literal", token
+                ],
+                check=True  # raise CalledProcessError if the script exits non-zero
+            )
+            # Enqueue and wait
+            task_event = threading.Event()
+            self._request_queue.put({'filepath': f"{output_path}/encoded/token-step.json", 'event': task_event})
+            task_event.wait()
+            task_result = getattr(task_event, "result", None) or {}
+            if 'error' in task_result:
+                response = make_response(task_result['error'], 404)
+                response.headers['Content-Type'] = 'text/plain'
+                return response
+            token = task_result.get('token', '')
         response = make_response(token)
         response.headers['Content-Type'] = 'text/plain'
         return response
@@ -136,9 +186,27 @@ def _read_adapter_config(adapter_dir: str) -> dict:
     except Exception:
         return {}
 
-def _resolve_snapshot(repo_or_path: str, revision: str | None) -> str:
+
+def _resolve_snapshot(repo_or_path: str, revision: str = None) -> str:
+    """
+    Resolve a HuggingFace repo ID or local path to an actual snapshot directory.
+    Args:
+        repo_or_path: Either an HF repo ID (e.g. "Qwen/Qwen2.5-Coder-1.5B")
+                      or a local filesystem path
+        revision: Optional revision (commit hash/tag) for HF repos
+    Returns:
+        Absolute path to the model directory
+    """
+    # Clean up spurious quotes, if any
+    repo_or_path = repo_or_path.strip("'\"")
+
+    # If the path exists locally, use it directly
     if os.path.isdir(repo_or_path):
-        return os.path.abspath(repo_or_path)
+        resolved = os.path.abspath(repo_or_path)
+        print(f"[serve] Using local model path: {resolved}")
+        return resolved
+    # Otherwise, download from HF Hub
+    print(f"[serve] Downloading/verifying HF repo: {repo_or_path} (revision: {revision})")
     return snapshot_download(repo_id=repo_or_path, revision=revision)
 
 def _pick_attn_impl() -> str:
@@ -210,6 +278,48 @@ def _pick_tokenizer_src(tokenizer_arg: str | None, adapter_dir: str | None, base
         "tokenizer.json", "tokenizer_config.json", "vocab.json", "spiece.model"
     ))
     return cand if has_tok else base_snap
+
+
+def _verify_lora_loaded(model):
+    """
+    Verify that a LoRA adapter is properly loaded into the model.
+    """
+    print("\n[DEBUG] LoRA Adapter Verification:")
+
+    # 1. Verify if model is a PeftModel
+    from peft import PeftModel
+    is_peft = isinstance(model, PeftModel)
+    print(f"  - Is PeftModel: {is_peft}")
+
+    if not is_peft:
+        print("  ❌ WARNING: Model is NOT a PeftModel!")
+        return False
+
+    # 2. Check trainable parameters
+    trainable_params = 0
+    all_params = 0
+    for name, param in model.named_parameters():
+        all_params += param.numel()
+        if param.requires_grad:
+            trainable_params += param.numel()
+            # Stampa i primi 5 parametri LoRA
+            if trainable_params <= 5 * param.numel():
+                print(f"  - LoRA param: {name} | shape: {param.shape} | requires_grad: {param.requires_grad}")
+
+    print(f"  - Total params: {all_params:,}")
+    print(f"  - Trainable (LoRA) params: {trainable_params:,}")
+    print(f"  - Trainable %: {100 * trainable_params / all_params:.4f}%")
+
+    # 3. Check adapter config
+    if hasattr(model, 'peft_config'):
+        print(f"  - Adapter config: {dict(model.peft_config)}")
+
+    # 4. Check active adapters
+    if hasattr(model, 'active_adapters'):
+        print(f"  - Active adapters: {model.active_adapters}")
+
+    print("  ✅ LoRA adapter is loaded!\n")
+    return trainable_params > 0
 
 
 # -------------------------
@@ -296,6 +406,20 @@ def setup_model(tokenizer_name_or_path,
             peft_kwargs["offload_folder"] = None  # be explicit
 
         model = PeftModel.from_pretrained(base, model_name_or_path, **peft_kwargs)
+        model.set_adapter("default")
+
+
+        try:
+            print("[serve][peft] active_adapters:",
+                  model.get_active_adapters() if hasattr(model, "get_active_adapters") else None)
+            print("[serve][peft] peft_config keys:", list(getattr(model, "peft_config", {}).keys()))
+            # A quick param count diff (LoRA adds a small # of trainable params)
+            base_params = sum(p.numel() for p in base.parameters())
+            all_params = sum(p.numel() for p in model.parameters())
+            print(
+                f"[serve][peft] base_params={base_params:,} | with_lora={all_params:,} | delta={all_params - base_params:,}")
+        except Exception as e:
+            print("[serve][peft] debug error:", repr(e))
 
         if any(getattr(p, "is_meta", False) for _, p in base.named_parameters()):
             raise RuntimeError("Base model still has meta parameters; ensure device_map={'': 'cpu'} on CPU.")
@@ -364,7 +488,8 @@ if __name__ == '__main__':
         prefer_4bit=True,
         try_merge_lora=True,
     )
-
+    # Check LoRA adapter loaded if applicable
+    _verify_lora_loaded(model)
     # Spin up the HTTP server
-    server = Server(device, model, tokenizer, args.max_src_length, args.max_tgt_length)
+    server = Server(device, args.model_name_or_path, model, tokenizer, args.max_src_length, args.max_tgt_length)
     server.run(args.port)

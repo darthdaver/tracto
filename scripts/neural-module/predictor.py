@@ -4,272 +4,439 @@
 import csv
 import io
 import json
+import logging
 import os
+import re
 import threading
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
-
+from typing import Any, Dict, List, Optional, Tuple, Set
 import torch
+from transformers import LogitsProcessor
 
+# -------------------------
+# Logging setup
+# -------------------------
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# -------------------------
+# JSON loader (orjson optional)
+# -------------------------
 try:
     import orjson
+
     _HAS_ORJSON = True
 except Exception:
     _HAS_ORJSON = False
 
-
-# -------------------------
-# Exceptions (server imports this)
-# -------------------------
-
-class TokenNotFoundException(Exception):
-    def __init__(self, predicted_token: str = ""):
-        self.predicted_token = predicted_token
-        super().__init__(f"Token not found: {predicted_token}")
-
-
-# -------------------------
-# Minimal session state (per input file)
-# -------------------------
-
-@dataclass
-class _Session:
-    filename: str
-    mtime: float
-    generated_ids: List[int]
-    cursor: int
-    # optional cached decoded text so we can compute diffs (not strictly needed here)
-    # decoded_so_far: str = ""
-
-
-_SESSIONS: Dict[str, _Session] = {}
-_LOCK = threading.Lock()
-
-
-# -------------------------
-# File loading helpers
-# -------------------------
-
-_DEFAULT_SYSTEM = (
-    "You are a testing developer assistant. You must help to automatize the process "
-    "of generating test oracles, token-by-token."
-)
-
-def _read_text(path: str) -> str:
-    with io.open(path, "r", encoding="utf-8", errors="replace") as f:
-        return f.read()
 
 def _json_loads(s: str) -> Any:
     if _HAS_ORJSON:
         return orjson.loads(s)
     return json.loads(s)
 
-def _load_messages_from_jsonlike(obj: Any) -> List[Dict[str, str]]:
-    """
-    Normalize a variety of JSON/JSONL shapes into [{"role":..., "content":...}, ...].
-    """
-    if isinstance(obj, dict):
-        if "messages" in obj and isinstance(obj["messages"], list):
-            return obj["messages"]
-        # Common alternatives
-        if "prompt" in obj and isinstance(obj["prompt"], str):
-            return [{"role": "user", "content": obj["prompt"]}]
-        if "input" in obj and isinstance(obj["input"], str):
-            return [{"role": "user", "content": obj["input"]}]
-        if "text" in obj and isinstance(obj["text"], str):
-            return [{"role": "user", "content": obj["text"]}]
-        # Fallback: stringify the dict
-        return [{"role": "user", "content": json.dumps(obj, ensure_ascii=False)}]
 
-    if isinstance(obj, list):
-        # Maybe already a list of role/content dicts
-        if obj and isinstance(obj[0], dict) and "content" in obj[0]:
-            return obj  # assume valid
-        # Or a list of strings -> join
-        joined = "\n".join(str(x) for x in obj)
-        return [{"role": "user", "content": joined}]
+# -------------------------
+# File loading helpers
+# -------------------------
+def _read_text(path: str) -> str:
+    with io.open(path, "r", encoding="utf-8") as f:
+        return f.read()
 
-    # Plain string
-    if isinstance(obj, str):
-        return [{"role": "user", "content": obj}]
-
-    # Last resort
-    return [{"role": "user", "content": str(obj)}]
 
 def _load_messages_from_json(path: str) -> List[Dict[str, str]]:
-    data = _json_loads(_read_text(path))
-    return _load_messages_from_jsonlike(data)
+    """Load chat-style messages from JSON."""
+    obj = _json_loads(_read_text(path))
+    if isinstance(obj, dict) and "messages" in obj:
+        return obj["messages"]
+    if isinstance(obj, list):
+        return obj
+    raise ValueError(f"Unsupported JSON format in {path}")
+
 
 def _load_messages_from_jsonl(path: str) -> List[Dict[str, str]]:
-    # Take the first line that parses
-    with io.open(path, "r", encoding="utf-8", errors="replace") as f:
+    """Load messages from JSONL format."""
+    out: List[Dict[str, str]] = []
+    with io.open(path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
-            try:
-                obj = _json_loads(line)
-                return _load_messages_from_jsonlike(obj)
-            except Exception:
-                continue
-    raise RuntimeError(f"No valid JSON object found in {path}")
+            rec = _json_loads(line)
+            if isinstance(rec, dict) and "messages" in rec:
+                out.extend(rec["messages"])
+            elif isinstance(rec, dict) and all(k in rec for k in ("role", "content")):
+                out.append(rec)
+            else:
+                out.append({"role": "user", "content": json.dumps(rec, ensure_ascii=False)})
+    return out
+
 
 def _load_messages_from_csv(path: str) -> List[Dict[str, str]]:
+    """Load messages from CSV format."""
+    out: List[Dict[str, str]] = []
+    with io.open(path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            role = (row.get("role") or "user").strip().lower()
+            content = row.get("content") or ""
+            out.append({"role": role, "content": content})
+    return out
+
+
+def _load_tokenized_sample(path: str) -> Dict[str, Any]:
     """
-    Heuristics:
-      - If columns include 'messages', treat it as JSON.
-      - Else if columns include ('role','content'), build chat from rows.
-      - Else: join non-empty columns of the first row into one user prompt.
+    Load a tokenized sample from the training format JSON.
+    Format: {"metadata": {...}, "samples": [{"input_ids": [...], "labels": [...], "constraints": [...]}]}
     """
-    with io.open(path, "r", encoding="utf-8", errors="replace", newline="") as f:
-        rdr = csv.DictReader(f)
-        rows = list(rdr)
-    if not rows:
-        return [{"role": "user", "content": ""}]
+    obj = _json_loads(_read_text(path))
 
-    # 1) messages column (json)
-    if "messages" in rdr.fieldnames:
-        raw = rows[0].get("messages", "")
-        try:
-            return _load_messages_from_jsonlike(_json_loads(raw))
-        except Exception:
-            pass
+    if not isinstance(obj, dict):
+        raise ValueError(f"Expected dict, got {type(obj)}")
 
-    # 2) role/content columns
-    if "role" in rdr.fieldnames and "content" in rdr.fieldnames:
-        msgs = []
-        for r in rows:
-            role = (r.get("role") or "user").strip().lower()
-            content = r.get("content") or ""
-            msgs.append({"role": role, "content": content})
-        return msgs
+    if "samples" not in obj:
+        raise ValueError(f"Missing 'samples' field in {path}")
 
-    # 3) fallback: join first row
-    parts = []
-    for k in rdr.fieldnames or []:
-        v = rows[0].get(k)
-        if isinstance(v, str) and v.strip():
-            parts.append(f"{k}: {v}")
-    joined = "\n".join(parts) if parts else _read_text(path)
-    return [{"role": "user", "content": joined}]
+    samples = obj["samples"]
+    if not samples or len(samples) == 0:
+        raise ValueError(f"No samples found in {path}")
+
+    # Return first sample
+    sample = samples[0]
+
+    # Validate structure
+    required_fields = ["input_ids", "labels", "constraints"]
+    for field in required_fields:
+        if field not in sample:
+            raise ValueError(f"Missing '{field}' in sample")
+
+    logger.info(f"Loaded tokenized sample: length={sample.get('length', len(sample['input_ids']))}, "
+                f"constraints={len(sample['constraints'])}")
+
+    return sample
+
 
 def load_messages_from_file(path: str) -> List[Dict[str, str]]:
+    """
+    Load messages from various formats.
+    Supports:
+    - JSON with "messages" field (chat format)
+    - JSON with "samples" field (tokenized training format) -> returns empty list
+    - JSONL
+    - CSV
+    - Plain text
+    """
     ext = os.path.splitext(path)[1].lower()
+
+    # Try to detect format by content
     if ext in (".json",):
+        text = _read_text(path)
+        obj = _json_loads(text)
+
+        # Check if it's tokenized format
+        if isinstance(obj, dict) and "samples" in obj:
+            # This is a tokenized sample - signal different handling
+            return []
+
+        # Otherwise, standard chat format
         return _load_messages_from_json(path)
+
     if ext in (".jsonl",):
         return _load_messages_from_jsonl(path)
     if ext in (".csv",):
         return _load_messages_from_csv(path)
-    # Plain text or unknown -> whole file as a single user message
+
+    # Plain text
     txt = _read_text(path)
     return [{"role": "user", "content": txt}]
 
 
 # -------------------------
-# Chat -> token ids (matches your training format)
+# Trie for Constrained Decoding
 # -------------------------
+class TrieNode:
+    def __init__(self):
+        self.children: Dict[int, 'TrieNode'] = {}
+        self.is_terminal = False
 
-def _role_token_ids(tok, role: str) -> List[int]:
-    # "assistant\n", "user\n", "system\n"
-    nl = tok("\n", add_special_tokens=False).input_ids[-1:]
-    base = tok(role, add_special_tokens=False).input_ids
-    return base + nl
+
+class ConstraintTrie:
+    def __init__(self, constraint_sequences: List[List[int]], eos_token_id: Optional[int] = None):
+        self.root = TrieNode()
+        self.eos_token_id = eos_token_id
+        self._build_trie(constraint_sequences)
+
+    def _build_trie(self, sequences: List[List[int]]):
+        for seq in sequences:
+            if not seq:
+                continue
+            current = self.root
+            for token_id in seq:
+                if token_id not in current.children:
+                    current.children[token_id] = TrieNode()
+                current = current.children[token_id]
+            current.is_terminal = True
+
+    def get_valid_continuations(self, prefix: List[int]) -> Set[int]:
+        current = self.root
+        for token_id in prefix:
+            if token_id not in current.children:
+                return set()
+            current = current.children[token_id]
+
+        valid_tokens = set(current.children.keys())
+        if current.is_terminal and self.eos_token_id is not None:
+            valid_tokens.add(self.eos_token_id)
+        return valid_tokens
+
+
+# -------------------------
+# Constrained Logits Processor
+# -------------------------
+class InferenceConstrainedLogitsProcessor(LogitsProcessor):
+    """
+    Applies constraints during inference token-by-token.
+    """
+
+    def __init__(self, tokenizer, constraint_trie: Optional[ConstraintTrie],
+                 prompt_length: int, stage: str = "selection"):
+        self.processing_class = tokenizer
+        self.constraint_trie = constraint_trie
+        self.prompt_length = prompt_length
+        self.stage = stage
+        self.call_count = 0
+
+    def __call__(self, input_ids: torch.Tensor, scores: torch.Tensor) -> torch.Tensor:
+        self.call_count += 1
+
+        # If in generation stage (literal), don't apply constraints
+        if self.stage == "generation" or self.constraint_trie is None:
+            return scores
+
+        # Extract generated tokens so far (after prompt)
+        generated_tokens = input_ids[0, self.prompt_length:].tolist()
+
+        # Get valid tokens from Trie
+        valid_tokens = self.constraint_trie.get_valid_continuations(generated_tokens)
+
+        if not valid_tokens:
+            # No valid constraints, leave model free
+            return scores
+
+        # Mask: -inf for invalid tokens, 0 for valid tokens
+        constraint_mask = torch.full_like(scores, float('-inf'))
+        for token_id in valid_tokens:
+            if 0 <= token_id < scores.shape[-1]:
+                constraint_mask[:, token_id] = 0.0
+
+        return scores + constraint_mask
+
+
+# -------------------------
+# JSON Output Parsing
+# -------------------------
+def _extract_json_choice(text: str) -> Optional[str]:
+    """
+    Extract the 'choice' value from generated JSON.
+    """
+    try:
+        # Pattern match {"choice": "..."}
+        match = re.search(r'\{\s*"choice"\s*:\s*"([^"]*)"\s*\}', text)
+        if match:
+            return match.group(1)
+
+        # Fallback: direct JSON parsing
+        parsed = json.loads(text)
+        if isinstance(parsed, dict) and "choice" in parsed:
+            return parsed["choice"]
+    except:
+        pass
+    return None
+
+
+# -------------------------
+# Generation from Tokenized Sample
+# -------------------------
+def _generate_from_tokenized(
+        model,
+        tok,
+        sample: Dict[str, Any],
+        max_tgt_length: int,
+        do_sample: bool = False,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
+) -> Tuple[List[int], str]:
+    """
+    Generate from a pre-tokenized sample.
+    Uses input_ids directly and applies constraints if available.
+    """
+    input_ids = sample["input_ids"]
+    constraints = sample.get("constraints", [])
+
+    device = model.device
+    input_tensor = torch.tensor([input_ids], dtype=torch.long, device=device)
+    attention_mask = torch.ones_like(input_tensor)
+
+    # Build constraint trie if constraints exist
+    constraint_trie = None
+    if constraints:
+        try:
+            constraint_trie = ConstraintTrie(constraints, eos_token_id=tok.eos_token_id)
+            logger.info(f"Built constraint trie with {len(constraints)} sequences")
+        except Exception as e:
+            logger.warning(f"Failed to build constraint trie: {e}")
+
+    # Build logits processor
+    logits_processor = None
+    if constraint_trie:
+        logits_processor = InferenceConstrainedLogitsProcessor(
+            tokenizer=tok,
+            constraint_trie=constraint_trie,
+            prompt_length=len(input_ids),
+            stage="selection"  # Assume selection stage for constrained generation
+        )
+
+    gen_kwargs: Dict[str, Any] = dict(
+        max_new_tokens=int(max_tgt_length),
+        do_sample=bool(do_sample),
+        eos_token_id=tok.eos_token_id,
+        pad_token_id=getattr(tok, "pad_token_id", tok.eos_token_id),
+    )
+
+    if do_sample:
+        gen_kwargs.update(temperature=float(temperature), top_p=float(top_p))
+
+    if logits_processor:
+        gen_kwargs["logits_processor"] = [logits_processor]
+
+    with torch.no_grad():
+        out = model.generate(
+            input_ids=input_tensor,
+            attention_mask=attention_mask,
+            **gen_kwargs,
+        )
+
+    new_ids = out[0, input_tensor.shape[1]:].tolist()
+    generated_text = tok.decode(new_ids, skip_special_tokens=True)
+
+    logger.info(f"Generated {len(new_ids)} tokens: {generated_text[:100]}...")
+
+    return new_ids, generated_text
+
+
+# -------------------------
+# Chat-style prompt building (legacy)
+# -------------------------
+@dataclass
+class ChatSpecialTokens:
+    imstart_id: int
+    imend_id: int
+
 
 def build_prompt_ids_for_inference(
-    tok,
-    messages: List[Dict[str, str]],
-    max_src_length: int,
-    default_system: str = _DEFAULT_SYSTEM,
+        tok,
+        messages: List[Dict[str, str]],
+        max_src_length: int,
 ) -> Tuple[List[int], int, Dict[str, int]]:
     """
-    Returns:
-      ids: full prompt token ids (ending with assistant header so model can generate)
-      context_len: length of input ids (prompt) used for generate() slicing
-      special: dict with im_start_id, im_end_id
+    Build prompt from chat-style messages (legacy format).
     """
-    im_start_id = tok("<|im_start|>").input_ids[0]
-    im_end_id   = tok("<|im_end|>").input_ids[0]
-    _sys = _role_token_ids(tok, "system")
-    _usr = _role_token_ids(tok, "user")
-    _asst = _role_token_ids(tok, "assistant")
-    nl = tok("\n", add_special_tokens=False).input_ids[-1:]
+    # Get special tokens
+    imstart = "<|im_start|>"
+    imend = "<|im_end|>"
 
-    ids: List[int] = []
+    imstart_ids = tok.encode(imstart, add_special_tokens=False)
+    imend_ids = tok.encode(imend, add_special_tokens=False)
 
-    # System
-    sys_msg = default_system
-    if messages and messages[0].get("role") == "system" and messages[0].get("content"):
-        sys_msg = str(messages[0]["content"])
-    sys_ids = [im_start_id] + _sys + tok(sys_msg, add_special_tokens=False).input_ids + [im_end_id] + nl
-    ids += sys_ids
+    if not imstart_ids or not imend_ids:
+        raise ValueError("Chat special tokens not found in tokenizer")
 
-    # Turns (echo existing dialogue)
-    turns = messages[1:] if messages and messages[0].get("role") == "system" else messages
-    last_role = "system"
-    for s in turns:
-        role = s.get("role", "user").lower()
-        if role not in ("user", "assistant", "system"):
-            role = "user"
-        role_tok = {"user": _usr, "assistant": _asst, "system": _sys}[role]
-        content_ids = tok(s.get("content", ""), add_special_tokens=False).input_ids
-        full = [im_start_id] + role_tok + content_ids + [im_end_id] + nl
-        ids += full
-        last_role = role
+    imstart_id = imstart_ids[0]
+    imend_id = imend_ids[0]
 
-    # Assistant header to let model continue the conversation
-    ids += [im_start_id] + _asst
-    # (We do NOT add im_end here; the model should produce content then <|im_end|>)
+    # Build conversation
+    conversation = []
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
 
-    # Truncate from the left if too long (keep the tail, since it contains latest turns)
-    if len(ids) > max_src_length:
-        ids = ids[-max_src_length:]
+        conversation.append(imstart_id)
+        role_ids = tok.encode(role, add_special_tokens=False)
+        conversation.extend(role_ids)
+        conversation.append(tok.encode("\n", add_special_tokens=False)[0])
 
-    context_len = len(ids)
-    return ids, context_len, {"im_start_id": im_start_id, "im_end_id": im_end_id}
+        content_ids = tok.encode(content, add_special_tokens=False)
+        conversation.extend(content_ids)
+        conversation.append(imend_id)
+        conversation.append(tok.encode("\n", add_special_tokens=False)[0])
+
+    # Truncate if needed
+    if len(conversation) > max_src_length:
+        conversation = conversation[-max_src_length:]
+
+    special = {
+        "imstart_id": imstart_id,
+        "imend_id": imend_id,
+    }
+
+    return conversation, len(conversation), special
 
 
 # -------------------------
-# Generation & token streaming
+# Main generation function
 # -------------------------
-
-def _generate_once_for_file(
-    model,
-    tok,
-    path: str,
-    max_src_length: int,
-    max_tgt_length: int,
-    do_sample: bool = False,
-    temperature: float = 0.7,
-    top_p: float = 0.9,
+def generate_once_for_file(
+        model,
+        tok,
+        path: str,
+        max_src_length: int,
+        max_tgt_length: int,
+        do_sample: bool = False,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
 ) -> List[int]:
     """
     Build the prompt, run model.generate(), and return ONLY the newly generated token ids.
+    Supports both chat-style and tokenized formats.
     """
+    # Try to detect format
+    ext = os.path.splitext(path)[1].lower()
+
+    if ext == ".json":
+        text = _read_text(path)
+        obj = _json_loads(text)
+
+        # Check if tokenized format
+        if isinstance(obj, dict) and "samples" in obj:
+            logger.info("Detected tokenized format")
+            sample = _load_tokenized_sample(path)
+            new_ids, _ = _generate_from_tokenized(
+                model, tok, sample, max_tgt_length, do_sample, temperature, top_p
+            )
+            return new_ids
+
+    # Otherwise, use standard chat-based generation
+    logger.info("Detected chat-style format")
     messages = load_messages_from_file(path)
-    prompt_ids, ctx_len, special = build_prompt_ids_for_inference(tok, messages, max_src_length=max_src_length)
 
-    device = next(model.parameters()).device
-    input_ids = torch.tensor(prompt_ids, dtype=torch.long, device=device).unsqueeze(0)
-    attention_mask = torch.ones_like(input_ids, dtype=torch.bool, device=device)
+    if not messages:
+        raise ValueError(f"No messages loaded from {path}")
 
-    eos_ids = [special["im_end_id"]]
-    if tok.eos_token_id is not None:
-        # Some tokenizers have a global EOS; treat either as stop.
-        if isinstance(tok.eos_token_id, (list, tuple)):
-            eos_ids.extend([int(x) for x in tok.eos_token_id])
-        else:
-            eos_ids.append(int(tok.eos_token_id))
-    # De-duplicate
-    eos_ids = sorted(set(int(x) for x in eos_ids))
-
-    gen_kwargs = dict(
-        max_new_tokens=int(max_tgt_length),
-        eos_token_id=eos_ids if len(eos_ids) > 1 else eos_ids[0],
-        pad_token_id=tok.pad_token_id,
-        do_sample=bool(do_sample),
-        use_cache=True,
+    prompt_ids, ctx_len, special = build_prompt_ids_for_inference(
+        tok, messages, max_src_length=max_src_length
     )
+
+    device = model.device
+    input_ids = torch.tensor([prompt_ids], dtype=torch.long, device=device)
+    attention_mask = torch.ones_like(input_ids)
+
+    gen_kwargs: Dict[str, Any] = dict(
+        max_new_tokens=int(max_tgt_length),
+        do_sample=bool(do_sample),
+        eos_token_id=special["imend_id"],  # stop on <|im_end|>
+        pad_token_id=getattr(tok, "pad_token_id", special["imend_id"]),
+    )
+
     if do_sample:
         gen_kwargs.update(temperature=float(temperature), top_p=float(top_p))
 
@@ -280,84 +447,57 @@ def _generate_once_for_file(
             **gen_kwargs,
         )
 
-    # Slice out the newly generated tokens
     new_ids = out[0, input_ids.shape[1]:].tolist()
     return new_ids
 
-def _pretty_piece(tok, token_id: int, at_start: bool) -> str:
-    """
-    Convert a single token id to a human-friendly piece of text.
-    Handles common SentencePiece '▁' space marker; leaves other tokens as-is.
-    """
-    piece = tok.decode([int(token_id)], skip_special_tokens=False)
-    if not piece:
-        return ""
 
-    # Remove special tokens completely
-    specials = set()
-    try:
-        specials.add(tok("<|im_start|>").input_ids[0])
-        specials.add(tok("<|im_end|>").input_ids[0])
-    except Exception:
-        pass
-    if tok.pad_token_id is not None:
-        specials.add(int(tok.pad_token_id))
-    if tok.eos_token_id is not None:
-        if isinstance(tok.eos_token_id, (list, tuple)):
-            specials.update(int(x) for x in tok.eos_token_id)
-        else:
-            specials.add(int(tok.eos_token_id))
-    if int(token_id) in specials:
-        return ""
+# -------------------------
+# Public API
+# -------------------------
+class TokenNotFoundException(Exception):
+    def __init__(self, predicted_token: str = ""):
+        self.predicted_token = predicted_token
+        super().__init__(predicted_token)
 
-    # SentencePiece space handling
-    if "▁" in piece:
-        piece = piece.replace("▁", "" if at_start else " ")
-
-    return piece
 
 def predict_next_token(
-    device: torch.device,
-    filename: str,
-    model,
-    tokenizer,
-    max_src_length: int,
-    max_tgt_length: int,
+        device: torch.device,
+        filename: str,
+        model,
+        tokenizer,
+        max_src_length: int,
+        max_tgt_length: int,
 ) -> str:
     """
-    Entry point called by server.py. Returns the next generated token (as text)
-    for the given file. Generates once and streams token-by-token over repeated calls.
+    Generate the next token/oracle with constraints applied.
+    Supports both tokenized and chat-style formats.
     """
     path = os.path.abspath(filename)
     if not os.path.isfile(path):
         raise TokenNotFoundException(predicted_token=f"[missing file: {path}]")
 
-    mtime = os.path.getmtime(path)
+    logger.info(f"Predicting next token from: {path}")
 
-    with _LOCK:
-        sess = _SESSIONS.get(path)
-        # (Re)build session if new or file changed on disk
-        if sess is None or abs(sess.mtime - mtime) > 1e-6:
-            new_ids = _generate_once_for_file(
-                model=model,
-                tok=tokenizer,
-                path=path,
-                max_src_length=max_src_length,
-                max_tgt_length=max_tgt_length,
-                do_sample=False,      # deterministic by default; flip to True if you want sampling
-                temperature=0.7,
-                top_p=0.9,
-            )
-            sess = _Session(filename=path, mtime=mtime, generated_ids=new_ids, cursor=0)
-            _SESSIONS[path] = sess
+    # Generate
+    new_ids = generate_once_for_file(
+        model=model,
+        tok=tokenizer,
+        path=path,
+        max_src_length=max_src_length,
+        max_tgt_length=max_tgt_length,
+        do_sample=False,
+        temperature=0.7,
+        top_p=0.9,
+    )
 
-        # Out of tokens? signal end.
-        if sess.cursor >= len(sess.generated_ids):
-            raise TokenNotFoundException(predicted_token="")
-
-        # Serve one token (as a pretty-printed piece)
-        token_id = sess.generated_ids[sess.cursor]
-        at_start = (sess.cursor == 0)
-        piece = _pretty_piece(tokenizer, token_id, at_start=at_start)
-        sess.cursor += 1
-        return piece
+    # Decode
+    generated_text = tokenizer.decode(new_ids, skip_special_tokens=True)
+    # Try to extract JSON choice
+    choice = _extract_json_choice(generated_text)
+    if choice is None:
+        # Fallback: return raw text
+        choice = generated_text.strip()
+    if not choice:
+        raise TokenNotFoundException(predicted_token="")
+    logger.info(f"Predicted choice: {choice}")
+    return choice

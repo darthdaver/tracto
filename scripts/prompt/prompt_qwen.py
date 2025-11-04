@@ -179,13 +179,17 @@ if __name__ == '__main__':
                                     # Get partial oracle already generated
                                     partial_oracle = s['partialSnippet']
                                     # Get target (next token)
-                                    tgt = s['target']
-                                    if len(tgt.split(":")) < 2:
-                                        logger.log(f"Target token {tgt} is not in the expected format.", logging.ERROR)
-                                        stats_error(stats, tc['identifier'], f"Target token {tgt} is not in the expected format")
-                                        continue
-                                    logger.log(f"Processing step. Partial oracle: {partial_oracle}, next token: {tgt}", logging.INFO)
-                                    print(f"Processing step. Partial oracle: {partial_oracle}, next token: {tgt}")
+                                    if ewash_config['scope'] == "training":
+                                        tgt = s['target']
+                                        if len(tgt.split(":")) < 2:
+                                            logger.log(f"Target token {tgt} is not in the expected format.", logging.ERROR)
+                                            stats_error(stats, tc['identifier'], f"Target token {tgt} is not in the expected format")
+                                            continue
+                                        logger.log(f"Processing step. Partial oracle: {partial_oracle}, next token: {tgt}", logging.INFO)
+                                        print(f"Processing step. Partial oracle: {partial_oracle}, next token: {tgt}")
+                                    else:
+                                        tgt = ""
+                                        print(f"Processing step. Partial oracle: {partial_oracle}")
                                     tokens = EWash.normalize_section(s)
                                     try:
                                         if i_d == 0 and i_s == 0:
@@ -203,13 +207,13 @@ if __name__ == '__main__':
                                                     ewash.update(intros, tp, ju_v, partial_oracle, tokens)
                                                     src, exceeded, num_tokens = ewash.run([], True)
                                             except ValueError as e:
-                                                logger.log(
-                                                    f"Exceeded input limit when updating the input string with the next token: {tgt}. It is necessary to reinitialize the E-WASH dictionary.",
-                                                    logging.ERROR)
+                                                if ewash_config['scope'] == 'training':
+                                                    logger.log(f"Exceeded input limit when updating the input string with the next token: {tgt}. It is necessary to reinitialize the E-WASH dictionary.",logging.ERROR)
+                                                else:
+                                                    logger.log(f"Exceeded input limit when updating the input string with the next token step. It is necessary to reinitialize the E-WASH dictionary.", logging.ERROR)
                                                 # Re-initialize the E-WASH dictionary
                                                 intros = copy.deepcopy(intros_template)
-                                                ewash = EWash(tp, tc, fc, ju_v, intros, ewash_config, partial_oracle,
-                                                              tokens)
+                                                ewash = EWash(tp, tc, fc, ju_v, intros, ewash_config, partial_oracle, tokens)
                                                 # Generate the input string for the model using the E-WASH approach
                                                 src, exceeded, num_tokens = ewash.run(['test_prefix', 'test_class', 'focal_class'])
 
@@ -220,67 +224,119 @@ if __name__ == '__main__':
                                             if len(tokens[t_type]) > 0:
                                                 unmask_tokens.extend(tokens[t_type])
 
-                                        if not tgt.split(':')[0] in LITERALS:
-                                            tgt = f"{{\"choice\": \"{":".join(tgt.split(':')[1:])}\"}}"
-                                            writer.writerow([datapoint_id, src, tgt, unmask_tokens])
-                                            json_data_list.append({
-                                                "id": datapoint_id,
-                                                "src": src,
-                                                "tgt": tgt,
-                                                "test_class_path": tcs_d['testClass']['filePath'],
-                                                "signature": test_prefix_signature,
-                                                "tp_body": tp['body'],
-                                                "exceeded": exceeded,
-                                                "num_tokens": num_tokens
-                                            })
-                                            # Update stats
-                                            update_stats(stats, tc['identifier'], tp['signature'], tgt, exceeded, num_tokens)
-                                        else:
-                                            tgt_1 = f"{{\"choice\": \"{tgt.split(':')[0]}\"}}"
-                                            writer.writerow([datapoint_id, src, tgt_1, unmask_tokens])
-                                            json_data_list.append({
-                                                "id": datapoint_id,
-                                                "src": src,
-                                                "tgt": tgt_1,
-                                                "test_class_path": tcs_d['testClass']['filePath'],
-                                                "signature": test_prefix_signature,
-                                                "tp_body": tp['body'],
-                                                "exceeded": exceeded,
-                                                "num_tokens": num_tokens
-                                            })
-                                            # Update stats
-                                            update_stats(stats, tc['identifier'], tp['signature'], tgt, exceeded,num_tokens)
-                                            if not tgt.split(':')[0] == "LAMBDA_PARAM":
-                                                src = src.replace(intros['guideline']['1']['task'], intros['guideline']['2']['task'].replace('<LITERAL_TYPE>', tgt.split(':')[0]))
+                                        if ewash_config['scope'] == "training":
+                                            if not tgt.split(':')[0] in LITERALS:
+                                                tgt = f"{{\"choice\": \"{":".join(tgt.split(':')[1:])}\"}}"
+                                                writer.writerow([datapoint_id, src, tgt, unmask_tokens])
+                                                json_data_list.append({
+                                                    "id": datapoint_id,
+                                                    "src": src,
+                                                    "tgt": tgt,
+                                                    "test_class_path": tcs_d['testClass']['filePath'],
+                                                    "signature": test_prefix_signature,
+                                                    "tp_body": tp['body'],
+                                                    "exceeded": exceeded,
+                                                    "num_tokens": num_tokens
+                                                })
+                                                # Update stats
+                                                update_stats(stats, tc['identifier'], tp['signature'], tgt, exceeded, num_tokens)
                                             else:
-                                                src = src.replace(intros['guideline']['1']['task'], "EMIT a Java lambda parameter name (i.e., the variable used to represent the input in the following lambda expression).")
-                                            src = src.replace(intros['guideline']['1']['output'], intros['guideline']['2']['output'])
-                                            src = src.replace("# ADDITIONAL CONTEXTUAL INFORMATION (CAN GUIDE THE CHOICE):\n", "# ADDITIONAL CONTEXTUAL INFORMATION (CAN HELP THE GENERATION):\n")
+                                                tgt_1 = f"{{\"choice\": \"{tgt.split(':')[0]}\"}}"
+                                                writer.writerow([datapoint_id, src, tgt_1, unmask_tokens])
+                                                json_data_list.append({
+                                                    "id": datapoint_id,
+                                                    "src": src,
+                                                    "tgt": tgt_1,
+                                                    "test_class_path": tcs_d['testClass']['filePath'],
+                                                    "signature": test_prefix_signature,
+                                                    "tp_body": tp['body'],
+                                                    "exceeded": exceeded,
+                                                    "num_tokens": num_tokens,
+                                                    "scope": "training",
+                                                    "phase": "choice"
+                                                })
+                                                # Update stats
+                                                update_stats(stats, tc['identifier'], tp['signature'], tgt, exceeded,num_tokens)
+                                                if not tgt.split(':')[0] == "LAMBDA_PARAM":
+                                                    src = src.replace(intros['guideline']['1']['task'], intros['guideline']['2']['task'].replace('<LITERAL_TYPE>', tgt.split(':')[0]))
+                                                else:
+                                                    src = src.replace(intros['guideline']['1']['task'], "EMIT a Java lambda parameter name (i.e., the variable used to represent the input in the following lambda expression).")
+                                                src = src.replace(intros['guideline']['1']['output'], intros['guideline']['2']['output'])
+                                                src = src.replace("# ADDITIONAL CONTEXTUAL INFORMATION (CAN GUIDE THE CHOICE):\n", "# ADDITIONAL CONTEXTUAL INFORMATION (CAN HELP THE GENERATION):\n")
 
-                                            # Remove list of next tokens from the prompt
-                                            start_marker = "# NEXT TOKEN CANDIDATES"
-                                            end_marker = intros['guideline']['2']['task'].replace('<LITERAL_TYPE>', tgt.split(':')[0])
-                                            # Find the start and end indices
-                                            start_index = src.find(start_marker)
-                                            end_index = src.find(end_marker)
-                                            # Check if both markers are found
-                                            if start_index != -1 and end_index != -1:
-                                                # Create the new string without the unwanted substring
-                                                src = src[:start_index] + src[end_index:]
-                                            tgt_2 = ":".join(tgt.split(':')[1:])
-                                            writer.writerow([datapoint_id, src, tgt_2, []])
-                                            json_data_list.append({
-                                                "id": datapoint_id,
-                                                "src": src,
-                                                "tgt": tgt_2,
-                                                "test_class_path": tcs_d['testClass']['filePath'],
-                                                "signature": test_prefix_signature,
-                                                "tp_body": tp['body'],
-                                                "exceeded": exceeded,
-                                                "num_tokens": num_tokens
-                                            })
-                                            # Update stats
-                                            update_stats(stats, tc['identifier'], tp['signature'], tgt, exceeded, num_tokens)
+                                                # Remove list of next tokens from the prompt
+                                                start_marker = "# NEXT TOKEN CANDIDATES"
+                                                end_marker = intros['guideline']['2']['task'].replace('<LITERAL_TYPE>', tgt.split(':')[0])
+                                                # Find the start and end indices
+                                                start_index = src.find(start_marker)
+                                                end_index = src.find(end_marker)
+                                                # Check if both markers are found
+                                                if start_index != -1 and end_index != -1:
+                                                    # Create the new string without the unwanted substring
+                                                    src = src[:start_index] + src[end_index:]
+                                                tgt_2 = ":".join(tgt.split(':')[1:])
+                                                writer.writerow([datapoint_id, src, tgt_2, []])
+                                                json_data_list.append({
+                                                    "id": datapoint_id,
+                                                    "src": src,
+                                                    "tgt": tgt_2,
+                                                    "test_class_path": tcs_d['testClass']['filePath'],
+                                                    "signature": test_prefix_signature,
+                                                    "tp_body": tp['body'],
+                                                    "exceeded": exceeded,
+                                                    "num_tokens": num_tokens,
+                                                    "scope": "training",
+                                                    "phase": "emit"
+                                                })
+                                                # Update stats
+                                                update_stats(stats, tc['identifier'], tp['signature'], tgt, exceeded, num_tokens)
+                                        else:
+                                            if args.phase == "choice":
+                                                writer.writerow([datapoint_id, src, tgt, unmask_tokens])
+                                                json_data_list.append({
+                                                    "id": datapoint_id,
+                                                    "src": src,
+                                                    "tgt": tgt,
+                                                    "test_class_path": tcs_d['testClass']['filePath'],
+                                                    "signature": test_prefix_signature,
+                                                    "tp_body": tp['body'],
+                                                    "exceeded": exceeded,
+                                                    "num_tokens": num_tokens
+                                                })
+                                                # Update stats
+                                                update_stats(stats, tc['identifier'], tp['signature'], tgt, exceeded, num_tokens)
+                                            else:
+                                                if not args.literal == "LAMBDA_PARAM":
+                                                    src = src.replace(intros['guideline']['1']['task'], intros['guideline']['2']['task'].replace('<LITERAL_TYPE>', args.literal))
+                                                else:
+                                                    src = src.replace(intros['guideline']['1']['task'], "EMIT a Java lambda parameter name (i.e., the variable used to represent the input in the following lambda expression).")
+                                                src = src.replace(intros['guideline']['1']['output'], intros['guideline']['2']['output'])
+                                                src = src.replace("# ADDITIONAL CONTEXTUAL INFORMATION (CAN GUIDE THE CHOICE):\n", "# ADDITIONAL CONTEXTUAL INFORMATION (CAN HELP THE GENERATION):\n")
+                                                # Remove list of next tokens from the prompt
+                                                start_marker = "# NEXT TOKEN CANDIDATES"
+                                                end_marker = intros['guideline']['2']['task'].replace('<LITERAL_TYPE>', args.literal)
+                                                # Find the start and end indices
+                                                start_index = src.find(start_marker)
+                                                end_index = src.find(end_marker)
+                                                # Check if both markers are found
+                                                if start_index != -1 and end_index != -1:
+                                                    # Create the new string without the unwanted substring
+                                                    src = src[:start_index] + src[end_index:]
+                                                writer.writerow([datapoint_id, src, tgt, []])
+                                                json_data_list.append({
+                                                    "id": datapoint_id,
+                                                    "src": src,
+                                                    "tgt": tgt,
+                                                    "test_class_path": tcs_d['testClass']['filePath'],
+                                                    "signature": test_prefix_signature,
+                                                    "tp_body": tp['body'],
+                                                    "exceeded": exceeded,
+                                                    "num_tokens": num_tokens,
+                                                    "scope": "training",
+                                                    "phase": "emit"
+                                                })
+                                                # Update stats
+                                                update_stats(stats, tc['identifier'], tp['signature'], tgt, exceeded, num_tokens)
                                     except ValueError as e:
                                         # Update stats
                                         update_stats(stats, tc['identifier'], tp['signature'], tgt, True, -1)

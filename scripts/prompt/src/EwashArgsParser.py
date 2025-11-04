@@ -17,3 +17,11 @@ class EwashArgsParser:
         default=os.path.join(os.path.abspath(os.path.dirname(__file__)), '..', 'resources', 'ewash_intros.json'),
         metadata={"help": "The path to the dictionary of intro comments for each section of the input for the E-WASH approach."}
     )
+    phase: str = field(
+        default="choice",
+        metadata={"help": "Phase of the model to be used: 'choice' or 'emit'."}
+    )
+    literal: str = field(
+        default="STRING_LITERAL",
+        metadata={"help": "Phase of the model to be used: 'choice' or 'emit'."}
+    )

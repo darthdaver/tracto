@@ -13,7 +13,7 @@ port="${1:-5000}"
 "$PY_ENV" "${NEURAL_DIR}/server.py" \
   --port "$port" \
   --tokenizer_name_or_path "${OUTPUT_FINE_TUNING_DIR}" \
-  --model_name_or_path "${OUTPUT_FINE_TUNING_DIR}_lora" \
+  --model_name_or_path "${OUTPUT_FINE_TUNING_DIR}" \
   --model_revision "${MODEL_REVISION}" \
   --max_src_length 8192 \
   --max_tgt_length 1024

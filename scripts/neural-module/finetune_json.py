@@ -1471,6 +1471,8 @@ class ConstrainedTrainer(transformers.Trainer):
             logging.info(f"\n📊 Sample {batch_idx} complete: {sample_substitutions} substitutions")
             if unexpected_token:
                 logging.info(f"⚠️  Ground truth had tokens outside valid continuations in this sample.")
+            else:
+                logging.info(f"✅ All ground truth tokens were within valid continuations.")
         # Track substitution statistics
         self.substitution_stats['total_substitutions'] += step_substitutions
         self.substitution_stats['substitutions_per_step'].append(step_substitutions)
