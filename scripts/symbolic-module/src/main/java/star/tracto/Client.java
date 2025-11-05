@@ -22,7 +22,7 @@ import java.util.regex.Pattern;
 public class Client {
     private static final Logger logger = LoggerFactory.getLogger(Client.class);
 
-    public static void main(String[] args) throws IOException {
+    public static void run(String[] args) throws IOException {
         String usage = args.length > 0 ? args[0] : "inference";
         String projectIdentifier = args[1];
         Path repoRootPath = Path.of(args[2]);
@@ -47,7 +47,7 @@ public class Client {
         // Instantiate csv writer to save information about processed test cases and target oracles
         FilesUtils.CSVWriter csvWriter = new FilesUtils.CSVWriter(
                 projectOutputPath.resolve("oracles.csv"),
-                List.of("test_id","test_class_path","class_name","test_name","signature","tp_body","tgt","status","message")
+                List.of("test_id","test_class_path","class_name","test_name","signature","tp_body","tgt","status","time","message")
         );
         // Setup the repository root path for JavaParser
         JavaParserUtils.setRepoJavaParser(repoRootPath, classpath);

@@ -8,7 +8,5 @@ RAW_ORACLES_DATASET_FINETUNING_DIR="${OUTPUT_DIR}/raw-oracles-dataset-finetuning
 PY_UTILS_DIR="${SYMBOLIC_DIR}/utils"
 # Libraries
 LIB_DIR="${SYMBOLIC_DIR}/lib"
-# Jars
-SYMBOLIC_JAR="${SYMBOLIC_DIR}/target/tracto-jar-with-dependencies.jar"
 # Links
 LIB_JDKS_LINK="https://drive.switch.ch/index.php/s/TLGLFHnw6ilbdWl/download"

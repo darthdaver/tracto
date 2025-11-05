@@ -13,7 +13,9 @@ import com.github.javaparser.resolution.declarations.ResolvedTypeParameterDeclar
 import com.github.javaparser.resolution.types.ResolvedReferenceType;
 import com.github.javaparser.resolution.types.ResolvedType;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserMethodDeclaration;
+import org.antlr.v4.runtime.misc.Triple;
 import org.javatuples.Pair;
+import org.javatuples.Triplet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import star.tracto.data.enums.*;
@@ -43,6 +45,7 @@ public class TokensUtils {
     private static final Logger logger = LoggerFactory.getLogger(TokensUtils.class);
     private static TokenIdentifiersCollector rootTokenIdentifiersCollector;
     private static TokenReferencesCollector rootTokenReferencesCollector;
+    private static Set<String> rootUnsolvableTokens = new HashSet<>();
     private static Path repoSourcePath;
     private static Path repoTestPath;
     private static Path testPrefixClassPath;
@@ -52,6 +55,7 @@ public class TokensUtils {
     private static final String streamTypeParameter = "T";
     private static boolean streamFlag = false;
     private static final String THROW_EXCEPTION_LABEL = "THROW EXCEPTION";
+    private static Set<String> unsolvableTokens = new HashSet<>();
 
     /**
      * A support class to collect various types of candidate token identifiers categorized by their type when processing
@@ -302,7 +306,7 @@ public class TokensUtils {
                 // Iterate over the test methods to find the one matching the test prefix identifier
                 for (MethodDeclaration testPrefix : testPrefixes) {
                     if (testPrefix.getNameAsString().equals(targetTestPrefix.identifier())) {
-                        List<Pair<TokenIdentifiersCollector, TokenReferencesCollector>> tokenIdentifiersStack = new ArrayList<>();
+                        List<Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>>> tokenIdentifiersStack = new ArrayList<>();
                         rootTokenIdentifiersCollector = new TokenIdentifiersCollector();
                         rootTokenReferencesCollector = new TokenReferencesCollector();
                         // Get the target assertion from the test prefix
@@ -323,7 +327,8 @@ public class TokensUtils {
                             setupRootTokenReferences(rootTokenReferencesCollector, rootTokenIdentifiersCollector);
                             TokenIdentifiersCollector currentTokenIdentifiersCollector = cloneRootTokenIdentifiers();
                             TokenReferencesCollector currentTokenReferences = new TokenReferencesCollector(); //cloneRootTokenReferences();
-                            tokenIdentifiersStack.add(new Pair<>(currentTokenIdentifiersCollector, currentTokenReferences));
+                            rootUnsolvableTokens = new HashSet<>(unsolvableTokens);
+                            tokenIdentifiersStack.add(new Triplet<>(currentTokenIdentifiersCollector, currentTokenReferences, unsolvableTokens));
                             // Initialize the list of token steps
                             List<TokenStep> tokenSteps = new ArrayList<>();
                             // Split the target assertion into tokens
@@ -448,9 +453,10 @@ public class TokensUtils {
                                 // Update the partial snippet
                                 partialSnippet += AntlrToken.isAtomicKeywordToken(Antlr4Utils.getAntlrToken(token)) ? token + " " : token;
                                 // Update the token identifiers and references collectors
-                                Pair<TokenIdentifiersCollector, TokenReferencesCollector> updatedCollectors = updateTokenIdentifiersAndReferences(tokenIdentifiersStack, token, tokens.get(i - 1), testPrefixClass, testPrefix.getNameAsString(), targetAssertion);
+                                Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>> updatedCollectors = updateTokenIdentifiersAndReferences(tokenIdentifiersStack, token, tokens.get(i - 1), testPrefixClass, testPrefix.getNameAsString(), targetAssertion);
                                 currentTokenIdentifiersCollector = updatedCollectors.getValue0();
                                 currentTokenReferences = updatedCollectors.getValue1();
+                                unsolvableTokens = updatedCollectors.getValue2();
                             }
                             // Build the partial oracle datapoint
                             partialOracleDatapointBuilder.setTestPrefix(targetTestPrefix);
@@ -578,8 +584,9 @@ public class TokensUtils {
                 // Iterate over the test methods to find the one matching the test prefix identifier
                 for (MethodDeclaration testPrefix : testPrefixes) {
                     if (testPrefix.getNameAsString().equals(targetTestPrefix.identifier())) {
+                        long startTime = System.currentTimeMillis();
                         prefixFound = true;
-                        List<Pair<TokenIdentifiersCollector, TokenReferencesCollector>> tokenIdentifiersStack = new ArrayList<>();
+                        List<Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>>> tokenIdentifiersStack = new ArrayList<>();
                         rootTokenIdentifiersCollector = new TokenIdentifiersCollector();
                         rootTokenReferencesCollector = new TokenReferencesCollector();
                         // Get the target assertion from the test prefix
@@ -599,7 +606,8 @@ public class TokensUtils {
                             setupRootTokenReferences(rootTokenReferencesCollector, rootTokenIdentifiersCollector);
                             TokenIdentifiersCollector currentTokenIdentifiersCollector = cloneRootTokenIdentifiers();
                             TokenReferencesCollector currentTokenReferences = new TokenReferencesCollector(); //cloneRootTokenReferences();
-                            tokenIdentifiersStack.add(new Pair<>(currentTokenIdentifiersCollector, currentTokenReferences));
+                            rootUnsolvableTokens = new HashSet<>(unsolvableTokens);
+                            tokenIdentifiersStack.add(new Triplet<>(currentTokenIdentifiersCollector, currentTokenReferences, new HashSet<>(rootUnsolvableTokens)));
                             // Iterate over the tokens to build the token steps
                             while (!partialSnippet.endsWith(";")) {
                                 // Define a new token step builder for the current token step
@@ -630,10 +638,15 @@ public class TokensUtils {
                                             nextTokenPath,
                                             apiURL
                                     );
+                                    if (unsolvableTokens.contains(nextToken)) {
+                                        String message = "The token generated by the model is valid but cannot be further processed by the symbolic module: " + nextToken + " after partial snippet: " + partialSnippet;
+                                        clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(message);
+                                        throw new IllegalStateException(message);
+                                    }
+                                    unsolvableTokens = new HashSet<>();
                                     partialSnippet += nextToken;
 
                                     if (nextToken.equals(THROW_EXCEPTION_LABEL)) {
-                                        oracleInference.add(nextToken);
                                         break;
                                     }
                                     continue;
@@ -653,8 +666,11 @@ public class TokensUtils {
                                         logger.error("\tat " + ste.toString());
                                     }
                                     logger.error("********************************************************************");
+                                    long endTime = System.currentTimeMillis();
+                                    long duration = endTime - startTime;
                                     oracleInference.add(partialSnippet);
                                     oracleInference.add("ERROR");
+                                    oracleInference.add(Long.toString(duration));
                                     oracleInference.add(message);
                                     break;
                                 }
@@ -670,8 +686,11 @@ public class TokensUtils {
                                 if (nextANTLRTokens.isEmpty()) {
                                     IllegalStateException exception = new IllegalStateException("Unexpected empty token candidates after partial snippet: " + partialSnippet);
                                     clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(exception.getMessage());
+                                    long endTime = System.currentTimeMillis();
+                                    long duration = endTime - startTime;
                                     oracleInference.add(partialSnippet);
                                     oracleInference.add("ERROR");
+                                    oracleInference.add(Long.toString(duration));
                                     oracleInference.add(exception.getMessage());
                                     break;
                                 }
@@ -717,23 +736,45 @@ public class TokensUtils {
                                         nextTokenPath,
                                         apiURL
                                 );
+
+                                if (unsolvableTokens.contains(nextToken)) {
+                                    String message = "The token generated by the model is valid but cannot be further processed by the symbolic module: " + nextToken + " after partial snippet: " + partialSnippet;
+                                    clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(message);
+                                    throw new IllegalStateException(message);
+                                }
+                                unsolvableTokens = new HashSet<>();
+
+                                if (AntlrToken.isIllegalToken(Antlr4Utils.getAntlrToken(nextToken), Antlr4Utils.getAntlrToken(tokens.get(tokens.size() - 1)))) {
+                                    String message = "Illegal token generated by the model: " + nextToken + " after partial snippet: " + partialSnippet;
+                                    clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(message);
+                                    throw new IllegalStateException(message);
+                                }
+
                                 // Update the partial snippet
-                                partialSnippet += AntlrToken.isAtomicKeywordToken(Antlr4Utils.getAntlrToken(nextToken)) ? nextToken + " " : nextToken;
+                                partialSnippet += AntlrToken.isAtomicKeywordToken(Antlr4Utils.getAntlrToken(nextToken)) ? " " + nextToken + " " : nextToken;
                                 // Update the token identifiers and references collectors
-                                Pair<TokenIdentifiersCollector, TokenReferencesCollector> updatedCollectors = updateTokenIdentifiersAndReferences(tokenIdentifiersStack, nextToken, tokens.get(tokens.size() - 1), testPrefixClass, testPrefix.getNameAsString(), targetAssertion);
+                                Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>> updatedCollectors = updateTokenIdentifiersAndReferences(tokenIdentifiersStack, nextToken, tokens.get(tokens.size() - 1), testPrefixClass, testPrefix.getNameAsString(), targetAssertion);
                                 currentTokenIdentifiersCollector = updatedCollectors.getValue0();
                                 currentTokenReferences = updatedCollectors.getValue1();
+                                unsolvableTokens = updatedCollectors.getValue2();
                             }
-                            if (partialSnippet.endsWith(";")) {
+                            if (partialSnippet.endsWith(";") || partialSnippet.equals(THROW_EXCEPTION_LABEL)) {
+                                long endTime = System.currentTimeMillis();
+                                long duration = endTime - startTime;
                                 oracleInference.add(partialSnippet);
                                 oracleInference.add("OK");
+                                oracleInference.add(Long.toString(duration));
                                 oracleInference.add("");
                             }
                         } catch (Exception e) {
+                            long endTime = System.currentTimeMillis();
+                            long duration = endTime - startTime;
                             logger.error(e.getMessage());
+                            unsolvableTokens = new HashSet<>();
                             clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(e.getMessage());
                             oracleInference.add(partialSnippet);
                             oracleInference.add("ERROR");
+                            oracleInference.add(Long.toString(duration));
                             oracleInference.add(e.getMessage());
                             logger.error("********************************************************************");
                             logger.error("Stack trace:");
@@ -749,6 +790,7 @@ public class TokensUtils {
                 if (!prefixFound) {
                     oracleInference.add("");
                     oracleInference.add("ERROR");
+                    oracleInference.add("0");
                     oracleInference.add("Test prefix not found");
                 }
                 inferenceList.add(oracleInference);
@@ -1218,8 +1260,8 @@ public class TokensUtils {
         );
     }
 
-    public static Pair<TokenIdentifiersCollector, TokenReferencesCollector> updateTokenIdentifiersAndReferences(
-            List<Pair<TokenIdentifiersCollector, TokenReferencesCollector>> tokenIdentifiersStack,
+    public static Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>> updateTokenIdentifiersAndReferences(
+            List<Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>>> tokenIdentifiersStack,
             final String token,
             final String previousToken,
             TypeDeclaration tc,
@@ -1232,7 +1274,7 @@ public class TokensUtils {
         AntlrToken tokenType = Antlr4Utils.getAntlrToken(token);
         AntlrToken previousTokenType = Antlr4Utils.getAntlrToken(previousToken);
         // Retrieve the current token identifiers and references collectors from the top of the stack
-        Pair<TokenIdentifiersCollector, TokenReferencesCollector> currentTokenIdentifiersAndReferences = tokenIdentifiersStack.get(tokenIdentifiersStack.size() - 1);
+        Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>> currentTokenIdentifiersAndReferences = tokenIdentifiersStack.get(tokenIdentifiersStack.size() - 1);
         TokenIdentifiersCollector tokenIdentifiersCollector = currentTokenIdentifiersAndReferences.getValue0();
         TokenReferencesCollector tokenReferences = currentTokenIdentifiersAndReferences.getValue1();
         // Define the hash maps to collect the updated identifiers and references
@@ -1276,12 +1318,12 @@ public class TokensUtils {
                     newTokenReferencesCollector.setLambdaReferences(tokenReferences.lambdaReferences);
                     newTokenReferencesCollector.setTypeParameterReferences(tokenReferences.typeParametersReferences);
                 }
-                tokenIdentifiersStack.add(new Pair<>(newTokenIdentifiersCollector, newTokenReferencesCollector));
+                tokenIdentifiersStack.add(new Triplet<>(newTokenIdentifiersCollector, newTokenReferencesCollector, new HashSet<>(rootUnsolvableTokens)));
                 break;
             case SET_TO_ROOT:
                 // Reset the current token identifiers and references collectors to the root state
                 tokenIdentifiersStack.remove(currentTokenIdentifiersAndReferences);
-                tokenIdentifiersStack.add(new Pair<>(newTokenIdentifiersCollector, newTokenReferencesCollector));
+                tokenIdentifiersStack.add(new Triplet<>(newTokenIdentifiersCollector, newTokenReferencesCollector, new HashSet<>(rootUnsolvableTokens)));
                 if (tokenType == AntlrToken.ARROW) {
                     streamFlag = false;
                     tokenReferences.setContextualInfoType(ContextualInfoType.LAMBDA_BODY);
@@ -1877,6 +1919,7 @@ public class TokensUtils {
                                             processDeclaringType(tokenReferences, declaringTypeQualifiedName, currentClassReferences, typeParameterReferences, resolvedType, ancestors);
                                         }
                                     }  catch (Exception e) {
+                                        unsolvableTokens.add(token);
                                         String message = "Unable to process field " + token;
                                         logger.error(message);
                                         clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
@@ -2407,6 +2450,7 @@ public class TokensUtils {
             Set<MethodUsage> methodUsages = typeDeclaration.resolve().getAllMethods();
             collectMethodUsages(methodUsageIdentifiers, methodUsages, modifiersRules, annotations);
         } catch (Exception e) {
+            unsolvableTokens.add(typeDeclaration.getNameAsString());
             logger.error("Unable to resolve type declaration " + (typeDeclaration.getFullyQualifiedName().isPresent() ? typeDeclaration.getFullyQualifiedName().get() : typeDeclaration.getNameAsString()) + " and collect methods from it: " + e.getMessage() /*+ " - " + e.getStackTrace()*/);
             logger.error("********************************************************************");
             logger.error("Stack trace:");
@@ -2545,6 +2589,7 @@ public class TokensUtils {
                         }
                     }
                 } catch (Exception e) {
+                    unsolvableTokens.add(entry.getValue0().getNameAsString());
                     String message = "Unable to successfully resolve the type of the field to extract type parameters: " + e.getMessage() /*+ " - " + e.getStackTrace()*/;
                     logger.error(message);
                     logger.error("********************************************************************");
@@ -2582,6 +2627,7 @@ public class TokensUtils {
                 }
             }
         } catch (Exception e) {
+            unsolvableTokens.add(typeDeclaration.getNameAsString());
             logger.error("Unable to resolve the type declaration " + typeDeclaration.getFullyQualifiedName() + " to extract constructors from it: " + e.getMessage() /*+ " - " + e.getStackTrace()*/);
             logger.error("********************************************************************");
             logger.error("Stack trace:");

@@ -236,4 +236,59 @@ public enum AntlrToken {
                 return true;
         }
     }
+
+    public static boolean isIllegalToken(AntlrToken antlrToken, AntlrToken previousToken) {
+        if (!isAtomicKeywordToken(antlrToken)) {
+            return false;
+        }
+
+        switch (previousToken) {
+            case DOT,
+                 // Operators
+                 ASSIGN,
+                 GT,
+                 LT,
+                 BANG,
+                 TILDE,
+                 QUESTION,
+                 COLON,
+                 EQUAL,
+                 LE,
+                 GE,
+                 NOTEQUAL,
+                 AND,
+                 OR,
+                 INC,
+                 DEC,
+                 ADD,
+                 SUB,
+                 MUL,
+                 DIV,
+                 BITAND,
+                 BITOR,
+                 CARET,
+                 MOD,
+                 QUERY_ARROW,
+                 ADD_ASSIGN,
+                 SUB_ASSIGN,
+                 MUL_ASSIGN,
+                 DIV_ASSIGN,
+                 AND_ASSIGN,
+                 OR_ASSIGN,
+                 XOR_ASSIGN,
+                 MOD_ASSIGN,
+                 LSHIFT_ASSIGN,
+                 RSHIFT_ASSIGN,
+                 URSHIFT_ASSIGN,
+                 // Others
+                 AT,
+                 ELLIPSIS,
+                 WS,
+                 COMMENT,
+                 LINE_COMMENT:
+                return true;
+            default:
+                return false;
+        }
+    }
 }

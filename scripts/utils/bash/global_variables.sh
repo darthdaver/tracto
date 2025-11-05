@@ -5,7 +5,7 @@ NEURAL_DIR="${ROOT_DIR}/scripts/neural-module"
 PROMPT_DIR="${ROOT_DIR}/scripts/prompt"
 TEST_MINER_DIR="${ROOT_DIR}/scripts/miner"
 UTILS_DIR="${ROOT_DIR}/scripts/utils"
-RQ1_DIR="${ROOT_DIR}/_rq1"
+RQS_DIR="${ROOT_DIR}/rqs"
 INPUT_DIR="${ROOT_DIR}/input"
 GITHUB_REPOS_DIR="${INPUT_DIR}/github-repos"
 RESOURCES_DIR="${ROOT_DIR}/resources"
@@ -26,6 +26,9 @@ MAVEN_BIN="${SDKMAN_DIR}/candidates/maven/${MAVEN_VERSION}/bin"
 
 # General
 SEED=42
+
+# Jars
+SYMBOLIC_JAR="${SYMBOLIC_DIR}/target/tracto-jar-with-dependencies.jar"
 
 # Python environment
 if [ -e "${ROOT_DIR}/.venv" ]; then

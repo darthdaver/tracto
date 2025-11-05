@@ -22,22 +22,26 @@ public class SymbolicModule {
     public static void main(String[] args) {
         // Process arguments
         String datasetType = args[0];
-        String projectIdentifier = args[1];
-        Path repoRootPath = Path.of(args[2]);
-        Path outputPath = Path.of(args[3]);
-        Path basePath = Path.of(args[4]);
-        int javaVersion = Integer.parseInt(args[5]);
-        JavaUtils.setJavaLibPath(basePath, javaVersion);
-        String classpath = JavaUtils.initializeJavaClassPath();
         // Project identifier
         try {
-            if (datasetType.equals("oracles")) {
-                Path configPath = Path.of(args[6]);
-                Optional<Path> repoTrackPath = args.length > 7 ? Optional.of(Path.of(args[7])) : Optional.empty();
-                OraclesDataset.generate(repoRootPath, repoTrackPath, configPath, outputPath, projectIdentifier, classpath);
-            } else if (datasetType.equals("tokens")) {
-                String mode = args.length > 6 ? args[6] : "training";
-                TokensDataset.generate(repoRootPath, outputPath, mode, projectIdentifier, classpath);
+            if (datasetType.equals("inference") || datasetType.equals("test")) {
+                Client.run(args);
+            } else {
+                String projectIdentifier = args[1];
+                Path repoRootPath = Path.of(args[2]);
+                Path outputPath = Path.of(args[3]);
+                Path basePath = Path.of(args[4]);
+                int javaVersion = Integer.parseInt(args[5]);
+                JavaUtils.setJavaLibPath(basePath, javaVersion);
+                String classpath = JavaUtils.initializeJavaClassPath();
+                if (datasetType.equals("oracles")) {
+                    Path configPath = Path.of(args[6]);
+                    Optional<Path> repoTrackPath = args.length > 7 ? Optional.of(Path.of(args[7])) : Optional.empty();
+                    OraclesDataset.generate(repoRootPath, repoTrackPath, configPath, outputPath, projectIdentifier, classpath);
+                } else if (datasetType.equals("tokens")) {
+                    String mode = args.length > 6 ? args[6] : "training";
+                    TokensDataset.generate(repoRootPath, outputPath, mode, projectIdentifier, classpath);
+                }
             }
         } catch (IOException e) {
             e.printStackTrace();
