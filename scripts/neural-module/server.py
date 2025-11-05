@@ -44,7 +44,15 @@ class Server:
         self._max_tgt_length = int(max_tgt_length)
         self._request_queue = Queue()
         self._safe_dir = os.environ.get("SAFE_JSON_DIR", None)
+        self._ready = False
         self.setup_routes()
+
+    def health(self):
+        """Health check endpoint to verify server is ready."""
+        if self._ready:
+            return make_response(json.dumps({"status": "ready", "model": self._model_name_or_path}), 200)
+        else:
+            return make_response(json.dumps({"status": "initializing"}), 503)
 
     def next_token(self):
         filepath = request.args.get('filepath')
@@ -160,7 +168,13 @@ class Server:
             self._request_queue.task_done()
 
     def setup_routes(self):
+        self._app.add_url_rule('/health', 'health', self.health, methods=['GET'])
         self._app.add_url_rule('/api/next_token', 'next_token', self.next_token, methods=['GET'])
+
+    def mark_ready(self):
+        """Mark the server as ready to accept requests."""
+        self._ready = True
+        print("[server] Server marked as ready")
 
     def run(self, port):
         worker_thread = threading.Thread(target=self.process_request, daemon=True)
@@ -492,4 +506,5 @@ if __name__ == '__main__':
     _verify_lora_loaded(model)
     # Spin up the HTTP server
     server = Server(device, args.model_name_or_path, model, tokenizer, args.max_src_length, args.max_tgt_length)
+    server.mark_ready()
     server.run(args.port)
