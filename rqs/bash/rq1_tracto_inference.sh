@@ -1,13 +1,12 @@
 #!/bin/bash
 # Usage: ./finetune_single_gpu.sh <gpu_id> <config>
 
-set -Eeuo pipefail
-
 # Get current directory
 current_dir=$(realpath "$(dirname "${BASH_SOURCE[@]}")")
 # Setup global & local variables
 source "${current_dir}/../../scripts/utils/bash/global_variables.sh"
 source "${current_dir}/utils/local_variables.sh"
+source "${UTILS_DIR}/bash/init_sdkman.sh"
 
 mkdir -p "${OUTPUT_RQ1}"
 
