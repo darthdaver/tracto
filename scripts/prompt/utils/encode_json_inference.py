@@ -186,6 +186,8 @@ class InferenceEncoder:
         Returns:
             (id, src, tgt, unmask_tokens)
         """
+        csv.field_size_limit(int(1e8))
+        
         with open(csv_path, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             rows = list(reader)
