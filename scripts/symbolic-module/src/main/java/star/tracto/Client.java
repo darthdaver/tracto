@@ -32,8 +32,8 @@ public class Client {
         int serverPort = Integer.parseInt(args[6]);
         int promptConfig = Integer.parseInt(args[7]);
         int javaVersion = Integer.parseInt(args[8]);
-        Path nextTokenPath = outputPath.resolve("next-token");
         Path projectOutputPath = outputPath.resolve(projectIdentifier);
+        Path nextTokenPath = projectOutputPath.resolve("next-token");
         FilesUtils.createDirectories(nextTokenPath);
         FilesUtils.createDirectories(projectOutputPath);
         String mlModelAPIUrl = String.format("http://127.0.0.1:%s/api/next_token?filepath=%s/token-step.json&config=%s", serverPort, nextTokenPath, promptConfig);
