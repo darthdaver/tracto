@@ -3,10 +3,6 @@
 
 set -Eeuo pipefail
 
-config_num=${1-1}
-port=${2-5000}
-mode="test"
-
 # Get current directory
 current_dir=$(realpath "$(dirname "${BASH_SOURCE[@]}")")
 # Setup global & local variables
@@ -16,6 +12,9 @@ source "${current_dir}/utils/local_variables.sh"
 mkdir -p "${OUTPUT_RQ1}"
 
 TEST_SET_REPOS_LIST_FILE="${1:-${TEST_SET_REPOS_LIST_FILE}}"
+config_num=${2-1}
+port=${3-5000}
+mode="test"
 
 while IFS=, read -r repo_id repo_name; do
     # Define a log file at the top of the script
