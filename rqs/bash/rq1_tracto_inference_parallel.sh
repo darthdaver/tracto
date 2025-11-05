@@ -22,6 +22,7 @@ declare -A port_to_inference_pid  # Maps port -> inference PID
 declare -A port_to_server_pid     # Maps port -> server PID
 declare -A port_available         # Maps port -> 1 if available, 0 if busy
 declare -A inference_pid_to_port  # Maps inference PID -> port (for reverse lookup)
+declare -a all_ports              # Array to maintain port order
 
 current_index=0
 
@@ -37,10 +38,17 @@ start_server() {
     local server_pid=$!
     port_to_server_pid[$port]=$server_pid
     echo "${server_pid}" > "pids/server_${port}.txt"
-    # Wait for server to be ready (adjust sleep time based on your model loading time)
+    # Wait for server to be ready
     echo "Waiting for server on port ${port} to initialize..."
-    while ! curl -s "http://localhost:${port}/health" > /dev/null 2>&1; do
-      sleep 1
+    local max_wait=300  # 5 minutes timeout
+    local elapsed=0
+    while ! curl -s "http://localhost:${port}/health" | grep -q '"status":"ready"' 2>/dev/null; do
+        sleep 1
+        ((elapsed++))
+        if ((elapsed >= max_wait)); then
+            echo "ERROR: Server on port ${port} failed to start after ${max_wait} seconds"
+            return 1
+        fi
     done
     echo "Server on port ${port} is ready (PID: ${server_pid})"
 }
@@ -63,7 +71,10 @@ launch_inference() {
 
 # Function to check for completed inference jobs and free up ports
 check_completed_jobs() {
-    for port in "${!port_to_inference_pid[@]}"; do
+    for port in "${all_ports[@]}"; do
+        # Skip if no inference job is running on this port
+        [[ -z "${port_to_inference_pid[$port]:-}" ]] && continue
+
         local pid=${port_to_inference_pid[$port]}
         if ! kill -0 "$pid" 2>/dev/null; then
             echo "Inference job on port ${port} (PID: ${pid}) has completed"
@@ -74,9 +85,9 @@ check_completed_jobs() {
     done
 }
 
-# Function to get an available port
+# Function to get an available port (returns first available in order)
 get_available_port() {
-    for port in "${!port_available[@]}"; do
+    for port in "${all_ports[@]}"; do
         if [[ ${port_available[$port]} -eq 1 ]]; then
             echo "$port"
             return 0
@@ -89,6 +100,7 @@ get_available_port() {
 echo "Phase 1: Starting ${max_jobs} server instances..."
 for ((i=0; i<max_jobs; i++)); do
     port=$((base_port + i))
+    all_ports+=("$port")  # Store port in ordered array
     start_server "$port"
     port_available[$port]=1  # Mark as available
 done
@@ -101,12 +113,14 @@ echo "Phase 2: Launching inference jobs..."
 while (( current_index < num_files )); do
     # Check for completed jobs to free up ports
     check_completed_jobs
+
     # Try to get an available port
     if available_port=$(get_available_port); then
         launch_inference "$current_index" "$available_port"
         ((current_index++))
     else
         # No available ports, wait a bit before checking again
+        echo "All ports busy, waiting for a job to complete..."
         sleep 2
     fi
 done
@@ -114,18 +128,4 @@ done
 # Wait for all remaining inference jobs to complete
 echo "All inference jobs have been launched. Waiting for completion..."
 while [[ ${#port_to_inference_pid[@]} -gt 0 ]]; do
-    check_completed_jobs
-    sleep 2
-done
-
-# Clean up: Kill all server processes
-echo "All inference jobs completed. Shutting down servers..."
-for port in "${!port_to_server_pid[@]}"; do
-    server_pid=${port_to_server_pid[$port]}
-    if kill -0 "$server_pid" 2>/dev/null; then
-        echo "Stopping server on port ${port} (PID: ${server_pid})"
-        kill "$server_pid" 2>/dev/null || true
-    fi
-done
-
-echo "All processes have completed!"
+    check_complete
