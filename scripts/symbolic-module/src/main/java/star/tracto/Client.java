@@ -47,7 +47,7 @@ public class Client {
         // Instantiate csv writer to save information about processed test cases and target oracles
         FilesUtils.CSVWriter csvWriter = new FilesUtils.CSVWriter(
                 projectOutputPath.resolve("oracles.csv"),
-                List.of("test_id","test_class_path","class_name","test_name","signature","tp_body","tgt","status","time","message")
+                List.of("test_id","test_class_path","class_name","test_name","signature","tp_body","tgt","generated","status","time","message")
         );
         // Setup the repository root path for JavaParser
         JavaParserUtils.setRepoJavaParser(repoRootPath, classpath);

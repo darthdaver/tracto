@@ -578,6 +578,7 @@ public class TokensUtils {
                 oracleInference.add(datapoint.testPrefix().identifier());
                 oracleInference.add(datapoint.testPrefix().signature());
                 oracleInference.add(datapoint.testPrefix().body());
+                oracleInference.add(datapoint.target());
                 // Get the test prefix from the datapoint
                 Callable targetTestPrefix = datapoint.testPrefix();
                 // Set flag to check if the prefix has been found
