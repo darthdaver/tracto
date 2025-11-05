@@ -33,7 +33,7 @@ start_server() {
     local port=$1
     local server_log="logs/server_${port}.log"
     echo "Starting server on port ${port}..."
-    nohup bash "${current_dir}/server.sh" "${config_num}" "${port}" > "${server_log}" 2>&1 &
+    nohup bash "${NEURAL_DIR}/bash/server.sh" "${config_num}" "${port}" > "${server_log}" 2>&1 &
     local server_pid=$!
     port_to_server_pid[$port]=$server_pid
     echo "${server_pid}" > "pids/server_${port}.txt"
