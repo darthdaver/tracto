@@ -7,8 +7,6 @@ import json
 import logging
 import os
 import re
-import threading
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Set
 import torch
 from transformers import LogitsProcessor
@@ -16,7 +14,10 @@ from transformers import LogitsProcessor
 # -------------------------
 # Logging setup
 # -------------------------
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # -------------------------
@@ -101,17 +102,17 @@ def _load_tokenized_sample(path: str) -> Dict[str, Any]:
     if not samples or len(samples) == 0:
         raise ValueError(f"No samples found in {path}")
 
-    # Return first sample
     sample = samples[0]
 
     # Validate structure
-    required_fields = ["input_ids", "labels", "constraints"]
+    required_fields = ["input_ids", "constraints"]  # labels optional for inference
     for field in required_fields:
         if field not in sample:
             raise ValueError(f"Missing '{field}' in sample")
 
-    logger.info(f"Loaded tokenized sample: length={sample.get('length', len(sample['input_ids']))}, "
-                f"constraints={len(sample['constraints'])}")
+    logger.info(f"Loaded tokenized sample from {path}")
+    logger.info(f"  - input_ids length: {len(sample['input_ids'])}")
+    logger.info(f"  - constraints: {len(sample['constraints'])} sequences")
 
     return sample
 
@@ -119,26 +120,18 @@ def _load_tokenized_sample(path: str) -> Dict[str, Any]:
 def load_messages_from_file(path: str) -> List[Dict[str, str]]:
     """
     Load messages from various formats.
-    Supports:
-    - JSON with "messages" field (chat format)
-    - JSON with "samples" field (tokenized training format) -> returns empty list
-    - JSONL
-    - CSV
-    - Plain text
+    Returns empty list if it's a tokenized format (handled separately).
     """
     ext = os.path.splitext(path)[1].lower()
 
-    # Try to detect format by content
     if ext in (".json",):
         text = _read_text(path)
         obj = _json_loads(text)
 
         # Check if it's tokenized format
         if isinstance(obj, dict) and "samples" in obj:
-            # This is a tokenized sample - signal different handling
-            return []
+            return []  # Signal tokenized format
 
-        # Otherwise, standard chat format
         return _load_messages_from_json(path)
 
     if ext in (".jsonl",):
@@ -165,6 +158,7 @@ class ConstraintTrie:
         self.root = TrieNode()
         self.eos_token_id = eos_token_id
         self._build_trie(constraint_sequences)
+        logger.info(f"Built constraint trie with {len(constraint_sequences)} sequences")
 
     def _build_trie(self, sequences: List[List[int]]):
         for seq in sequences:
@@ -178,52 +172,116 @@ class ConstraintTrie:
             current.is_terminal = True
 
     def get_valid_continuations(self, prefix: List[int]) -> Set[int]:
+        """
+        Get valid next tokens given a prefix.
+        Returns empty set if prefix goes beyond any valid path.
+        """
         current = self.root
+
+        # Navigate to current position in trie
         for token_id in prefix:
             if token_id not in current.children:
+                # Prefix goes beyond valid paths
                 return set()
             current = current.children[token_id]
 
+        # Get valid next tokens
         valid_tokens = set(current.children.keys())
+
+        # Add EOS if we're at a terminal node
         if current.is_terminal and self.eos_token_id is not None:
             valid_tokens.add(self.eos_token_id)
+
         return valid_tokens
 
 
 # -------------------------
-# Constrained Logits Processor
+# Constrained Logits Processor with Enhanced Debugging
 # -------------------------
 class InferenceConstrainedLogitsProcessor(LogitsProcessor):
     """
     Applies constraints during inference token-by-token.
+    Forces EOS when no valid continuations exist.
     """
 
-    def __init__(self, tokenizer, constraint_trie: Optional[ConstraintTrie],
-                 prompt_length: int, stage: str = "selection"):
+    def __init__(
+            self,
+            tokenizer,
+            constraint_trie: Optional[ConstraintTrie],
+            prompt_length: int,
+            stage: str = "selection",
+            debug: bool = False
+    ):
         self.processing_class = tokenizer
         self.constraint_trie = constraint_trie
         self.prompt_length = prompt_length
         self.stage = stage
+        self.eos_token_id = tokenizer.eos_token_id
         self.call_count = 0
+        self.debug = debug
+
+        logger.info(f"Initialized LogitsProcessor:")
+        logger.info(f"  - Stage: {stage}")
+        logger.info(f"  - Has trie: {constraint_trie is not None}")
+        logger.info(f"  - Prompt length: {prompt_length}")
+        logger.info(f"  - EOS token ID: {self.eos_token_id}")
 
     def __call__(self, input_ids: torch.Tensor, scores: torch.Tensor) -> torch.Tensor:
         self.call_count += 1
 
-        # If in generation stage (literal), don't apply constraints
-        if self.stage == "generation" or self.constraint_trie is None:
+        if self.debug or self.call_count <= 5:
+            logger.info(f"=== LogitsProcessor Call #{self.call_count} ===")
+
+        # If in generation stage (free literal), don't apply constraints
+        if self.stage == "generation":
+            if self.call_count <= 2:
+                logger.info(f"  Stage is 'generation' - constraints SKIPPED")
+            return scores
+
+        # If no trie, cannot apply constraints
+        if self.constraint_trie is None:
+            logger.error(f"  ⚠️ NO TRIE - constraints SKIPPED!")
             return scores
 
         # Extract generated tokens so far (after prompt)
         generated_tokens = input_ids[0, self.prompt_length:].tolist()
 
+        if self.debug or self.call_count <= 5:
+            logger.info(f"  Generated tokens so far: {generated_tokens}")
+            if generated_tokens:
+                decoded = self.processing_class.decode(generated_tokens, skip_special_tokens=False)
+                logger.info(f"  Decoded: '{decoded}'")
+
         # Get valid tokens from Trie
         valid_tokens = self.constraint_trie.get_valid_continuations(generated_tokens)
 
-        if not valid_tokens:
-            # No valid constraints, leave model free
-            return scores
+        if self.debug or self.call_count <= 5:
+            logger.info(f"  Valid continuations: {len(valid_tokens)} tokens")
 
-        # Mask: -inf for invalid tokens, 0 for valid tokens
+        # CRITICAL: If no valid tokens, we're beyond the trie or at a dead end
+        # Force EOS to stop generation
+        if not valid_tokens:
+            logger.warning(f"  ⚠️ NO VALID TOKENS at step {self.call_count} - FORCING EOS")
+            constraint_mask = torch.full_like(scores, float('-inf'))
+
+            # Only allow EOS
+            if self.eos_token_id is not None and 0 <= self.eos_token_id < scores.shape[-1]:
+                constraint_mask[:, self.eos_token_id] = 0.0
+                logger.info(f"  Forcing EOS token: {self.eos_token_id}")
+            else:
+                logger.error(f"  ⚠️ Cannot force EOS - invalid token ID: {self.eos_token_id}")
+
+            return scores + constraint_mask
+
+        # Normal case: mask to valid tokens only
+        if self.debug or self.call_count <= 5:
+            sample_valid = list(valid_tokens)[:5]
+            logger.info(f"  Sample valid tokens: {sample_valid}")
+            if sample_valid:
+                sample_decoded = [self.processing_class.decode([t]) for t in sample_valid[:3]]
+                logger.info(f"  Sample decoded: {sample_decoded}")
+
+        # Create mask: -inf for all, 0 for valid
         constraint_mask = torch.full_like(scores, float('-inf'))
         for token_id in valid_tokens:
             if 0 <= token_id < scores.shape[-1]:
@@ -238,7 +296,12 @@ class InferenceConstrainedLogitsProcessor(LogitsProcessor):
 def _extract_json_choice(text: str) -> Optional[str]:
     """
     Extract the 'choice' value from generated JSON.
+    Also handles raw literals by stripping FIM tokens.
     """
+    # Strip FIM tokens if present (safety net)
+    for fim_token in ["<|fim_prefix|>", "<|fim_middle|>", "<|fim_suffix|>", "<|fim_pad|>"]:
+        text = text.replace(fim_token, "")
+    text = text.strip()
     try:
         # Pattern match {"choice": "..."}
         match = re.search(r'\{\s*"choice"\s*:\s*"([^"]*)"\s*\}', text)
@@ -251,6 +314,11 @@ def _extract_json_choice(text: str) -> Optional[str]:
             return parsed["choice"]
     except:
         pass
+    # For generation phase: return the cleaned literal as-is
+    if text:
+        logger.info(f"Returning raw literal (generation phase): '{text}'")
+        return text
+    logger.warning(f"Could not extract choice from empty text")
     return None
 
 
@@ -265,26 +333,42 @@ def _generate_from_tokenized(
         do_sample: bool = False,
         temperature: float = 0.7,
         top_p: float = 0.9,
+        debug: bool = True,
 ) -> Tuple[List[int], str]:
     """
-    Generate from a pre-tokenized sample.
-    Uses input_ids directly and applies constraints if available.
+    Generate from a pre-tokenized sample with constraints.
     """
     input_ids = sample["input_ids"]
     constraints = sample.get("constraints", [])
+
+    logger.info(f"Starting generation from tokenized sample:")
+    logger.info(f"  - Input length: {len(input_ids)} tokens")
+    logger.info(f"  - Constraints: {len(constraints)} sequences")
+
+    # Validate constraints
+    if not constraints:
+        logger.error("⚠️  NO CONSTRAINTS LOADED - generation will be unconstrained!")
+    else:
+        # Log first constraint as example
+        first_constraint = constraints[0]
+        decoded_constraint = tok.decode(first_constraint, skip_special_tokens=False)
+        logger.info(f"  - First constraint tokens: {first_constraint[:15]}...")
+        logger.info(f"  - First constraint decoded: '{decoded_constraint}'")
 
     device = model.device
     input_tensor = torch.tensor([input_ids], dtype=torch.long, device=device)
     attention_mask = torch.ones_like(input_tensor)
 
-    # Build constraint trie if constraints exist
+    # Build constraint trie
     constraint_trie = None
     if constraints:
         try:
             constraint_trie = ConstraintTrie(constraints, eos_token_id=tok.eos_token_id)
-            logger.info(f"Built constraint trie with {len(constraints)} sequences")
+            logger.info(f"✅ Built constraint trie successfully")
         except Exception as e:
-            logger.warning(f"Failed to build constraint trie: {e}")
+            logger.error(f"❌ Failed to build constraint trie: {e}", exc_info=True)
+    else:
+        logger.error("❌ Skipping trie build - no constraints!")
 
     # Build logits processor
     logits_processor = None
@@ -293,14 +377,20 @@ def _generate_from_tokenized(
             tokenizer=tok,
             constraint_trie=constraint_trie,
             prompt_length=len(input_ids),
-            stage="selection"  # Assume selection stage for constrained generation
+            stage="selection",  # Always use selection for constrained generation
+            debug=debug
         )
+        logger.info(f"✅ Created constrained logits processor")
+    else:
+        logger.error("❌ NO logits processor created - constraints will NOT be applied!")
 
+    # Setup generation parameters
     gen_kwargs: Dict[str, Any] = dict(
         max_new_tokens=int(max_tgt_length),
         do_sample=bool(do_sample),
         eos_token_id=tok.eos_token_id,
         pad_token_id=getattr(tok, "pad_token_id", tok.eos_token_id),
+        min_new_tokens=1,  # Generate at least one token
     )
 
     if do_sample:
@@ -308,7 +398,14 @@ def _generate_from_tokenized(
 
     if logits_processor:
         gen_kwargs["logits_processor"] = [logits_processor]
+        logger.info(f"✅ Logits processor added to generation kwargs")
+    else:
+        logger.error("❌ Generation will run WITHOUT constraints!")
 
+    logger.info(f"Generation parameters: {list(gen_kwargs.keys())}")
+    logger.info(f"Starting generation...")
+
+    # Generate
     with torch.no_grad():
         out = model.generate(
             input_ids=input_tensor,
@@ -316,10 +413,14 @@ def _generate_from_tokenized(
             **gen_kwargs,
         )
 
+    # Extract generated tokens
     new_ids = out[0, input_tensor.shape[1]:].tolist()
     generated_text = tok.decode(new_ids, skip_special_tokens=True)
 
-    logger.info(f"Generated {len(new_ids)} tokens: {generated_text[:100]}...")
+    logger.info(f"Generation complete:")
+    logger.info(f"  - Generated {len(new_ids)} tokens")
+    logger.info(f"  - Token IDs: {new_ids}")
+    logger.info(f"  - Decoded text: '{generated_text}'")
 
     return new_ids, generated_text
 
@@ -327,12 +428,6 @@ def _generate_from_tokenized(
 # -------------------------
 # Chat-style prompt building (legacy)
 # -------------------------
-@dataclass
-class ChatSpecialTokens:
-    imstart_id: int
-    imend_id: int
-
-
 def build_prompt_ids_for_inference(
         tok,
         messages: List[Dict[str, str]],
@@ -341,7 +436,6 @@ def build_prompt_ids_for_inference(
     """
     Build prompt from chat-style messages (legacy format).
     """
-    # Get special tokens
     imstart = "<|im_start|>"
     imend = "<|im_end|>"
 
@@ -394,12 +488,12 @@ def generate_once_for_file(
         do_sample: bool = False,
         temperature: float = 0.7,
         top_p: float = 0.9,
+        debug: bool = True,
 ) -> List[int]:
     """
-    Build the prompt, run model.generate(), and return ONLY the newly generated token ids.
-    Supports both chat-style and tokenized formats.
+    Generate from a file (supports both tokenized and chat formats).
+    Returns only the newly generated token IDs.
     """
-    # Try to detect format
     ext = os.path.splitext(path)[1].lower()
 
     if ext == ".json":
@@ -411,11 +505,11 @@ def generate_once_for_file(
             logger.info("Detected tokenized format")
             sample = _load_tokenized_sample(path)
             new_ids, _ = _generate_from_tokenized(
-                model, tok, sample, max_tgt_length, do_sample, temperature, top_p
+                model, tok, sample, max_tgt_length, do_sample, temperature, top_p, debug
             )
             return new_ids
 
-    # Otherwise, use standard chat-based generation
+    # Chat-style format (legacy)
     logger.info("Detected chat-style format")
     messages = load_messages_from_file(path)
 
@@ -433,7 +527,7 @@ def generate_once_for_file(
     gen_kwargs: Dict[str, Any] = dict(
         max_new_tokens=int(max_tgt_length),
         do_sample=bool(do_sample),
-        eos_token_id=special["imend_id"],  # stop on <|im_end|>
+        eos_token_id=special["imend_id"],
         pad_token_id=getattr(tok, "pad_token_id", special["imend_id"]),
     )
 
@@ -467,16 +561,18 @@ def predict_next_token(
         tokenizer,
         max_src_length: int,
         max_tgt_length: int,
+        debug: bool = True,
 ) -> str:
     """
     Generate the next token/oracle with constraints applied.
-    Supports both tokenized and chat-style formats.
     """
     path = os.path.abspath(filename)
     if not os.path.isfile(path):
         raise TokenNotFoundException(predicted_token=f"[missing file: {path}]")
 
+    logger.info(f"=" * 80)
     logger.info(f"Predicting next token from: {path}")
+    logger.info(f"=" * 80)
 
     # Generate
     new_ids = generate_once_for_file(
@@ -488,16 +584,26 @@ def predict_next_token(
         do_sample=False,
         temperature=0.7,
         top_p=0.9,
+        debug=debug,
     )
 
     # Decode
     generated_text = tokenizer.decode(new_ids, skip_special_tokens=True)
+
+    logger.info(f"Raw generated text: '{generated_text}'")
+
     # Try to extract JSON choice
     choice = _extract_json_choice(generated_text)
+
     if choice is None:
-        # Fallback: return raw text
+        # Fallback: return raw text stripped
         choice = generated_text.strip()
+        logger.warning(f"Could not extract JSON choice, using raw text: '{choice}'")
+
     if not choice:
         raise TokenNotFoundException(predicted_token="")
-    logger.info(f"Predicted choice: {choice}")
+
+    logger.info(f"Final predicted choice: '{choice}'")
+    logger.info(f"=" * 80)
+
     return choice

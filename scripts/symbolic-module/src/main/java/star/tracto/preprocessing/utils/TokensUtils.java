@@ -1866,7 +1866,20 @@ public class TokensUtils {
                                     // Get the declaring type of the method usage
                                     ResolvedReferenceTypeDeclaration declaringType = methodUsage.getDeclaration().declaringType();
                                     String declaringTypeQualifiedName = declaringType.getQualifiedName();
-                                    List<ResolvedReferenceType> ancestors = declaringType.asReferenceType().getAllAncestors();
+                                    List<ResolvedReferenceType> ancestors = new ArrayList<>();
+                                    try {
+                                        ancestors = declaringType.asReferenceType().getAllAncestors();
+                                    } catch (Exception e) {
+                                        String message = "Error resolving ancestors of reference type: " + declaringTypeQualifiedName;
+                                        logger.error(message);
+                                        clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
+                                        logger.error("********************************************************************");
+                                        logger.error("Stack trace:");
+                                        for (StackTraceElement ste : e.getStackTrace()) {
+                                            logger.error("\tat " + ste.toString());
+                                        }
+                                        logger.error("********************************************************************");
+                                    }
                                     processDeclaringType(tokenReferences, declaringTypeQualifiedName, currentClassReferences, typeParameterReferences, resolvedType, ancestors);
                                 }
                             }
@@ -2023,7 +2036,24 @@ public class TokensUtils {
                                 }
 
                                 List<com.github.javaparser.utils.Pair<ResolvedTypeParameterDeclaration, ResolvedType>> typeParameters =  resolvedType.asReferenceType().getTypeParametersMap();
-                                for (ResolvedReferenceType ancestor: resolvedType.asReferenceType().getAllAncestors()) {
+
+                                List<ResolvedReferenceType> ancestors = new ArrayList<>();
+
+                                try {
+                                    resolvedType.asReferenceType().getAllAncestors();
+                                } catch (Exception e) {
+                                    String message = "Error resolving ancestors of reference type: " + resolvedType.asReferenceType().getQualifiedName();
+                                    logger.error(message);
+                                    clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
+                                    logger.error("********************************************************************");
+                                    logger.error("Stack trace:");
+                                    for (StackTraceElement ste : e.getStackTrace()) {
+                                        logger.error("\tat " + ste.toString());
+                                    }
+                                    logger.error("********************************************************************");
+                                }
+
+                                for (ResolvedReferenceType ancestor: ancestors) {
                                     typeParameters.addAll(ancestor.getTypeParametersMap());
                                 }
                                 for(com.github.javaparser.utils.Pair<ResolvedTypeParameterDeclaration, ResolvedType> typeParameterPair: typeParameters) {
