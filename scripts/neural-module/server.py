@@ -57,6 +57,7 @@ class Server:
     def next_token(self):
         filepath = request.args.get('filepath')
         prompt_config = request.args.get('config')
+        project_id = request.args.get('project_id')
         if not filepath:
             return 'Missing filepath parameter', 400
 
@@ -72,7 +73,7 @@ class Server:
 
         script_prompt = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "prompt_qwen.py")
         script_encode = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "utils", "encode_json_inference.py")
-        output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "output-tracto", prompt_config)
+        output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "output-tracto", prompt_config, project_id)
         config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "resources", "config", prompt_config, "ewash_config_qwen_inference.json")
         query_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "prompt", "resources", "queries", "query-std.txt")
 

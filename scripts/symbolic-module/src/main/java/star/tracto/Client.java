@@ -36,7 +36,7 @@ public class Client {
         Path nextTokenPath = projectOutputPath.resolve("next-token");
         FilesUtils.createDirectories(nextTokenPath);
         FilesUtils.createDirectories(projectOutputPath);
-        String mlModelAPIUrl = String.format("http://127.0.0.1:%s/api/next_token?filepath=%s/token-step.json&config=%s", serverPort, nextTokenPath, promptConfig);
+        String mlModelAPIUrl = String.format("http://127.0.0.1:%s/api/next_token?filepath=%s/token-step.json&config=%s&project_id=%s", serverPort, nextTokenPath, promptConfig, projectIdentifier);
         JavaUtils.setJavaLibPath(basePath, javaVersion);
         String classpath = JavaUtils.initializeJavaClassPath();
         // Update classpath with the libraries paths
