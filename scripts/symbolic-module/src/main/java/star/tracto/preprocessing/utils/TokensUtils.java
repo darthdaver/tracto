@@ -574,6 +574,7 @@ public class TokensUtils {
                 String datapointId = testClazzDatapoints.testClass().identifier() + "-" + datapoint.testPrefix().identifier() + "-" + datapointCounter++;
                 oracleInference.add(datapointId);
                 oracleInference.add(testClassPath.toString());
+                oracleInference.add(testClazzDatapoints.testClass().identifier());
                 oracleInference.add(datapoint.testPrefix().identifier());
                 oracleInference.add(datapoint.testPrefix().signature());
                 oracleInference.add(datapoint.testPrefix().body());
