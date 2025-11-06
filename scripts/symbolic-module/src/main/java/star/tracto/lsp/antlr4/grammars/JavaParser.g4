@@ -860,7 +860,8 @@ throwingSupplierCreatorRest
     ;
 
 assertAllMethodCall
-    : ASSERT_ALL '(' (STRING_LITERAL ',')? (executable (',' executable)* | expression) ')' SEMI
+    : ASSERT_ALL '(' (STRING_LITERAL ',')? executable (',' executable)* ')' SEMI
+    | ASSERT_ALL '(' (STRING_LITERAL ',')? expression ')' SEMI
     ;
 
 assertArrayEqualsMethodCall
@@ -875,7 +876,7 @@ assertEqualsMethodCall
 
 assertFalseMethodCall
     : ASSERT_FALSE '(' (expression | booleanSupplierExpression) (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
-    | ASSERT_FALSE '(' (STRING_LITERAL ',')? expression ')' SEMI
+    | ASSERT_FALSE '(' (STRING_LITERAL ',')? (expression | booleanSupplierExpression) ')' SEMI
     ;
 
 assertIterableEqualsMethodCall
@@ -887,8 +888,8 @@ assertLinesMatchMethodCall
     ;
 
 assertNotEqualsMethodCall
-    : ASSERT_NOT_EQUALS '(' expression ',' expression (',' (expression ',')? (supplierExpression | STRING_LITERAL))? ')' SEMI
-    | ASSERT_NOT_EQUALS '(' (STRING_LITERAL ',')? expression ',' expression (',' expression)? ')' SEMI
+    : ASSERT_NOT_EQUALS '(' expression ',' expression (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
+    | ASSERT_NOT_EQUALS '(' (STRING_LITERAL ',')? expression ',' expression ')' SEMI
     ;
 
 assertNotNullMethodCall
@@ -926,10 +927,12 @@ assertTimeoutPreemptivelyMethodCall
 
 assertTrueMethodCall
     : ASSERT_TRUE '(' (expression | booleanSupplierExpression) (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
-    | ASSERT_TRUE '(' (STRING_LITERAL ',')? expression ')' SEMI
+    | ASSERT_TRUE '(' (STRING_LITERAL ',')? (expression | booleanSupplierExpression) ')' SEMI
     ;
 
 failMethodCall
-    : FAIL '(' (supplierExpression | STRING_LITERAL)? ')' SEMI
-    | FAIL '(' (STRING_LITERAL)? expression ')' SEMI
+    : FAIL '(' STRING_LITERAL ')' SEMI
+    | FAIL '(' STRING_LITERAL ',' expression ')' SEMI
+    | FAIL '(' supplierExpression ')' SEMI
+    | FAIL '(' expression ')' SEMI
     ;

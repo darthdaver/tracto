@@ -109,9 +109,14 @@ public class Antlr4Utils {
             try {
                 // Wait for the result with a timeout
                 CodeCompletionCore.CandidatesCollection candidates = future.get(timeoutSecs, TimeUnit.SECONDS);
+                if (candidates.tokens == null || candidates.tokens.isEmpty()) {
+                    return new ArrayList<>();
+                }
                 // Process and return candidates
                 return candidates.tokens.keySet().stream()
+                        .filter(tokenType -> tokenType != Token.EOF)
                         .map(tokenType -> parser.getVocabulary().getDisplayName(tokenType).replace("'", ""))
+                        .filter(name -> !name.isEmpty() && !name.equals("<EOF>"))
                         .flatMap(t -> AntlrTokenMapper.getValuesByName(t).stream())
                         .collect(Collectors.toCollection(ArrayList::new));
             } catch (TimeoutException e) {

@@ -1,5 +1,5 @@
 package star.tracto.lsp.antlr4.antlr4Class;
-// Generated from /Users/davidemolinelli/Documents/phd/repositories/tracto/symbolic-module/src/main/java/star/tracto/lsp/antlr4/grammars/JavaParser.g4 by ANTLR 4.13.2
+// Generated from /Users/davidemolinelli/Downloads/tracto/scripts/symbolic-module/src/main/java/star/tracto/lsp/antlr4/grammars/JavaParser.g4 by ANTLR 4.13.2
 import org.antlr.v4.runtime.tree.ParseTreeListener;
 
 /**
@@ -68,15 +68,35 @@ public interface JavaParserListener extends ParseTreeListener {
 	 */
 	void exitAssertionIdentifier(JavaParser.AssertionIdentifierContext ctx);
 	/**
-	 * Enter a parse tree produced by {@link JavaParser#projectIdentifier}.
+	 * Enter a parse tree produced by {@link JavaParser#classNameIdentifier}.
 	 * @param ctx the parse tree
 	 */
-	void enterProjectIdentifier(JavaParser.ProjectIdentifierContext ctx);
+	void enterClassNameIdentifier(JavaParser.ClassNameIdentifierContext ctx);
 	/**
-	 * Exit a parse tree produced by {@link JavaParser#projectIdentifier}.
+	 * Exit a parse tree produced by {@link JavaParser#classNameIdentifier}.
 	 * @param ctx the parse tree
 	 */
-	void exitProjectIdentifier(JavaParser.ProjectIdentifierContext ctx);
+	void exitClassNameIdentifier(JavaParser.ClassNameIdentifierContext ctx);
+	/**
+	 * Enter a parse tree produced by {@link JavaParser#methodNameIdentifier}.
+	 * @param ctx the parse tree
+	 */
+	void enterMethodNameIdentifier(JavaParser.MethodNameIdentifierContext ctx);
+	/**
+	 * Exit a parse tree produced by {@link JavaParser#methodNameIdentifier}.
+	 * @param ctx the parse tree
+	 */
+	void exitMethodNameIdentifier(JavaParser.MethodNameIdentifierContext ctx);
+	/**
+	 * Enter a parse tree produced by {@link JavaParser#lambdaIdentifier}.
+	 * @param ctx the parse tree
+	 */
+	void enterLambdaIdentifier(JavaParser.LambdaIdentifierContext ctx);
+	/**
+	 * Exit a parse tree produced by {@link JavaParser#lambdaIdentifier}.
+	 * @param ctx the parse tree
+	 */
+	void exitLambdaIdentifier(JavaParser.LambdaIdentifierContext ctx);
 	/**
 	 * Enter a parse tree produced by {@link JavaParser#modifier}.
 	 * @param ctx the parse tree

@@ -526,6 +526,52 @@ public class TokensUtils {
         }
     }
 
+    public static boolean detectPatternRepetition(
+            List<String> tokens,
+            int minLen,
+            int maxLen,
+            int maxRepeats) {
+
+        int tokenCount = tokens.size();
+        // Check if we have enough tokens to detect repetition
+        if (tokenCount < minLen * maxRepeats) {
+            return false;
+        }
+        // Check from largest to smallest pattern
+        for (int patternLen = Math.min(maxLen, tokenCount / maxRepeats);
+             patternLen >= minLen;
+             patternLen--) {
+            // Get pattern from end of list
+            List<String> pattern = tokens.subList(
+                    tokenCount - patternLen,
+                    tokenCount
+            );
+            // Count repetitions going backward
+            int repeats = 1;
+            int pos = tokenCount - patternLen;
+
+            while (pos >= patternLen && repeats < maxRepeats) {
+                // Get previous segment
+                List<String> prevSegment = tokens.subList(
+                        pos - patternLen,
+                        pos
+                );
+                // Compare segments
+                if (prevSegment.equals(pattern)) {
+                    repeats++;
+                    pos -= patternLen;
+                } else {
+                    break;
+                }
+            }
+            // If pattern repeats enough times, return info
+            if (repeats >= maxRepeats) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static Pair<List<List<String>>,HashMap<String, HashMap<String, List<String>>>> generateInference(
             Path repoRootPath,
             Path nextTokenPath,
@@ -654,6 +700,7 @@ public class TokensUtils {
                                     continue;
                                 }
                                 List<String> tokens = Antlr4Utils.tokenizeSnippet(partialSnippet);
+
                                 // Remove spurious tokens and check that the first token is a valid JUnit assertion method
                                 try {
                                     tokens.removeIf(t -> t.equals(" "));
@@ -675,6 +722,11 @@ public class TokensUtils {
                                     oracleInference.add(Long.toString(duration));
                                     oracleInference.add(message);
                                     break;
+                                }
+                                if (detectPatternRepetition(tokens, 2, 10, 3)) {
+                                    String message = "The partial oracle present a suspicious pattern repetition: " + partialSnippet + " - aborted.";
+                                    clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(message);
+                                    throw new IllegalStateException(message);
                                 }
                                 // Define the list of next possible tokens, divided by type
                                 List<String> adjustedNextJavaTokens = new ArrayList<>();
@@ -711,7 +763,7 @@ public class TokensUtils {
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.lambdaIdentifiers.keySet());
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.enumIdentifiers.keySet());
                                         }
-                                        if (streamFlag && Antlr4Utils.getAntlrToken(tokens.get(i - 1)).equals(AntlrToken.LPAREN) && ((i-2) > 0) && !tokens.get(i-2).equals("collect")) {
+                                        if (streamFlag && Antlr4Utils.getAntlrToken(tokens.get(tokens.size() - 1)).equals(AntlrToken.LPAREN) && ((tokens.size()-2) > 0) && !tokens.get(tokens.size()-2).equals("collect")) {
                                             adjustedNextConcreteTokens.add("LAMBDA_PARAM");
                                         }
                                     } else {

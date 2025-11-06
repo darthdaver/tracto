@@ -1,5 +1,5 @@
 package star.tracto.lsp.antlr4.antlr4Class;
-// Generated from /Users/davidemolinelli/Documents/phd/repositories/tracto/symbolic-module/src/main/java/star/tracto/lsp/antlr4/grammars/JavaLexer.g4 by ANTLR 4.13.2
+// Generated from /Users/davidemolinelli/Downloads/tracto/scripts/symbolic-module/src/main/java/star/tracto/lsp/antlr4/grammars/JavaLexer.g4 by ANTLR 4.13.2
 import org.antlr.v4.runtime.Lexer;
 import org.antlr.v4.runtime.CharStream;
 import org.antlr.v4.runtime.Token;

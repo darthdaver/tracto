@@ -1,5 +1,5 @@
 package star.tracto.lsp.antlr4.antlr4Class;
-// Generated from /Users/davidemolinelli/Documents/phd/repositories/tracto/symbolic-module/src/main/java/star/tracto/lsp/antlr4/grammars/JavaParser.g4 by ANTLR 4.13.2
+// Generated from /Users/davidemolinelli/Downloads/tracto/scripts/symbolic-module/src/main/java/star/tracto/lsp/antlr4/grammars/JavaParser.g4 by ANTLR 4.13.2
 
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.tree.ErrorNode;
@@ -89,13 +89,37 @@ public class JavaParserBaseListener implements JavaParserListener {
 	 *
 	 * <p>The default implementation does nothing.</p>
 	 */
-	@Override public void enterProjectIdentifier(JavaParser.ProjectIdentifierContext ctx) { }
+	@Override public void enterClassNameIdentifier(JavaParser.ClassNameIdentifierContext ctx) { }
 	/**
 	 * {@inheritDoc}
 	 *
 	 * <p>The default implementation does nothing.</p>
 	 */
-	@Override public void exitProjectIdentifier(JavaParser.ProjectIdentifierContext ctx) { }
+	@Override public void exitClassNameIdentifier(JavaParser.ClassNameIdentifierContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void enterMethodNameIdentifier(JavaParser.MethodNameIdentifierContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void exitMethodNameIdentifier(JavaParser.MethodNameIdentifierContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void enterLambdaIdentifier(JavaParser.LambdaIdentifierContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void exitLambdaIdentifier(JavaParser.LambdaIdentifierContext ctx) { }
 	/**
 	 * {@inheritDoc}
 	 *
