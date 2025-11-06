@@ -554,6 +554,43 @@ class TokenNotFoundException(Exception):
         super().__init__(predicted_token)
 
 
+def _format_token_for_java(self, token: str) -> str:
+    """
+    Format the token so it can be properly parsed on Java side.
+
+    If the token contains newlines, quotes, or spaces, it must be a STRING_LITERAL
+    and should be properly escaped and quoted.
+    """
+    # If token is empty, return as-is
+    if not token:
+        return token
+
+    # If token contains special characters or spaces, treat it as a STRING_LITERAL
+    if '\n' in token or '\r' in token or '"' in token or "'" in token or '\t' in token:
+        logger.info(f"Token contains special chars, formatting as STRING_LITERAL: {repr(token)}")
+        # Escape special characters for Java string
+        escaped = token.replace('\\', '\\\\')  # Backslash first!
+        escaped = escaped.replace('"', '\\"')  # Escape quotes
+        escaped = escaped.replace('\n', '\\n')  # Escape newlines
+        escaped = escaped.replace('\r', '\\r')  # Escape carriage returns
+        escaped = escaped.replace('\t', '\\t')  # Escape tabs
+        # Wrap in quotes to make it a STRING_LITERAL token
+        formatted = f'"{escaped}"'
+        logger.info(f"Formatted token: {formatted}")
+        return formatted
+
+    # If token contains spaces but no special chars, it's likely an identifier/keyword sequence
+    # This is suspicious - should probably be quoted or rejected
+    if ' ' in token and not token.startswith('"'):
+        logger.warning(f"Token contains spaces but not quoted: {repr(token)}")
+        # Option 1: Quote it
+        # formatted = f'"{token}"'
+        # Option 2: Reject it
+        raise ValueError(f"Token with spaces should be quoted: {token}")
+
+    # Normal token (no special chars)
+    return token
+
 def predict_next_token(
         device: torch.device,
         filename: str,
@@ -606,4 +643,4 @@ def predict_next_token(
     logger.info(f"Final predicted choice: '{choice}'")
     logger.info(f"=" * 80)
 
-    return choice
+    return _format_token_for_java(choice)
