@@ -554,7 +554,7 @@ class TokenNotFoundException(Exception):
         super().__init__(predicted_token)
 
 
-def _format_token_for_java(self, token: str) -> str:
+def _format_token_for_java(token: str) -> str:
     """
     Format the token so it can be properly parsed on Java side.
 
