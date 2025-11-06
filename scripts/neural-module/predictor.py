@@ -554,41 +554,48 @@ class TokenNotFoundException(Exception):
         super().__init__(predicted_token)
 
 
-def _format_token_for_java(token: str) -> str:
+def _format_token_for_java(self, token: str) -> str:
     """
-    Format the token so it can be properly parsed on Java side.
-
-    If the token contains newlines, quotes, or spaces, it must be a STRING_LITERAL
-    and should be properly escaped and quoted.
+    Format the token for Java.
+    Only escape raw content - don't double-escape already-quoted strings.
     """
-    # If token is empty, return as-is
     if not token:
         return token
 
-    # If token contains special characters or spaces, treat it as a STRING_LITERAL
+    # CRITICAL: Check if token is ALREADY a properly quoted STRING_LITERAL
+    if token.startswith('"') and token.endswith('"'):
+        # Token is already quoted - check if content needs escaping
+        inner_content = token[1:-1]
+        # If content contains unescaped special chars, we need to escape it
+        # But if it's already properly escaped, leave it alone
+        has_unescaped_newline = '\n' in inner_content and '\\n' not in inner_content
+        has_unescaped_quote = '"' in inner_content and '\\"' not in inner_content
+        if not (has_unescaped_newline or has_unescaped_quote):
+            # Content is already properly formatted
+            logger.info(f"Token already properly quoted STRING_LITERAL: {token}")
+            return token
+        else:
+            # Content has unescaped special chars - escape them
+            logger.warning(f"Token has unescaped content, fixing: {token}")
+            escaped = inner_content.replace('\\', '\\\\')
+            escaped = escaped.replace('"', '\\"')
+            escaped = escaped.replace('\n', '\\n')
+            escaped = escaped.replace('\r', '\\r')
+            return f'"{escaped}"'
+    # Token is NOT already quoted - check if it needs to be
     if '\n' in token or '\r' in token or '"' in token or "'" in token or '\t' in token:
         logger.info(f"Token contains special chars, formatting as STRING_LITERAL: {repr(token)}")
         # Escape special characters for Java string
-        escaped = token.replace('\\', '\\\\')  # Backslash first!
-        escaped = escaped.replace('"', '\\"')  # Escape quotes
-        escaped = escaped.replace('\n', '\\n')  # Escape newlines
-        escaped = escaped.replace('\r', '\\r')  # Escape carriage returns
-        escaped = escaped.replace('\t', '\\t')  # Escape tabs
-        # Wrap in quotes to make it a STRING_LITERAL token
+        escaped = token.replace('\\', '\\\\')
+        escaped = escaped.replace('"', '\\"')
+        escaped = escaped.replace('\n', '\\n')
+        escaped = escaped.replace('\r', '\\r')
+        escaped = escaped.replace('\t', '\\t')
+        # Wrap in quotes
         formatted = f'"{escaped}"'
         logger.info(f"Formatted token: {formatted}")
         return formatted
-
-    # If token contains spaces but no special chars, it's likely an identifier/keyword sequence
-    # This is suspicious - should probably be quoted or rejected
-    if ' ' in token and not token.startswith('"'):
-        logger.warning(f"Token contains spaces but not quoted: {repr(token)}")
-        # Option 1: Quote it
-        # formatted = f'"{token}"'
-        # Option 2: Reject it
-        raise ValueError(f"Token with spaces should be quoted: {token}")
-
-    # Normal token (no special chars)
+    # Normal token - return as-is
     return token
 
 def predict_next_token(
