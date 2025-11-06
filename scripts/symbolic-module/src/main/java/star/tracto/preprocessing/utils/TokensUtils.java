@@ -753,7 +753,7 @@ public class TokensUtils {
                                 }
 
                                 // Update the partial snippet
-                                partialSnippet += AntlrToken.isAtomicKeywordToken(Antlr4Utils.getAntlrToken(nextToken)) ? " " + nextToken + " " : nextToken;
+                                partialSnippet += AntlrToken.isAtomicKeywordToken(Antlr4Utils.getAntlrToken(nextToken)) && !Antlr4Utils.getAntlrToken(tokens.get(tokens.size() - 1)).equals(AntlrToken.DOT) ? " " + nextToken + " " : nextToken;
                                 // Update the token identifiers and references collectors
                                 Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>> updatedCollectors = updateTokenIdentifiersAndReferences(tokenIdentifiersStack, nextToken, tokens.get(tokens.size() - 1), testPrefixClass, testPrefix.getNameAsString(), targetAssertion);
                                 currentTokenIdentifiersCollector = updatedCollectors.getValue0();
