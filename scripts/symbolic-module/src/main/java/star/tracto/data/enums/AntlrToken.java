@@ -243,7 +243,7 @@ public enum AntlrToken {
         }
 
         switch (previousToken) {
-            case DOT,
+            case
                  // Operators
                  ASSIGN,
                  GT,
@@ -286,6 +286,11 @@ public enum AntlrToken {
                  WS,
                  COMMENT,
                  LINE_COMMENT:
+                return true;
+            case DOT:
+                if (antlrToken.equals(CLASS) || antlrToken.equals(SUPER)) {
+                    return false;
+                }
                 return true;
             default:
                 return false;
