@@ -31,14 +31,14 @@ echo "Config: ${target_config}"
 echo ""
 
 # Setup local paths for smoke test
-LOCAL_TOKENIZED="${OUTPUT_PROMPT_DIR}/${target_config}/local_nvme_smoke"
+LOCAL_TOKENIZED="${OUTPUT_PROMPT_DIR}/${target_config}/oracles/local_nvme_smoke"
 LOCAL_TOKENIZED_PROMPT_DIR="$(dirname "${LOCAL_TOKENIZED}/prompt-tokenized-smoke-oracles-${MODEL_NAME}-${MAX_LENGTH}")"
 
 mkdir -p "${LOCAL_TOKENIZED_PROMPT_DIR}"
 
 echo "Copying smoke test data to local storage..."
 rsync -a --info=progress2 \
-    "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-tokenized-smoke-oracles-${MODEL_NAME}-${MAX_LENGTH}" \
+    "${OUTPUT_PROMPT_DIR}/${target_config}/oracles/prompt-tokenized-smoke-oracles-${MODEL_NAME}-${MAX_LENGTH}" \
     "${LOCAL_TOKENIZED_PROMPT_DIR}/"
 
 # Use GPU-specific output directory for smoke test
