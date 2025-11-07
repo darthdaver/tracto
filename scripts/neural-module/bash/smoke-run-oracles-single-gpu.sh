@@ -17,6 +17,8 @@ source "${current_dir}/../../utils/bash/global_variables.sh"
 source "${current_dir}/utils/local_variables.sh"
 source "${current_dir}/utils/model_variables.sh"
 
+export WANDB_DISABLED=true
+export WANDB_MODE=offline
 export TOKENIZERS_PARALLELISM
 export HF_DATASETS_DISABLE_PARALLELISM
 
@@ -32,17 +34,17 @@ echo ""
 
 # Setup local paths for smoke test
 LOCAL_TOKENIZED="${OUTPUT_PROMPT_DIR}/${target_config}/oracles/local_nvme_smoke"
-LOCAL_TOKENIZED_PROMPT_DIR="$(dirname "${LOCAL_TOKENIZED}/prompt-tokenized-smoke-oracles-${MODEL_NAME}-${MAX_LENGTH}")"
+LOCAL_TOKENIZED_PROMPT_DIR="$(dirname "${LOCAL_TOKENIZED}/prompt-tokenized-smoke-oracles-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}")"
 
 mkdir -p "${LOCAL_TOKENIZED_PROMPT_DIR}"
 
 echo "Copying smoke test data to local storage..."
 rsync -a --info=progress2 \
-    "${OUTPUT_PROMPT_DIR}/${target_config}/oracles/prompt-tokenized-smoke-oracles-${MODEL_NAME}-${MAX_LENGTH}" \
+    "${OUTPUT_PROMPT_DIR}/${target_config}/oracles/prompt-tokenized-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" \
     "${LOCAL_TOKENIZED_PROMPT_DIR}/"
 
 # Use GPU-specific output directory for smoke test
-OUTPUT_DIR_GPU="${OUTPUT_FINE_TUNING_DIR}_smoke_gpu${GPU_ID}"
+OUTPUT_DIR_GPU="${OUTPUT_DIR}/oracles/finetuning_smoke_gpu${GPU_ID}"
 mkdir -p "${OUTPUT_DIR_GPU}"
 
 echo ""
@@ -55,7 +57,7 @@ echo ""
     --model_name_or_path "${MODEL_NAME}" \
     --model_revision "${MODEL_REVISION}" \
     --use_flash_attention False \
-    --tokenized_dir "${LOCAL_TOKENIZED}/prompt-tokenized-smoke-oracles-${MODEL_NAME}-${MAX_LENGTH}" \
+    --tokenized_dir "${LOCAL_TOKENIZED}/prompt-tokenized-smoke-oracles-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" \
     --output_dir "${OUTPUT_DIR_GPU}" \
     --model_max_length 8192 \
     --per_device_train_batch_size 2 \

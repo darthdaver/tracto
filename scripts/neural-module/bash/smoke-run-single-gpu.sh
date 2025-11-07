@@ -26,7 +26,7 @@ mkdir -p "${LOCAL_TOKENIZED_PROMPT_BINARY}"
 rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/tokens/prompt-tokenized-smoke-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" "$LOCAL_TOKENIZED_PROMPT_BINARY/"
 
 # Use GPU-specific output directory
-OUTPUT_DIR_GPU="${OUTPUT_FINE_TUNING_DIR}_smoke_gpu${GPU_ID}"
+OUTPUT_DIR_GPU="${OUTPUT_DIR}/tokens/finetuning_smoke_gpu${GPU_ID}"
 mkdir -p "${OUTPUT_DIR_GPU}"
 
 "$PY_ENV" "${NEURAL_DIR}/finetune_json.py" \
@@ -34,7 +34,7 @@ mkdir -p "${OUTPUT_DIR_GPU}"
   --model_revision "${MODEL_REVISION}" \
   --use_flash_attention False \
   --tokenized_dir "${LOCAL_TOKENIZED}/prompt-tokenized-smoke-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" \
-  --output_dir "${OUTPUT_FINE_TUNING_DIR}/smoke" \
+  --output_dir "${OUTPUT_DIR_GPU}" \
   --model_max_length 8192 \
   --per_device_train_batch_size 2 \
   --per_device_eval_batch_size 2 \

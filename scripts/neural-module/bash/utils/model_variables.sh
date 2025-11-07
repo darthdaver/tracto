@@ -1,7 +1,7 @@
 TOKENIZER="Qwen/Qwen2.5-Coder-3B"
 MODEL_NAME="Qwen/Qwen2.5-Coder-3B"
 MODEL_REVISION="09d9bc5d376b0cfa0100a0694ea7de7232525803"
-ENCODING_TYPE="csv"
+ENCODING_TYPE="json"
 MAX_LENGTH=8192
 START_ID="<|im_start|>"
 END_ID="<|im_end|>"

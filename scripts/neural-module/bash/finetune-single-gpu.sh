@@ -27,7 +27,7 @@ mkdir -p "${LOCAL_TOKENIZED_PROMPT_TOKENIZED}"
 rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/tokens/prompt-tokenized-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" "$LOCAL_TOKENIZED_PROMPT_TOKENIZED/"
 
 # Use GPU-specific output directory
-OUTPUT_DIR_GPU="${OUTPUT_FINE_TUNING_DIR}_gpu${GPU_ID}"
+OUTPUT_DIR_GPU="${OUTPUT_DIR}/tokens/finetuning_gpu${GPU_ID}"
 mkdir -p "${OUTPUT_DIR_GPU}"
 
 # Run without distributed launcher
