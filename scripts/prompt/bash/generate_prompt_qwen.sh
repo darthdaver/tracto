@@ -46,6 +46,6 @@ for config_path in "${config_paths[@]}"; do
   # Generate LLM oracles input
   "${PY_ENV}" "${PROMPT_DIR}/prompt_qwen.py" \
       --input "${OUTPUT_DATASET_DIR}" \
-      --output "${OUTPUT_DIR}/${config_num}" \
+      --output "${OUTPUT_DIR}/${config_num}/${dataset_type}" \
       --config "${PROMPT_DIR}/resources/config/${config_num}/ewash_config_qwen.json" >> "$log_file"
 done
