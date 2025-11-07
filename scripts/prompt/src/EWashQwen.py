@@ -247,7 +247,7 @@ class EWash:
         base_src += f"{tp['signature']} "
         if self.ewash_config['type'] == "oracles":
             #base_src += f"{tp['body'].replace('/*<MASK_PLACEHOLDER>*/', self.ewash_config['suffix_tag'])}\n\n"
-            base_src += f"{tp['body'].split('/*<MASK_PLACEHOLDER>*/')[0]}\n\n"
+            base_src += f"{tp['body'].split('/*<MASK_PLACEHOLDER>*/')[0] + self.ewash_config['suffix_tag']}\n\n"
         else:
             #base_src += f"{tp['body'].replace('/*<MASK_PLACEHOLDER>*/', partial_oracle + self.ewash_config['suffix_tag'])}\n\n"
             base_src += f"{tp['body'].split('/*<MASK_PLACEHOLDER>*/')[0] + partial_oracle + self.ewash_config['suffix_tag']}\n\n"

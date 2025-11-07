@@ -156,6 +156,7 @@ if __name__ == '__main__':
                                 else:
                                     ewash.update(intros, tp, ju_v, update_section=True)
                                     src, exceeded, num_tokens = ewash.run(['test_prefix'])
+                                src = src + ewash_config['infix_tag']
                                 # Write the input and the target oracle to the CSV file
                                 writer.writerow([datapoint_id, src, oracle])
                                 json_data_list.append({
