@@ -24,7 +24,7 @@ else
     config_paths=("${PROMPT_DIR}/resources/config/"*/)
 fi
 
-dataset_type=${1-"tokens"}
+dataset_type=${2-"tokens"}
 
 # Process each configuration
 for config_path in "${config_paths[@]}"; do
