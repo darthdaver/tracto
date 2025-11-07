@@ -21,19 +21,19 @@ else
     config_paths=("${PROMPT_DIR}/resources/config/"*/)
 fi
 
-dataset_type=${1-"tokens"}
+dataset_type=${2-"tokens"}
 
 for config_path in "${config_paths[@]}"; do
   i=$(basename "${config_path}")
-  echo "Processing config: ${i}"
-  echo "${OUTPUT_DIR}/${i}/prompt"
+    echo "Processing config: ${i}"
+    echo "Data directory: ${OUTPUT_DIR}/${i}/${dataset_type}/prompt"
   "$PY_ENV" "${PROMPT_DIR}/utils/encode_json.py" \
     --model_name_or_path "${MODEL_NAME:-Qwen/Qwen2.5-Coder-7B}" \
     --encoding_type "${ENCODING_TYPE}" \
     --data_dir   "${OUTPUT_DIR}/${i}/${dataset_type}/prompt" \
     --train_csv  "${OUTPUT_DIR}/${i}/split-dataset/train_projects.csv" \
     --val_csv    "${OUTPUT_DIR}/${i}/split-dataset/val_projects.csv" \
-    --out_dir    "${OUTPUT_DIR}/${i}/${dataset_type}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" \
+    --out_dir    "${OUTPUT_DIR}/${i}/${dataset_type}/prompt-tokenized-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" \
     --train_token_budget 2000000000 \
     --val_token_budget   40000000 \
     --max_length "${MAX_LENGTH}" \

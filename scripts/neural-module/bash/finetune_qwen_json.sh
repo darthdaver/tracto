@@ -16,11 +16,12 @@ export TOKENIZERS_PARALLELISM
 export HF_DATASETS_DISABLE_PARALLELISM
 
 target_config=${1}
+dataset_type=${2-"tokens"}
 
-LOCAL_TOKENIZED="${OUTPUT_PROMPT_DIR}/${target_config}/local_nvme"
-LOCAL_TOKENIZED_PROMPT_BINARY="$(dirname "${LOCAL_TOKENIZED}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}")"
-mkdir -p "${LOCAL_TOKENIZED_PROMPT_BINARY}"
-rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" "$LOCAL_TOKENIZED_PROMPT_BINARY/"
+LOCAL_TOKENIZED="${OUTPUT_PROMPT_DIR}/${target_config}/${dataset_type}/local_nvme"
+LOCAL_TOKENIZED_PROMPT_TOKENIZED="$(dirname "${LOCAL_TOKENIZED}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}")"
+mkdir -p "${LOCAL_TOKENIZED_PROMPT_TOKENIZED}"
+rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/${dataset_type}/prompt-tokenized-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" "$LOCAL_TOKENIZED_PROMPT_TOKENIZED/"
 
 # NOTE
 # - --tokenized_dir must point to the directory produced by the builder,
@@ -31,7 +32,7 @@ rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary-$
   --model_name_or_path "${MODEL_NAME}" \
   --model_revision "${MODEL_REVISION}" \
   --use_flash_attention False \
-  --tokenized_dir "${LOCAL_TOKENIZED}/prompt-binary-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" \
+  --tokenized_dir "${LOCAL_TOKENIZED}/prompt-tokenized-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" \
   --output_dir "${OUTPUT_FINE_TUNING_DIR}" \
   --model_max_length ${MAX_LENGTH} \
   --per_device_train_batch_size 1 \

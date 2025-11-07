@@ -30,7 +30,7 @@ dataset_type=${2-"tokens"}
 for config_path in "${config_paths[@]}"; do
     i=$(basename "${config_path}")
     echo "Processing config: ${i}"
-    echo "Data directory: ${OUTPUT_DIR}/${i}/prompt"
+    echo "Data directory: ${OUTPUT_DIR}/${i}/${dataset_type}/prompt"
 
     # Run the simplified encoding script
     "$PY_ENV" "${PROMPT_DIR}/utils/encode_json_oracles.py" \

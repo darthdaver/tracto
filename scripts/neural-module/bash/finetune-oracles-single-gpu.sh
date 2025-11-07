@@ -27,14 +27,14 @@ echo "Running on GPU ${GPU_ID}"
 echo "Config: ${target_config}"
 
 # Setup local paths
-LOCAL_TOKENIZED="${OUTPUT_PROMPT_DIR}/${target_config}/local_nvme"
-LOCAL_TOKENIZED_PROMPT_DIR="$(dirname "${LOCAL_TOKENIZED}/prompt-tokenized-oracles-${MODEL_NAME}-${MAX_LENGTH}")"
+LOCAL_TOKENIZED="${OUTPUT_PROMPT_DIR}/${target_config}/oracles/local_nvme"
+LOCAL_TOKENIZED_PROMPT_DIR="$(dirname "${LOCAL_TOKENIZED}/prompt-tokenized-${MODEL_NAME}-${MAX_LENGTH}")"
 
 mkdir -p "${LOCAL_TOKENIZED_PROMPT_DIR}"
 
 echo "Copying tokenized data to local storage..."
 rsync -a --info=progress2 \
-    "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-tokenized-oracles-${MODEL_NAME}-${MAX_LENGTH}" \
+    "${OUTPUT_PROMPT_DIR}/${target_config}/oracles/prompt-tokenized-${MODEL_NAME}-${MAX_LENGTH}" \
     "${LOCAL_TOKENIZED_PROMPT_DIR}/"
 
 # Use GPU-specific output directory
@@ -49,7 +49,7 @@ echo "Output directory: ${OUTPUT_DIR_GPU}"
     --model_name_or_path "${MODEL_NAME}" \
     --model_revision "${MODEL_REVISION}" \
     --use_flash_attention False \
-    --tokenized_dir "${LOCAL_TOKENIZED}/prompt-tokenized-oracles-${MODEL_NAME}-${MAX_LENGTH}" \
+    --tokenized_dir "${LOCAL_TOKENIZED}/prompt-tokenized-${MODEL_NAME}-${MAX_LENGTH}" \
     --output_dir "${OUTPUT_DIR_GPU}" \
     --model_max_length ${MAX_LENGTH} \
     --per_device_train_batch_size 2 \

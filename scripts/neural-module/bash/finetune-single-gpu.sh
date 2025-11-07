@@ -21,10 +21,10 @@ export CUDA_VISIBLE_DEVICES=${GPU_ID}
 
 echo "Running on GPU ${GPU_ID}"
 
-LOCAL_TOKENIZED="${OUTPUT_PROMPT_DIR}/${target_config}/local_nvme"
-LOCAL_TOKENIZED_PROMPT_BINARY="$(dirname "${LOCAL_TOKENIZED}/prompt-binary-tokens-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}")"
-mkdir -p "${LOCAL_TOKENIZED_PROMPT_BINARY}"
-rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/prompt-binary-tokens-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" "$LOCAL_TOKENIZED_PROMPT_BINARY/"
+LOCAL_TOKENIZED="${OUTPUT_PROMPT_DIR}/${target_config}/tokens/local_nvme"
+LOCAL_TOKENIZED_PROMPT_TOKENIZED="$(dirname "${LOCAL_TOKENIZED}/prompt-tokenized-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}")"
+mkdir -p "${LOCAL_TOKENIZED_PROMPT_TOKENIZED}"
+rsync -a --info=progress2 "${OUTPUT_PROMPT_DIR}/${target_config}/tokens/prompt-tokenized-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" "$LOCAL_TOKENIZED_PROMPT_TOKENIZED/"
 
 # Use GPU-specific output directory
 OUTPUT_DIR_GPU="${OUTPUT_FINE_TUNING_DIR}_gpu${GPU_ID}"
@@ -35,7 +35,7 @@ mkdir -p "${OUTPUT_DIR_GPU}"
   --model_name_or_path "${MODEL_NAME}" \
   --model_revision "${MODEL_REVISION}" \
   --use_flash_attention False \
-  --tokenized_dir "${LOCAL_TOKENIZED}/prompt-binary-tokens-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" \
+  --tokenized_dir "${LOCAL_TOKENIZED}/prompt-tokenized-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" \
   --output_dir "${OUTPUT_DIR_GPU}" \
   --model_max_length ${MAX_LENGTH} \
   --per_device_train_batch_size 2 \
