@@ -39,9 +39,9 @@ LOCAL_TOKENIZED_PROMPT_DIR="$(dirname "${LOCAL_TOKENIZED}/prompt-tokenized-smoke
 mkdir -p "${LOCAL_TOKENIZED_PROMPT_DIR}"
 
 echo "Copying smoke test data to local storage..."
-rsync -a --info=progress2 \
-    "${OUTPUT_PROMPT_DIR}/${target_config}/oracles/prompt-tokenized-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" \
-    "${LOCAL_TOKENIZED_PROMPT_DIR}/"
+# rsync -a --info=progress2 \
+#     "${OUTPUT_PROMPT_DIR}/${target_config}/oracles/prompt-tokenized-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}" \
+#     "${LOCAL_TOKENIZED_PROMPT_DIR}/"
 
 # Use GPU-specific output directory for smoke test
 OUTPUT_DIR_GPU="${OUTPUT_DIR}/oracles/finetuning_smoke_gpu${GPU_ID}"
@@ -52,8 +52,10 @@ echo "Starting smoke test on GPU ${GPU_ID}..."
 echo "Output directory: ${OUTPUT_DIR_GPU}"
 echo ""
 
+echo "${LOCAL_TOKENIZED}/prompt-tokenized-smoke-oracles-${MODEL_NAME}-${ENCODING_TYPE}-${MAX_LENGTH}"
+
 # Run smoke test with minimal settings
-"$PY_ENV" "${NEURAL_DIR}/finetune_oracles_json.py" \
+"$PY_ENV" "${NEURAL_DIR}/finetune_oracles_json_gpt.py" \
     --model_name_or_path "${MODEL_NAME}" \
     --model_revision "${MODEL_REVISION}" \
     --use_flash_attention False \
@@ -64,8 +66,8 @@ echo ""
     --per_device_eval_batch_size 2 \
     --gradient_accumulation_steps 1 \
     --num_train_epochs 1 \
-    --eval_strategy steps --eval_steps 300 \
-    --save_strategy steps --save_steps 300 --save_total_limit 1 \
+    --eval_strategy steps --eval_steps 200 \
+    --save_strategy steps --save_steps 200 --save_total_limit 1 \
     --bf16 True --fp16 False \
     --gradient_checkpointing True \
     --optim adamw_torch --learning_rate 1e-4 \

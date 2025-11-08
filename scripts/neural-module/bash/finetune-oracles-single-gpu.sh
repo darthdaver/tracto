@@ -78,15 +78,14 @@ echo "Output directory: ${OUTPUT_DIR_GPU}"
     --eval_accumulation_steps 1 \
     --load_best_model_at_end True \
     --metric_for_best_model eval_loss --greater_is_better False \
-    --logging_strategy steps --logging_steps 200 \
+    --logging_strategy steps --logging_steps 1 \
     --report_to "none" \
     --ddp_find_unused_parameters False \
     --include_num_input_tokens_seen False \
     --dataloader_drop_last \
-    --min_early_stopping_epochs 1 \
     --early_stopping_patience 2 \
     --remove_unused_columns False \
-    --debug_samples 5
+    --debug_samples 1
 
 echo "Fine-tuning completed!"
 echo "Model saved to: ${OUTPUT_DIR_GPU}"
