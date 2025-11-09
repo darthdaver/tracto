@@ -45,7 +45,7 @@ if [ ! -e "${MUTATION_JAR}" ]; then
 fi
 
 inference_dir_path=${1}
-correctness_dir="$(dirname "${inference_file_path}")"
+correctness_dir="$(dirname "${inference_dir_path}")"
 
 for inference_file_path in "${inference_dir_path}"/*; do
   file_name=$(basename "$inference_file_path")
