@@ -100,7 +100,7 @@ while IFS=, read -r repo_name repo_id version <&3; do
     "$version" \
     "$inference_file_path" \
     "inference" \
-    "tog"
+    "$tog"
   inference_tests=$(head -n 1 "${GITHUB_REPOS_DIR}/${repo_name}/INFERENCE_classes_processed.csv" | tr -d '\r\n')
   echo "Source classes: [ ${src_classes} ]"
   echo "Inference Test classes: [ ${inference_tests} ]"

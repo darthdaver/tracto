@@ -49,7 +49,8 @@ public class Main {
 
         for (InferenceRecord record : inferenceRecords) {
             // Remove first `/` from relative path
-            String cleanedTestClassPath = record.testClassPath().startsWith("/") ? record.testClassPath().substring(1) : record.testClassPath();
+            int srcIdx = record.testClassPath().indexOf("/src/");
+            String cleanedTestClassPath = record.testClassPath().substring(srcIdx + 1);
 
             Path absoluteTestClassPath = repoRootPath.resolve(cleanedTestClassPath);
             JavaParser javaParser = new JavaParser();
