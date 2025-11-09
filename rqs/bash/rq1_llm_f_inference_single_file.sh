@@ -33,7 +33,7 @@ while IFS=, read -r repo_id repo_name; do
      --model_revision 09d9bc5d376b0cfa0100a0694ea7de7232525803 \
      --max_src_length 8192 \
      --max_tgt_length 1024 \
-     --oracles_dataset_dir_path "${OUTPUT_SYMBOLIC_DIR}/raw-oracles-dataset-inference/oracles-datapoints-${repo_id}-0.json" \
+     --oracles_dataset_dir_path "${OUTPUT_SYMBOLIC_DIR}/raw-oracles-dataset-inference/${repo_id}/oracles-datapoints-${repo_id}-0.json" \
      --output_path "${OUTPUT_RQ1}/inference/llm-f/" \
      --prompt_config 1
 done < "$TEST_SET_REPOS_LIST_FILE"
