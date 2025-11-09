@@ -100,8 +100,6 @@ public class Main {
                             BlockStmt newBody = javaParser.parseBlock(newBodyStr).getResult().get();
                             method.setBody(newBody);
 
-                            System.out.println(method.getBody().toString());
-
                             Path tempTestClassPath = null;
                             Path modifiedTestClassPath = null;
 

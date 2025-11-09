@@ -121,7 +121,7 @@ def merge_data(info_dict, oracles_dict):
             'tgt': info.get('tgt', ''),
             'generated': generated,
             'status': '',
-            'time': oracle_data['time'],
+            'time': int(float(oracle_data['time']) * 1000),
             'message': ''
         }
         merged_records.append(new_record)
