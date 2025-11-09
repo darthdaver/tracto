@@ -12,6 +12,7 @@ JAVA_VERSIONS=(
     "$JAVA11"
     "$JAVA17"
     "$JAVA21"
+    "$JAVA24"
 )
 
 successfully_compiled=()
@@ -25,6 +26,16 @@ source "${current_dir}/../../../.venv/bin/activate"
 GITHUB_REPOS_LIST_FILE=${1:-$GITHUB_REPOS_LIST_FILE}
 SUCCESSFUL_COMPILED_FILE=${2:-"successful_compiled_projects.csv"}
 FAILING_COMPILED_FILE=${3:-"failing_compiled_projects.csv"}
+
+if [ ! -d "${OUTPUT_DIR}/compiled/successful" ]; then
+    # Create the directory if it does not exist
+    mkdir -p "${OUTPUT_DIR}/compiled/successful"
+fi
+
+if [ ! -d "${OUTPUT_DIR}/compiled/failed" ]; then
+    # Create the directory if it does not exist
+    mkdir -p "${OUTPUT_DIR}/compiled/failed"
+fi
 
 # Function to detect and classify projects
 scan_projects() {
@@ -42,23 +53,18 @@ scan_projects() {
 
 export -f scan_projects
 
+exec 3< "$GITHUB_REPOS_LIST_FILE"
+
 # Read the CSV file line by line and split into project_id, bug_id, and modified_classes fields
-while IFS=, read -r repo_id repo_name; do
+while IFS=, read -r repo_id repo_name <&3; do
     # Clean repo_name string from undesired white-spaces/line-breaks introduced with the CSV parsing
     repo_name="${repo_name//[$'\t\r\n ']/}"
     project_type=$(scan_projects "${GITHUB_REPOS_DIR}/${repo_name}")
     # Check how many pom.xml files are in the project
     cd "${GITHUB_REPOS_DIR}/${repo_name}"
-    pom_count=$(find . -name "pom.xml" | wc -l)
-    junit_plugin=false
-    if [ "$pom_count" -eq 1 ]; then
-      # Check if the project uses JUnit as plugin to run the tests
-      if grep -qE '<artifactId>(junit|junit-jupiter)' pom.xml || grep -qE '<groupId>(junit|org\.junit\.jupiter)' pom.xml; then
-        junit_plugin=true
-      fi
-    fi
+    echo "Processing: ${repo_id} - ${repo_name} - ${project_type}"
     # Check if the project is a Maven project and if it has only one pom.xml file and uses JUnit as plugin
-    if [[ "$project_type" == "maven" && "$pom_count" -eq 1 && "$junit_plugin" == true ]]; then
+    if [[ "$project_type" == "maven" ]]; then
       echo "Maven project detected"
       compiled=false
       for version in "${JAVA_VERSIONS[@]}"; do
@@ -76,7 +82,7 @@ while IFS=, read -r repo_id repo_name; do
           attempt=1
           timeout_duration=600
           while [ $attempt -le $max_attempts ]; do
-            timeout "$timeout_duration" mvn clean install -DskipTests -Dgpg.skip=true
+            timeout "$timeout_duration" mvn clean install -DskipTests -Dgpg.skip=true -Dspotless.check.skip=true -Dmaven.compiler.failOnWarning=false -Dspotless.check.skip=true -Dcheckstyle.skip=true -Dlicense.skip=true -Drat.skip=true -Ddependency-check.skip=true
             exit_code=$?
             if [ $exit_code -eq 0 ]; then
                 echo "Compilation successful for ${repo_name} with Java version ${version}"
@@ -110,4 +116,6 @@ while IFS=, read -r repo_id repo_name; do
     # Save the results to a CSV file
     printf "%s\n" "${successfully_compiled[@]}" > "${OUTPUT_DIR}/compiled/successful/${SUCCESSFUL_COMPILED_FILE}"
     printf "%s\n" "${failing_compiled[@]}" > "${OUTPUT_DIR}/compiled/failed/${FAILING_COMPILED_FILE}"
-done < "$GITHUB_REPOS_LIST_FILE"
+done
+
+exec 3<&-

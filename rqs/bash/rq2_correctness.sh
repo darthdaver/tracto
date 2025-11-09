@@ -78,11 +78,13 @@ for inference_file_path in "${inference_dir_path}"/*; do
         if [ -d "${correctness_dir}/correctness/${repo_id}" ]; then
             rm -rf "${correctness_dir}/correctness/${repo_id}"
         fi
-        echo "Compiling original project"
+        echo "--------------------------"
+        echo "Processing original project"
+        echo "--------------------------"
         find "${GITHUB_REPOS_DIR}/${repo_name}" -type f -name '*_STAR_Split_inference.java' -delete
         find "${GITHUB_REPOS_DIR}/${repo_name}" -type f -name '*_STAR_Split_no_oracle.java' -delete
         echo "Starting compiling..."
-        mvn clean install -DskipTests -Dgpg.skip=true -Dspotless.check.skip=true -Dmaven.compiler.failOnWarning=false -Dspotless.check.skip=true #> /dev/null 2>&1
+        mvn clean install -DskipTests -Dgpg.skip=true -Dspotless.check.skip=true -Dmaven.compiler.failOnWarning=false -Dspotless.check.skip=true -Dcheckstyle.skip=true -Dlicense.skip=true -Drat.skip=true -Ddependency-check.skip=true #> /dev/null 2>&1
         if [ $? -eq 0 ]; then
           echo "Compilation successful for ${repo_name} with Java version ${version}"
         else
@@ -95,9 +97,23 @@ for inference_file_path in "${inference_dir_path}"/*; do
           "$version" \
           "$inference_file_path" \
           "no_oracle"
-        no_oracle_tests=$(head -n 1 "${GITHUB_REPOS_DIR}/${repo_name}/NO_ORACLE_classes_processed.csv" | tr -d '\r\n')
         echo "Source classes: [ ${src_classes} ]"
         echo "Test classes: [ ${no_oracle_tests} ]"
+        echo ""
+        no_oracle_tests=$(head -n 1 "${GITHUB_REPOS_DIR}/${repo_name}/NO_ORACLE_classes_processed.csv" | tr -d '\r\n')
+        echo "----------------------------"
+        echo "Processing Inference oracles"
+        echo "----------------------------"
+        process_tests \
+          "$repo_name" \
+          "$config_num" \
+          "$version" \
+          "$inference_file_path" \
+          "inference"
+        inference_tests=$(head -n 1 "${GITHUB_REPOS_DIR}/${repo_name}/INFERENCE_classes_processed.csv" | tr -d '\r\n')
+        echo "Source classes: [ ${src_classes} ]"
+        echo "Test classes: [ ${inference_tests} ]"
+        rm -r "${GITHUB_REPOS_DIR}/${repo_name}/star-classes"
         break
     done
   else
