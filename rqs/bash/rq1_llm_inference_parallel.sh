@@ -15,6 +15,7 @@ split_dir=${2:-"${RESOURCES_DIR}/test-repos-split"}
 bash_script_name=${3:-"rq1_llm_f_inference_single_file.sh"}
 config_num=${4:-1}
 num_files=$(find "${split_dir}" -type f -name "*.csv" | wc -l)
+current_index=0
 
 mkdir -p logs
 mkdir -p pids
