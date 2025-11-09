@@ -591,6 +591,7 @@ public class TokensUtils {
         // Retrieve the datapoints and the path of the test class and the focal class from the test class object
         List<OracleDatapoint> datapoints = testClazzDatapoints.datapoints();
         Path testClassPath = repoRootPath.resolve(testClazzDatapoints.testClass().filePath().substring(1));
+        Path relativeTestClassPath = Path.of(testClazzDatapoints.testClass().filePath());
         testPrefixClassPath = repoRootPath.resolve(testClazzDatapoints.testClass().prefixFilePath().substring(1));
         focalClassPath = repoRootPath.resolve(testClazzDatapoints.focalClass().filePath().substring(1));
         String fqnTestClass = testClazzDatapoints.testClass().packageIdentifier() + "." + testClazzDatapoints.testClass().identifier();
@@ -620,7 +621,7 @@ public class TokensUtils {
                 List<String> oracleInference = new ArrayList<>();
                 String datapointId = testClazzDatapoints.testClass().identifier() + "-" + datapoint.testPrefix().identifier() + "-" + datapointCounter++;
                 oracleInference.add(datapointId);
-                oracleInference.add(testClassPath.toString());
+                oracleInference.add(relativeTestClassPath.toString());
                 oracleInference.add(testClazzDatapoints.testClass().identifier());
                 oracleInference.add(datapoint.testPrefix().identifier());
                 oracleInference.add(datapoint.testPrefix().signature());

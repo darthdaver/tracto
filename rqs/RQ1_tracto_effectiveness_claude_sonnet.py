@@ -66,7 +66,7 @@ def create_claude_request(id: str, code1: str, code2: str) -> dict:
 
 
 MODEL_NAME = "Qwen/Qwen2.5-Coder-3B"
-ROOT = f"/Users/davidemolinelli/Downloads/tracto/rqs/output/rq1/tracto/{MODEL_NAME}/1"
+ROOT = f"/Users/davidemolinelli/Downloads/tracto/rqs/output/rq1/tracto/{MODEL_NAME}/1/inference"
 STATS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output", "rq1", "tracto", "Qwen", "Qwen2.5-Coder-3B","1", "stats")
 BATCH_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output", "rq1", "tracto", "Qwen", "Qwen2.5-Coder-3B","1", "batch")
 
@@ -140,7 +140,7 @@ for dirpath, _, files in os.walk(ROOT):
 
         for idx, (test_id, g, p, s, inf_time) in enumerate(zip(test_ids, gt, pred_raw, status, inference_times)):
             if s == "OK":
-                ids_correct.append(("_split_".join(test_id.split("_split_")[:-1]) + "-" + test_id.split("-")[-1],g))
+                ids_correct.append(("_split_".join(test_id.split("_split_")[:-1]),g))
                 strict = (g.replace(" ", "") == p.replace(" ", "")) or (g.replace(" ", "") == (p.replace(" ", "") + ";"))
                 flex = strict or (g.replace(" ", "") in p.replace(" ", "")) or (p.replace(" ", "") in g.replace(" ", ""))
 
@@ -157,6 +157,11 @@ for dirpath, _, files in os.walk(ROOT):
                     stats[model]["empty"] += 1
 
                 stats[model]["total"] += 1
+            else:
+                stats[model]["empty"] += 1
+                stats[model]["total"] += 1
+                stats[model]["inference_time"] += float(inf_time or 0.0)
+
 
 print(f"\n✓ Processed {processed_files} CSV file(s)")
 
