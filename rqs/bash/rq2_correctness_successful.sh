@@ -13,6 +13,7 @@ process_tests() {
   local java_version="$3"
   local input_inference_file_path="$4"
   local test_type="$5"
+  local tog_type="$6"
 
   # Step 2: Generate classpath for test compilation (dependencies + main classes)
   mvn dependency:build-classpath -Dmdep.outputFile=cp.txt -q
@@ -20,7 +21,7 @@ process_tests() {
   classpath="${GITHUB_REPOS_DIR}/${repo_name}/target/classes:${GITHUB_REPOS_DIR}/${repo_name}/target/test-classes:$(cat cp.txt)"
   sdk use java "$JAVA21" > /dev/null
   output_inference_file_path="${input_inference_file_path%.json}.txt"
-  java -jar "${MUTATION_JAR}" "${GITHUB_REPOS_DIR}/${repo_name}" "${input_inference_file_path}" "${GITHUB_REPOS_DIR}/${repo_name}/star-classes" "${SDKMAN_DIR}/candidates/java/${java_version}" "${SDKMAN_DIR}/candidates/maven/${MAVEN_VERSION}" "${test_type}" "${classpath}"
+  java -jar "${MUTATION_JAR}" "${GITHUB_REPOS_DIR}/${repo_name}" "${input_inference_file_path}" "${GITHUB_REPOS_DIR}/${repo_name}/star-classes" "${SDKMAN_DIR}/candidates/java/${java_version}" "${SDKMAN_DIR}/candidates/maven/${MAVEN_VERSION}" "${test_type}" "${classpath}" "${tog_type}"
 }
 
 
@@ -85,7 +86,8 @@ while IFS=, read -r repo_name repo_id version <&3; do
     "$config_num" \
     "$version" \
     "$inference_file_path" \
-    "no_oracle"
+    "no_oracle" \
+    "$tog"
   no_oracle_tests=$(head -n 1 "${GITHUB_REPOS_DIR}/${repo_name}/NO_ORACLE_classes_processed.csv" | tr -d '\r\n')
   echo "Source classes: [ ${src_classes} ]"
   echo "No Oracle Test classes: [ ${no_oracle_tests} ]"
@@ -97,7 +99,8 @@ while IFS=, read -r repo_name repo_id version <&3; do
     "$config_num" \
     "$version" \
     "$inference_file_path" \
-    "inference"
+    "inference" \
+    "tog"
   inference_tests=$(head -n 1 "${GITHUB_REPOS_DIR}/${repo_name}/INFERENCE_classes_processed.csv" | tr -d '\r\n')
   echo "Source classes: [ ${src_classes} ]"
   echo "Inference Test classes: [ ${inference_tests} ]"

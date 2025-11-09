@@ -30,6 +30,7 @@ public class Main {
         Path mvnHome = Path.of(args[4]);
         TestType testType = TestType.valueOf(args[5].toUpperCase());
         String classPath = args[6];
+        String tog = args[7];
 
         FilesUtils.createDirectories(tempTestsClassesPath);
         // Parse inference JSON file
@@ -81,10 +82,10 @@ public class Main {
                                 String extracted = record.generated();
 
                                 String replacer = testType == TestType.INFERENCE ? extracted : extracted + "\n    " + record.tgt();
-                                newBodyStr = record.tpBody().replace(record.signature(),"").replace("/*<MASK_PLACEHOLDER>*/", replacer);
+                                newBodyStr = record.tpBody().replace(record.signature(), "").replace("/*<MASK_PLACEHOLDER>*/", replacer);
                                 outputRecord.add(extracted);
                             } else if (testType == TestType.NO_ORACLE) {
-                                newBodyStr = record.tpBody().replace(record.signature(),"").replace("/*<MASK_PLACEHOLDER>*/", "");
+                                newBodyStr = record.tpBody().replace(record.signature(), "").replace("/*<MASK_PLACEHOLDER>*/", "");
                                 outputRecord.add("");
                             }
 
@@ -142,7 +143,7 @@ public class Main {
 
                             if (!compilationResult || !runTestResult) {
                                 System.err.println("Compilation or test execution failed for: " + outputRecord);
-                                String noOracleBodyStr = record.tpBody().replace(record.signature(),"").replace("/*<MASK_PLACEHOLDER>*/", "");
+                                String noOracleBodyStr = record.tpBody().replace(record.signature(), "").replace("/*<MASK_PLACEHOLDER>*/", "");
                                 BlockStmt noOracleBody = javaParser.parseBlock(noOracleBodyStr).getResult().get();
                                 method.setBody(noOracleBody);
                                 FilesUtils.writeJavaFile(tempTestClassPath, cu);
@@ -194,12 +195,12 @@ public class Main {
             }
         }
 
-        FilesUtils.writeCSV(repoRootPath.resolve("star_classes_mapping.csv"), testClassesPathsMap);
-        FilesUtils.writeCSV(repoRootPath.resolve(testType + "_success_compiled.csv"), successCompiled);
-        FilesUtils.writeCSV(repoRootPath.resolve(testType + "_success_tested.csv"), successTested);
-        FilesUtils.writeCSV(repoRootPath.resolve(testType + "_fail_compiled.csv"), failCompiled);
-        FilesUtils.writeCSV(repoRootPath.resolve(testType + "_fail_tested.csv"), failTested);
-        FilesUtils.writeCSV(repoRootPath.resolve(testType + "_classes_processed.csv"), List.of(testClassesProcessed));
+        FilesUtils.writeCSV(repoRootPath.resolve(tog + "_star_classes_mapping.csv"), testClassesPathsMap);
+        FilesUtils.writeCSV(repoRootPath.resolve(tog + "_" + testType + "_success_compiled.csv"), successCompiled);
+        FilesUtils.writeCSV(repoRootPath.resolve(tog + "_" + testType + "_success_tested.csv"), successTested);
+        FilesUtils.writeCSV(repoRootPath.resolve(tog + "_" + testType + "_fail_compiled.csv"), failCompiled);
+        FilesUtils.writeCSV(repoRootPath.resolve(tog + "_" + testType + "_fail_tested.csv"), failTested);
+        FilesUtils.writeCSV(repoRootPath.resolve(tog + "_" + testType + "_classes_processed.csv"), List.of(testClassesProcessed));
     }
 
     private static boolean bashCall(String[] args, Path repoRootPath, Path mvnHome, Path javaHome) {

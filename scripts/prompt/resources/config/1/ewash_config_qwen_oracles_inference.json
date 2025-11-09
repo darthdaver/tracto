@@ -1,0 +1,25 @@
+{
+  "test_prefix" : {
+    "methods": ["signature", "javadoc", "body"]
+  },
+  "test_class" : {
+    "fields" : ["signature"],
+    "methods": ["signature", "javadoc", "body"]
+  },
+  "focal_class" : {
+    "fields" : ["signature"],
+    "methods": ["signature", "javadoc", "body"]
+  },
+  "prefix_tag": "<|fim_prefix|>",
+  "suffix_tag": "<|fim_suffix|>",
+  "infix_tag": "<|fim_middle|>",
+  "scope": "inference",
+  "tokens": ["project_tokens", "java_tokens", "generic_tokens"],
+  "tokenizer" : "Qwen/Qwen2.5-32B-Instruct",
+  "mask_token" : "<mask_id>",
+  "sections" : ["test_prefix", "test_class", "focal_class"],
+  "types" : ["methods", "fields"],
+  "strategy": "cascade",
+  "type": "oracles",
+  "max_length" : 262144
+}

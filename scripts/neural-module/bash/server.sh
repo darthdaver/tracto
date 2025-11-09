@@ -10,12 +10,11 @@ export HF_DATASETS_DISABLE_PARALLELISM
 
 config_num="${1-1}"
 port="${2:-5000}"
-dataset_type="${3:-tokens}"
 
 "$PY_ENV" "${NEURAL_DIR}/server.py" \
   --port "$port" \
-  --tokenizer_name_or_path "${OUTPUT_DIR}/${dataset_type}/${TOKENIZER_NAME}/${config_num}" \
-  --model_name_or_path "${OUTPUT_DIR}/${dataset_type}/${MODEL_NAME}/${config_num}" \
+  --tokenizer_name_or_path "${OUTPUT_DIR}/tracto/${TOKENIZER}/${config_num}" \
+  --model_name_or_path "${OUTPUT_DIR}/tracto/${MODEL_NAME}/${config_num}" \
   --model_revision "${MODEL_REVISION}" \
   --max_src_length 8192 \
   --max_tgt_length 1024
