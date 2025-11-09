@@ -81,8 +81,8 @@ for inference_file_path in "${inference_dir_path}"/*; do
         echo "--------------------------"
         echo "Processing original project"
         echo "--------------------------"
-        find "${GITHUB_REPOS_DIR}/${repo_name}" -type f -name '*_STAR_Split_inference.java' -delete
-        find "${GITHUB_REPOS_DIR}/${repo_name}" -type f -name '*_STAR_Split_no_oracle.java' -delete
+        find "${GITHUB_REPOS_DIR}/${repo_name}" -type f -name '*STARSplitTestInferenceTest.java' -delete
+        find "${GITHUB_REPOS_DIR}/${repo_name}" -type f -name '*STARSplitTestNoOracleTest.java' -delete
         echo "Starting compiling..."
         mvn clean install -DskipTests -Dgpg.skip=true -Dspotless.check.skip=true -Dmaven.compiler.failOnWarning=false -Dspotless.check.skip=true -Dcheckstyle.skip=true -Dlicense.skip=true -Drat.skip=true -Ddependency-check.skip=true #> /dev/null 2>&1
         if [ $? -eq 0 ]; then

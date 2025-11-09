@@ -63,10 +63,13 @@ public class Main {
 
                 // Get the list of all the methods defined within the test class
                 List<MethodDeclaration> testClassMethods = cu.findAll(MethodDeclaration.class);
+                MethodDeclaration newMethodDeclaration = javaParser.parseMethodDeclaration(record.tpBody()).getResult().get();
 
                 for (MethodDeclaration method : testClassMethods) {
                     // Check if the method name matches the record
-                    if (method.getNameAsString().equals(record.testName())) {
+                    //if (method.getNameAsString().equals(record.testName())) {
+
+                    if (method.getNameAsString().equals(newMethodDeclaration.getNameAsString())) {
                         try {
                             String newBodyStr = "";
                             List<String> outputRecord = new ArrayList<>();
@@ -75,17 +78,7 @@ public class Main {
                             outputRecord.add(method.getSignature().toString());
 
                             if (testType == TestType.INFERENCE || testType == TestType.BOTH) {
-                                // Extract oracle from generated field
-                                Pattern pattern = Pattern.compile("\\[oracle\\](.*?)\\[/oracle\\]", Pattern.DOTALL);
-                                Matcher matcher = pattern.matcher(record.generated());
-
-                                String extracted;
-                                if (!matcher.find()) {
-                                    // If no oracle tags, use the generated text directly
-                                    extracted = record.generated();
-                                } else {
-                                    extracted = matcher.group(1);
-                                }
+                                String extracted = record.generated();
 
                                 String replacer = testType == TestType.INFERENCE ? extracted : extracted + "\n    " + record.tgt();
                                 newBodyStr = record.tpBody().replace(record.signature(),"").replace("/*<MASK_PLACEHOLDER>*/", replacer);
@@ -95,8 +88,6 @@ public class Main {
                                 outputRecord.add("");
                             }
 
-                            BlockStmt oldBody = method.getBody().orElseThrow(() ->
-                                    new IllegalArgumentException("Method " + method.getNameAsString() + " does not have a body.")).clone();
                             BlockStmt newBody = javaParser.parseBlock(newBodyStr).getResult().get();
                             method.setBody(newBody);
 
