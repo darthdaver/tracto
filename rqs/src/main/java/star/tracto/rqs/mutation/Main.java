@@ -48,108 +48,72 @@ public class Main {
         TypeDeclaration<?> testClass = null;
 
         for (InferenceRecord record : inferenceRecords) {
-            // Remove first `/` from relative path
-            int srcIdx = record.testClassPath().indexOf("/src/");
-            String cleanedTestClassPath = record.testClassPath().substring(srcIdx + 1);
+            if (record.status().equals("OK") || record.status().equals("")) {
+                // Remove first `/` from relative path
+                int srcIdx = record.testClassPath().indexOf("/src/");
+                String cleanedTestClassPath = record.testClassPath().substring(srcIdx + 1);
 
-            Path absoluteTestClassPath = repoRootPath.resolve(cleanedTestClassPath);
-            JavaParser javaParser = new JavaParser();
+                Path absoluteTestClassPath = repoRootPath.resolve(cleanedTestClassPath);
+                JavaParser javaParser = new JavaParser();
 
-            try {
-                if (testClassesTempPathsMap.containsKey(absoluteTestClassPath.toString())) {
-                    cu = testClassesTempPathsMap.get(absoluteTestClassPath.toString());
-                } else {
-                    cu = javaParser.parse(absoluteTestClassPath).getResult().orElseThrow();
-                    testClass = cu.getPrimaryType().get();
-                }
+                try {
+                    if (testClassesTempPathsMap.containsKey(absoluteTestClassPath.toString())) {
+                        cu = testClassesTempPathsMap.get(absoluteTestClassPath.toString());
+                    } else {
+                        cu = javaParser.parse(absoluteTestClassPath).getResult().orElseThrow();
+                        testClass = cu.getPrimaryType().get();
+                    }
 
-                // Get the list of all the methods defined within the test class
-                List<MethodDeclaration> testClassMethods = cu.findAll(MethodDeclaration.class);
-                MethodDeclaration newMethodDeclaration = javaParser.parseMethodDeclaration(record.tpBody()).getResult().get();
+                    // Get the list of all the methods defined within the test class
+                    List<MethodDeclaration> testClassMethods = cu.findAll(MethodDeclaration.class);
+                    MethodDeclaration newMethodDeclaration = javaParser.parseMethodDeclaration(record.tpBody()).getResult().get();
 
-                for (MethodDeclaration method : testClassMethods) {
-                    // Check if the method name matches the record
-                    //if (method.getNameAsString().equals(record.testName())) {
+                    for (MethodDeclaration method : testClassMethods) {
+                        // Check if the method name matches the record
+                        //if (method.getNameAsString().equals(record.testName())) {
 
-                    if (method.getNameAsString().equals(newMethodDeclaration.getNameAsString())) {
-                        try {
-                            String newBodyStr = "";
-                            List<String> outputRecord = new ArrayList<>();
-                            outputRecord.add(absoluteTestClassPath.toString());
-                            outputRecord.add(cu.getPackageDeclaration().get().getNameAsString() + "." + testClass.getNameAsString());
-                            outputRecord.add(method.getSignature().toString());
+                        if (method.getNameAsString().equals(newMethodDeclaration.getNameAsString())) {
+                            try {
+                                String newBodyStr = "";
+                                List<String> outputRecord = new ArrayList<>();
+                                outputRecord.add(absoluteTestClassPath.toString());
+                                outputRecord.add(cu.getPackageDeclaration().get().getNameAsString() + "." + testClass.getNameAsString());
+                                outputRecord.add(method.getSignature().toString());
 
-                            if (testType == TestType.INFERENCE || testType == TestType.BOTH) {
-                                String extracted = record.generated();
+                                if (testType == TestType.INFERENCE || testType == TestType.BOTH) {
+                                    String extracted = record.generated();
 
-                                String replacer = testType == TestType.INFERENCE ? extracted : extracted + "\n    " + record.tgt();
-                                newBodyStr = record.tpBody().replace(record.signature(), "").replace("/*<MASK_PLACEHOLDER>*/", replacer);
-                                outputRecord.add(extracted);
-                            } else if (testType == TestType.NO_ORACLE) {
-                                newBodyStr = record.tpBody().replace(record.signature(), "").replace("/*<MASK_PLACEHOLDER>*/", "");
-                                outputRecord.add("");
-                            }
-
-                            BlockStmt newBody = javaParser.parseBlock(newBodyStr).getResult().get();
-                            method.setBody(newBody);
-
-                            Path tempTestClassPath = null;
-                            Path modifiedTestClassPath = null;
-
-                            if (!testClass.getNameAsString().endsWith(testType.getTestTypeTestLabel())) {
-                                tempTestClassPath = tempTestsClassesPath.resolve(testClass.getNameAsString() + testType.getTestTypeTestLabel() + ".java");
-                                modifiedTestClassPath = Path.of(absoluteTestClassPath.toString().replace(".java", testType.getTestTypeTestLabel() + ".java"));
-                                testClass.setName(testClass.getNameAsString() + testType.getTestTypeTestLabel());
-                            } else {
-                                tempTestClassPath = tempTestsClassesPath.resolve(testClass.getNameAsString() + ".java");
-                                modifiedTestClassPath = Path.of(absoluteTestClassPath.toString().replace(".java", testType.getTestTypeTestLabel() + ".java"));
-                            }
-
-                            if (!testClassesProcessed.contains(cu.getPackageDeclaration().get().getNameAsString() + "." + testClass.getNameAsString())) {
-                                testClassesProcessed.add(cu.getPackageDeclaration().get().getNameAsString() + "." + testClass.getNameAsString());
-                            }
-
-                            FilesUtils.writeJavaFile(tempTestClassPath, cu);
-                            FilesUtils.writeJavaFile(modifiedTestClassPath, cu);
-
-                            boolean compilationResult = bashCall(new String[]{
-                                    javaHome + "/bin/javac",
-                                    "-cp",
-                                    classPath,
-                                    "-d",
-                                    repoRootPath.toString() + "/target/test-classes",
-                                    tempTestClassPath.toString()
-                            }, repoRootPath, mvnHome, javaHome);
-
-                            boolean runTestResult = false;
-                            if (compilationResult) {
-                                System.out.println("mvn test -Dtest=" + cu.getPackageDeclaration().get().getNameAsString() + "." + testClass.getNameAsString() + "#" + method.getNameAsString());
-                                successCompiled.add(outputRecord);
-                                runTestResult = bashCall(new String[]{
-                                        mvnHome + "/bin/mvn",
-                                        "test",
-                                        "-DargLine=",  // ADD THIS LINE
-                                        "-Dtest=" + cu.getPackageDeclaration().get().getNameAsString() + "." + testClass.getNameAsString() + "#" + method.getNameAsString(),
-                                }, repoRootPath, mvnHome, javaHome);
-
-
-                                if (runTestResult) {
-                                    successTested.add(outputRecord);
-                                } else {
-                                    failTested.add(outputRecord);
+                                    String replacer = testType == TestType.INFERENCE ? extracted : extracted + "\n    " + record.tgt();
+                                    newBodyStr = record.tpBody().replace(record.signature(), "").replace("/*<MASK_PLACEHOLDER>*/", replacer);
+                                    outputRecord.add(extracted);
+                                } else if (testType == TestType.NO_ORACLE) {
+                                    newBodyStr = record.tpBody().replace(record.signature(), "").replace("/*<MASK_PLACEHOLDER>*/", "");
+                                    outputRecord.add("");
                                 }
-                            } else {
-                                failCompiled.add(outputRecord);
-                            }
 
-                            if (!compilationResult || !runTestResult) {
-                                System.err.println("Compilation or test execution failed for: " + outputRecord);
-                                String noOracleBodyStr = record.tpBody().replace(record.signature(), "").replace("/*<MASK_PLACEHOLDER>*/", "");
-                                BlockStmt noOracleBody = javaParser.parseBlock(noOracleBodyStr).getResult().get();
-                                method.setBody(noOracleBody);
+                                BlockStmt newBody = javaParser.parseBlock(newBodyStr).getResult().get();
+                                method.setBody(newBody);
+
+                                Path tempTestClassPath = null;
+                                Path modifiedTestClassPath = null;
+
+                                if (!testClass.getNameAsString().endsWith(testType.getTestTypeTestLabel())) {
+                                    tempTestClassPath = tempTestsClassesPath.resolve(testClass.getNameAsString() + testType.getTestTypeTestLabel() + ".java");
+                                    modifiedTestClassPath = Path.of(absoluteTestClassPath.toString().replace(".java", testType.getTestTypeTestLabel() + ".java"));
+                                    testClass.setName(testClass.getNameAsString() + testType.getTestTypeTestLabel());
+                                } else {
+                                    tempTestClassPath = tempTestsClassesPath.resolve(testClass.getNameAsString() + ".java");
+                                    modifiedTestClassPath = Path.of(absoluteTestClassPath.toString().replace(".java", testType.getTestTypeTestLabel() + ".java"));
+                                }
+
+                                if (!testClassesProcessed.contains(cu.getPackageDeclaration().get().getNameAsString() + "." + testClass.getNameAsString())) {
+                                    testClassesProcessed.add(cu.getPackageDeclaration().get().getNameAsString() + "." + testClass.getNameAsString());
+                                }
+
                                 FilesUtils.writeJavaFile(tempTestClassPath, cu);
                                 FilesUtils.writeJavaFile(modifiedTestClassPath, cu);
-                                bashCall(new String[]{
+
+                                boolean compilationResult = bashCall(new String[]{
                                         javaHome + "/bin/javac",
                                         "-cp",
                                         classPath,
@@ -157,42 +121,80 @@ public class Main {
                                         repoRootPath.toString() + "/target/test-classes",
                                         tempTestClassPath.toString()
                                 }, repoRootPath, mvnHome, javaHome);
+
+                                boolean runTestResult = false;
+                                if (compilationResult) {
+                                    System.out.println("mvn test -Dtest=" + cu.getPackageDeclaration().get().getNameAsString() + "." + testClass.getNameAsString() + "#" + method.getNameAsString());
+                                    successCompiled.add(outputRecord);
+                                    runTestResult = bashCall(new String[]{
+                                            mvnHome + "/bin/mvn",
+                                            "test",
+                                            "-DargLine=",  // ADD THIS LINE
+                                            "-Dtest=" + cu.getPackageDeclaration().get().getNameAsString() + "." + testClass.getNameAsString() + "#" + method.getNameAsString(),
+                                    }, repoRootPath, mvnHome, javaHome);
+
+
+                                    if (runTestResult) {
+                                        successTested.add(outputRecord);
+                                    } else {
+                                        failTested.add(outputRecord);
+                                    }
+                                } else {
+                                    failCompiled.add(outputRecord);
+                                }
+
+                                if (!compilationResult || !runTestResult) {
+                                    System.err.println("Compilation or test execution failed for: " + outputRecord);
+                                    String noOracleBodyStr = record.tpBody().replace(record.signature(), "").replace("/*<MASK_PLACEHOLDER>*/", "");
+                                    BlockStmt noOracleBody = javaParser.parseBlock(noOracleBodyStr).getResult().get();
+                                    method.setBody(noOracleBody);
+                                    FilesUtils.writeJavaFile(tempTestClassPath, cu);
+                                    FilesUtils.writeJavaFile(modifiedTestClassPath, cu);
+                                    bashCall(new String[]{
+                                            javaHome + "/bin/javac",
+                                            "-cp",
+                                            classPath,
+                                            "-d",
+                                            repoRootPath.toString() + "/target/test-classes",
+                                            tempTestClassPath.toString()
+                                    }, repoRootPath, mvnHome, javaHome);
+                                }
+
+                                FilesUtils.writeJavaFile(tempTestClassPath, cu);
+                                FilesUtils.writeJavaFile(modifiedTestClassPath, cu);
+                                testClassesTempPathsMap.put(absoluteTestClassPath.toString(), cu);
+
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                                System.err.println("Error parsing the new body: " + e.getMessage());
                             }
 
-                            FilesUtils.writeJavaFile(tempTestClassPath, cu);
-                            FilesUtils.writeJavaFile(modifiedTestClassPath, cu);
-                            testClassesTempPathsMap.put(absoluteTestClassPath.toString(), cu);
+                            Path modifiedTestClassPath = Path.of(absoluteTestClassPath.toString().replace(".java", testType.getTestTypeTestLabel() + ".java"));
+                            Path tempTestClassPath = tempTestsClassesPath.resolve(testClass.getNameAsString() + testType.getTestTypeTestLabel() + ".java");
 
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                            System.err.println("Error parsing the new body: " + e.getMessage());
-                        }
+                            List<String> mappingPaths = new ArrayList<>();
+                            mappingPaths.add(tempTestClassPath.toString());
+                            mappingPaths.add(modifiedTestClassPath.toString());
+                            mappingPaths.add(cu.getPackageDeclaration().get().getNameAsString() + "." + testClass.getNameAsString());
+                            mappingPaths.add(record.testId());
 
-                        Path modifiedTestClassPath = Path.of(absoluteTestClassPath.toString().replace(".java", testType.getTestTypeTestLabel() + ".java"));
-                        Path tempTestClassPath = tempTestsClassesPath.resolve(testClass.getNameAsString() + testType.getTestTypeTestLabel() + ".java");
-
-                        List<String> mappingPaths = new ArrayList<>();
-                        mappingPaths.add(tempTestClassPath.toString());
-                        mappingPaths.add(modifiedTestClassPath.toString());
-                        mappingPaths.add(cu.getPackageDeclaration().get().getNameAsString() + "." + testClass.getNameAsString());
-                        mappingPaths.add(record.testId());
-
-                        boolean exists = false;
-                        for (List<String> el : testClassesPathsMap) {
-                            if (el.get(0).equals(mappingPaths.get(0)) &&
-                                    el.get(1).equals(mappingPaths.get(1)) &&
-                                    el.get(2).equals(mappingPaths.get(2)) &&
-                                    el.get(3).equals(mappingPaths.get(3))) {
-                                exists = true;
+                            boolean exists = false;
+                            for (List<String> el : testClassesPathsMap) {
+                                if (el.get(0).equals(mappingPaths.get(0)) &&
+                                        el.get(1).equals(mappingPaths.get(1)) &&
+                                        el.get(2).equals(mappingPaths.get(2)) &&
+                                        el.get(3).equals(mappingPaths.get(3))) {
+                                    exists = true;
+                                }
                             }
-                        }
-                        if (!exists) {
-                            testClassesPathsMap.add(mappingPaths);
+                            if (!exists) {
+                                testClassesPathsMap.add(mappingPaths);
+                            }
                         }
                     }
+                } catch (IOException e) {
+                    e.printStackTrace();
                 }
-            } catch (IOException e) {
-                e.printStackTrace();
             }
         }
 
