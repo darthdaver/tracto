@@ -9,7 +9,6 @@ Balanced, pre-tokenized SFT corpus using existing size bins (Small/Medium/Large)
 - Encodes chat with Qwen tokenizer (+ <|im_start|>, <|im_end|>) OR plain src/tgt pairs (no chat template)
 - Assistant-only supervision (IGNORE_INDEX=-100)
 - Length buckets by *token length after encoding*: short/med/long
-- Sharded memmap output: {split}.{shard}.{input_ids|labels|constraints}.bin, .idx, {split}.meta.json
 
 Example:
 python build_tokenized_dataset_bins.py \
@@ -24,7 +23,6 @@ python build_tokenized_dataset_bins.py \
 --bin_allocation sqrt \
 --alpha 0.5 \
 --target_mix 0.4,0.4,0.2 \
---tokens_per_shard 50000000 \
 --train_drop_long
 """
 
@@ -204,49 +202,6 @@ def load_json_dataset(json_dir: str, split: str) -> List[Dict[str, Any]]:
             logger.error(f"Error loading {json_file}: {e}")
             continue
     return all_samples
-
-
-# Helper function to read constraints from binary format
-def read_constraints_from_shard(constraints_path: str, constraints_idx_path: str, sample_idx: int):
-    """
-    Read constraint sequences for a specific sample from binary format.
-
-    Args:
-        constraints_path: Path to constraints binary file
-        constraints_idx_path: Path to constraints index file
-        sample_idx: Index of the sample to read
-
-    Returns:
-        List[List[int]]: Ragged array of constraint token sequences
-    """
-    # Read index to get offset and length
-    constraints_dtype = np.dtype([('offset', np.uint64), ('length', np.uint32)])
-    with open(constraints_idx_path, 'rb') as f:
-        idx_array = np.fromfile(f, dtype=constraints_dtype)
-    if sample_idx >= len(idx_array):
-        raise IndexError(f"Sample index {sample_idx} out of range")
-    offset, length = idx_array[sample_idx]
-    # Read the constraint data for this sample
-    with open(constraints_path, 'rb') as f:
-        f.seek(offset)
-        data = f.read(length)
-    # Parse the binary data
-    constraint_seqs = []
-    pos = 0
-    # Read number of sequences
-    num_seqs = np.frombuffer(data[pos:pos + 4], dtype=np.uint32)[0]
-    pos += 4
-    # Read each sequence
-    for _ in range(num_seqs):
-        # Read sequence length
-        seq_len = np.frombuffer(data[pos:pos + 4], dtype=np.uint32)[0]
-        pos += 4
-        # Read token IDs
-        seq = np.frombuffer(data[pos:pos + seq_len * 4], dtype=np.int32).tolist()
-        pos += seq_len * 4
-        constraint_seqs.append(seq)
-    return constraint_seqs
-
 
 
 class EncoderInterface:
@@ -993,7 +948,7 @@ def build_split(
         per_project[pid] = got
         # Log stats
         print(f"[{split_name}] {pid} ({meta[pid]['size_bin']}) -> {got:,} tokens; total={total_written:,}")
-    # Close shard writer at the end of the process
+    # Close writer at the end of the process
     writer.close()
     # Save stats related to the sampling and encoding
     with open(os.path.join(out_dir, f"{split_name}.per_project_tokens.json"), "w") as f:
