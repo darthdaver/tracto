@@ -14,7 +14,7 @@ import java.util.Optional;
 public record Type (
         /* The full identifier of the type. Example: `Type` or `List<Type>`, etc. */
         String identifier,
-        /* List of fully qualified identifiers, providing additional information about the tyep (if available) */
+        /* List of fully qualified identifiers, providing additional information about the type (if available) */
         List<String> fullyQualifiedIdentifiers,
         /* A boolean flag to check if the type is void */
         boolean isVoid,

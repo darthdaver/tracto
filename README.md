@@ -12,7 +12,7 @@ by a neural module to guide the search of oracles toward optimal solutions.
 2. `./scripts/neural-module` contains the scripts related to the neural module (fine-tuning and inference).
 3. `./scripts/prompt` contains the scripts to generate the prompts for the neural module (both for fine-tuning and inference)
 4. `./scripts/symbolic-module` contains the code related to the symbolic module.
-#5. `_rq1` contains the code and the data to replicate the ablation study and extract the motivational examples reported in RQ1 of the paper.
+5. `rqs` contains the code and the data to replicate the experiments described in the related paper.
 
 ## Setup
 

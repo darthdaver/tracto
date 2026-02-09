@@ -1,0 +1,308 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "oracles dataset schema",
+  "type": "array",
+  "items": { "$ref": "#/$defs/item"},
+  "$defs": {
+    "item": {
+      "type": "object",
+      "description": "An object representing the information about a test class, the corresponding focal class, and the oracles datapoints (pairs of test prefixes and target oracles) extracted from the test cases of the original test class",
+      "properties": {
+        "testClass": { "$ref": "#/$defs/testClass" },
+        "focalClass": { "$ref": "#/$defs/class" },
+        "datapoints": {
+          "type": "array",
+          "description": "A list of oracles data points (pairs of test prefixes defined within the test class and the corresponding target oracles)",
+          "items": { "$ref": "#/$defs/oracleDatapoint" }
+        }
+      }
+    },
+    "testClass": {
+      "type": "object",
+      "description": "The information related to the test class",
+      "properties": {
+        "identifier": {
+          "type": "string",
+          "description": "The name of the test class",
+          "examples": ["ClassNameTest"]
+        },
+        "packageIdentifier": {
+          "type": "string",
+          "description": "The fully qualified name of the package where the test class is located",
+          "examples": ["org.core.example.package"]
+        },
+        "superclasses": {
+          "type": "array",
+          "description": "A list of strings containing the fully qualified names of the extended classes",
+          "items": {
+            "type": "string",
+            "description": "The fully qualified name of the extended class",
+            "examples": ["org.core.example.SuperClass"]
+          }
+        },
+        "interfaces": {
+          "type": "array",
+          "description": "A list of strings containing the fully qualified names of the implemented interfaces",
+          "items": {
+            "type": "string",
+            "description": "The fully qualified name of the interfaces implemented interface",
+            "examples": ["org.core.example.Interface"]
+          }
+        },
+        "filePath": {
+          "type": "string",
+          "description": "The full path to the test class file, within the project",
+          "examples": ["/src/main/java/org/example/path/to/ClassNameTest.java"]
+        },
+        "prefixFilePath": {
+          "type": "string",
+          "description": "The full path to the test prefix class file, within the project",
+          "examples": ["/src/main/java/org/example/path/to/ClassNameTestPrefix.java"]
+        },
+        "fields": {
+          "type": "array",
+          "description": "A list of declared fields in the test class",
+          "items": { "$ref": "#/$defs/field" }
+        },
+        "auxiliaryMethods": {
+          "type": "array",
+          "description": "A list of methods defined in the test class to support the test cases defined within it (like mock generators or methods with assertions shared among the different test cases",
+          "items": {
+            "$ref": "#/$defs/callable"
+          }
+        },
+        "setupTearDownMethods": {
+          "type": "array",
+          "description": "A list of methods defined in the test class to support the test cases setup and tear down",
+          "items": {
+            "$ref": "#/$defs/callable"
+          }
+        },
+        "testCases": {
+          "type": "array",
+          "description": "A list of methods representing the test cases defined within the test class",
+          "items": {
+            "$ref": "#/$defs/callable"
+          }
+        }
+      }
+    },
+    "field": {
+      "type": "object",
+      "description": "The information related to a field defined within a class",
+      "properties": {
+        "identifier": {
+          "type": "string",
+          "description": "The name of the field"
+        },
+        "fullSignature": {
+          "type": "string",
+          "description": "The full signature of the field",
+          "examples": ["String example = \"Example\";"]
+        },
+        "declarator": {
+          "type": "string",
+          "description": "The declarator part of the full signature of the field",
+          "examples": ["example = \"Example\""]
+        },
+        "modifiers": {
+          "type": "array",
+          "description": "A list with the modifiers that identify the field",
+          "items": {
+            "type": "string",
+            "description": "The keyword representing the modifier",
+            "examples": ["public", "private", "final"]
+          }
+        },
+        "type": {
+          "$ref": "#/$defs/referenceType"
+        }
+      }
+    },
+    "callable": {
+      "type": "object",
+      "description": "The information related to a callable object (a method - even a test case - or a constructor)",
+      "properties": {
+        "identifier": {
+          "type": "string",
+          "description": "The name of the method or constructor"
+        },
+        "annotations": {
+          "type": "array",
+          "description": "A list of annotations identifying the method or constructor",
+          "items": {
+            "type": "string",
+            "description": "The annotation name",
+            "examples": ["@Test"]
+          }
+        },
+        "modifiers": {
+          "type": "array",
+          "description": "A list with the modifiers that identify the method",
+          "items": {
+            "type": "string",
+            "description": "The keyword representing the modifier",
+            "examples": ["public", "private", "final"]
+          }
+        },
+        "signature": {
+          "type": "string",
+          "description": "The signature of the method or constructor",
+          "examples": ["void methodName()"]
+        },
+        "thrownExceptions": {
+          "type": "array",
+          "description": "The list of exceptions that the methods can throw",
+          "items": {
+            "type": "string",
+            "description": "The name of the exception class"
+          }
+        },
+        "parameters": {
+          "type": "array",
+          "description": "The list of parameters of the method or constructor",
+          "items": {
+            "type": "object",
+            "description": "The information related to the parameter object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "The name of the parameter"
+              },
+              "type": {
+                "$ref": "#/$defs/referenceType"
+              }
+            }
+          }
+        },
+        "returnType": {
+          "$ref": "#/$defs/referenceType"
+        },
+        "javadoc": {
+          "type": "string",
+          "description": "The javadoc of the method or constructor. Can be empty"
+        },
+        "body": {
+          "type": "string",
+          "description": "The signature and the body of the method",
+          "examples": ["void methodName(){\\n    var response = MockResponse.ok(\\\"Hi Mom\\\");\\n    assertEquals(200, response.getStatus());\\n}"]
+        },
+        "invokedMethods": {
+          "type": ["array", "null"],
+          "description": "The list of invoked methods within the current method or constructor. Can be set to null to avoid infinite recursion",
+          "items": {
+            "$ref": "#/$defs/callable"
+          }
+        }
+      }
+    },
+    "referenceType": {
+      "type": "object",
+      "description": "The information related to the type of a field or a method parameter, or the return type of a method",
+      "properties": {
+        "identifier": {
+          "type": "string",
+          "description": "The name of the type"
+        },
+        "fullyQualifiedIdentifiers": {
+          "type": "array",
+          "description": "A list containing the fully qualified identifier of the type. The fully qualified identifier is a single value, but if the algorithm is not able to retrieve it with Java Parser and Symbol Solver, it looks at any class with the same name within the project (this can lead to multiple values).",
+          "items": {
+            "type": "string",
+            "description":"The fully qualified name of the related type",
+            "examples": ["java/lang/String"]
+          }
+        },
+        "isVoid": {
+          "type": "boolean",
+          "description": "If the current type refers to a return type of a method, it could be a void type: in this case the boolean value is set to True"
+        },
+        "isPrimitive": {
+          "type": "boolean",
+          "description": "If the type is a primitive type, like `int`, `float`, `bool`"
+        },
+        "isGeneric": {
+          "type": "boolean",
+          "description": "If the type is a generic (like <T>, <R>)"
+        },
+        "arrayLevel": {
+          "type": "integer",
+          "description": "It the type represents an array (1) or a matrix (2) or a complex n-dimensional array (n). The value is set to 0 if the type is not an array."
+        },
+        "clazzes": {
+          "type": "array",
+          "description": "A list containing the information about the reference class of the given type. The class is a single object, but if the algorithm is not able to retrieve it with Java Parser and Symbol Solver, it looks at any class with the same name within the project (this can lead to multiple values).",
+          "items": {
+            "$ref": "#/$defs/class"
+          }
+        }
+      }
+    },
+    "class": {
+      "type": "object",
+      "description": "The information related to the source class (like the focal class)",
+      "properties": {
+        "identifier": {
+          "type": "string",
+          "description": "The name of the source class",
+          "examples": ["ClassName"]
+        },
+        "packageIdentifier": {
+          "type": "string",
+          "description": "The fully qualified name of the package where the source class is located",
+          "examples": ["org.core.example.package"]
+        },
+        "superclasses": {
+          "type": "array",
+          "description": "A list of strings containing the fully qualified names of the extended classes",
+          "items": {
+            "type": "string",
+            "description": "The fully qualified name of the extended class",
+            "examples": ["org.core.example.SuperClass"]
+          }
+        },
+        "interfaces": {
+          "type": "array",
+          "description": "A list of strings containing the fully qualified names of the implemented interfaces",
+          "items": {
+            "type": "string",
+            "description": "The fully qualified name of the interfaces implemented interface",
+            "examples": ["org.core.example.Interface"]
+          }
+        },
+        "filePath": {
+          "type": "string",
+          "description": "The full path to the class file, within the project",
+          "examples": ["/src/main/java/org/example/path/to/Class.java"]
+        },
+        "fields": {
+          "type": "array",
+          "description": "A list of declared fields in the source class",
+          "items": { "$ref": "#/$defs/field" }
+        },
+        "constructors": {
+          "type": "array",
+          "description": "A list of constructors defined in the source class to instanciate an object",
+          "items": { "$ref": "#/$defs/callable" }
+        },
+        "methods": {
+          "type": "array",
+          "description": "A list of methods defined in the source class",
+          "items": { "$ref": "#/$defs/callable" }
+        }
+      }
+    },
+    "oracleDatapoint": {
+      "type": "object",
+      "description": "The information related to an oracle datapoint (a pair of test prefix and target oracle)",
+      "properties": {
+        "testPrefix": { "$ref": "#/$defs/callable" },
+        "target": {
+          "type": "string",
+          "description": "The target oracle",
+          "examples": ["assertEquals(200, response.getStatus());"]
+        }
+      }
+    }
+  }
+}
