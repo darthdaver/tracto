@@ -216,9 +216,11 @@ public class TestUtils {
             TypeDeclaration testClass = cu.getPrimaryType().get();
             // Get junit version used in the test class
             JUnitVersion junitVersion = TestUtils.getJunitVersion(cu.getImports());
-
+            // Get collection of variables defined in the test class, as hash set
             HashMap<String, VariableDeclarator> classVariables = JavaParserUtils.collectExistingVariables(new HashMap<>(), testClass.getFields(), List.of());
-
+            // Add import for all the assertion types at the beginning of the test class, depending on the JUnit version
+            // used within the project. This is necessary when the LLMs approaches will generate target assertions not
+            // known a priori
             if (junitVersion == JUnitVersion.JUNIT4) {
                 cu.addImport("static org.junit.Assert.*");
             } else {
@@ -1429,9 +1431,9 @@ public class TestUtils {
                         idx += result.getValue1().size();
                     }
                 } else {
-                    // Parse the while statement and split the test case into multiple test cases
+                    // Parse the try statement and split the test case into multiple test cases
                     Statement tryStmtBody = tryStmt.getTryBlock();
-                    // Clone the while statement and set the body to an empty block
+                    // Clone the try statement and set the body to an empty block
                     TryStmt tryStmtClone = new TryStmt();
                     tryStmtClone.setResources(tryStmt.getResources());
                     // Add temporary catch clause to the cloned try statement to avoid parsing problems

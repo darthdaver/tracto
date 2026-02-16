@@ -1,12 +1,10 @@
 package star.tracto.preprocessing;
 
-import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.javatuples.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import star.tracto.SymbolicModule;
-import star.tracto.data.enums.NamingConvention;
 import star.tracto.data.records.OraclesDatasetConfig;
 import star.tracto.data.records.RepositoryTrack;
 import star.tracto.preprocessing.components.OracleDatapoint;
@@ -17,13 +15,9 @@ import star.tracto.preprocessing.utils.TestUtils;
 import star.tracto.utils.FilesUtils;
 import star.tracto.utils.javaParser.JavaParserUtils;
 
-import javax.swing.text.html.Option;
-import java.io.BufferedWriter;
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -35,6 +29,34 @@ public class OraclesDataset {
 
     private static final Logger logger = LoggerFactory.getLogger(OraclesDataset.class);
 
+    /**
+     * Generates the dataset of target oracles from a given Java project. The method retrieves the test classes defined
+     * within the project and the corresponding focal classes. For each match (test class <--> focal class), the method
+     * collects the list of test cases defined in the test class and process them to extract the original oracles and create
+     * pairs of test prefixes and target oracles. The method creates a list of oracle datapoints {@link OracleDatapoint}
+     * saved in a JSON file in the output oath (provided as argument, @code outputPath).
+     *
+     * The method can generate both training and inference datasets of oracles. If the path to the @code repoTrackPath is
+     * not empty, the method will operate to generate a dataset for inference scope, otherwise for training. The @code repoTrackPath
+     * contains an optional path to a JSON object that contains all the information about the evolution of the repository
+     * of the java projects, in terms of commits. It keeps track of the test cases added/modified to the project after a
+     * given date. At inference time, this information is important to prevent data leakage issues during an experimental
+     * evaluation.
+     *
+     * The configuration file passed to the method through the {@code configPath} argument, defines customizable parameters
+     * on how to process the test cases.
+     *
+     * Before to process the test cases in the test classes, the method normalizes the test cases adding additional oracles
+     * extracted from methods called by the test cases that contains general parametric assertions shared among different test cases.
+     *
+     * @param repoRootPath The path to the root of the Java repository to process
+     * @param repoTrackPath The optional path to the repo track file. Empty if the method operates in training generation mode.
+     * @param configPath The path to a file with information about how to process the test cases and test oracles.
+     * @param outputPath The path where to save the generated dataset of oracles.
+     * @param projectIdentifier The identifier of the Java project to process
+     * @param classpath The classpath of the project.
+     * @throws IOException in case of errors when reading project files
+     */
     public static void generate(Path repoRootPath, Optional<Path> repoTrackPath, Path configPath, Path outputPath, String projectIdentifier, String classpath) throws IOException {
         // Update classpath with the libraries paths
         List<Path> librariesPaths = SymbolicModule.findLibrariesPaths(repoRootPath);
@@ -43,7 +65,6 @@ public class OraclesDataset {
         }
         // Load configuration file
         OraclesDatasetConfig oraclesDatasetConfig = FilesUtils.readJSON(configPath, OraclesDatasetConfig.class);
-
         Optional<RepositoryTrack> repoTrack = repoTrackPath.isPresent() ? Optional.of(FilesUtils.readJSON(repoTrackPath.get(), RepositoryTrack.class)) : Optional.empty();
         // Define test mapping hash map
         HashMap<Path, Path> mappedTests = new HashMap<>();
@@ -68,7 +89,7 @@ public class OraclesDataset {
         List<Path> testFilePaths = repoTrack.isPresent() ?
                 repoTrack.get().track().keySet().stream().map(testClassPath -> Paths.get(repoRootPath.toString(), testClassPath)).collect(Collectors.toList())
                 :
-                JavaFileCollector.collectTestFilePaths(repoRootPath);;
+                JavaFileCollector.collectTestFilePaths(repoRootPath);
         // Collect java source files within the repository
         List<Path> sourceFilePaths = JavaFileCollector.collectSourceFilePaths(repoRootPath, testFilePaths);
         // Collect the java classes excluded from the test and source files
