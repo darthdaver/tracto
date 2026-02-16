@@ -16,7 +16,8 @@ source "${current_dir}/../../utils/bash/global_variables.sh"
 source "${current_dir}/utils/local_variables.sh"
 source "${UTILS_DIR}/bash/init_sdkman.sh"
 
-GITHUB_REPOS_LIST_FILE=${1:-$GITHUB_REPOS_LIST_FILE}
+mode=${1:-"training"}
+GITHUB_REPOS_LIST_FILE=${2:-$GITHUB_REPOS_LIST_FILE}
 resolve_deps=${2:-"false"}
 
 # Collect the raw oracles dataset repo ids

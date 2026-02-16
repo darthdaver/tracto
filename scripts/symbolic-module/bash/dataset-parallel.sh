@@ -16,8 +16,9 @@ fi
 
 max_jobs=${1:-10}
 split_dir=${2:-"${RESOURCES_DIR}/github-repos-split"}
-bash_script_name=${3:-"oracles-dataset.sh"}
-resolve_deps=${4:-"false"}
+mode=${3:-"training"}
+bash_script_name=${4:-"oracles-dataset.sh"}
+resolve_deps=${5:-"false"}
 num_files=$(find "${split_dir}" -type f | wc -l)
 running_pids=()
 current_index=0
@@ -37,7 +38,7 @@ check_running_processes() {
 
 while (( current_index < num_files )); do
     if (( ${#running_pids[@]} < max_jobs )); then
-        nohup bash "${current_dir}/${bash_script_name}" "${split_dir}/split_${current_index}.csv" "${resolve_deps}"  2>&1 &
+        nohup bash "${current_dir}/${bash_script_name}" "${mode}" "${split_dir}/split_${current_index}.csv" "${resolve_deps}"  2>&1 &
         last_pid=$!
         echo "$last_pid" > "pids/pid-${current_index}.txt"
         running_pids+=("$last_pid")
