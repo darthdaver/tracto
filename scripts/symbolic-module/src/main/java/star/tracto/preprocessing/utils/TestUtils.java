@@ -1948,12 +1948,11 @@ public class TestUtils {
                 } else if (statement.isSwitchStmt()) {
                     throw new UnsupportedOperationException("Switch statement not supported yet.");
                 } else if (statement.isTryStmt()) {
-                    // Convert the try/catch statement into a plain assertion (assertThrows)
                     // Get the try statement
                     TryStmt tryStmt = statement.asTryStmt();
-                    // Parse the while statement and split the test case into multiple test cases
+                    // Parse the try statement and split the test case into multiple test cases
                     Statement tryStmtBody = tryStmt.getTryBlock();
-                    // Clone the while statement and set the body to an empty block
+                    // Clone the try statement and set the body to an empty block
                     TryStmt tryStmtClone = new TryStmt();
                     BlockStmt tryStmtBodyClone = new BlockStmt();
                     tryStmtClone.setResources(tryStmt.getResources());
@@ -2455,12 +2454,14 @@ public class TestUtils {
      * Check that the try statement respect the rules for the split test cases.
      * The rules are:
      * <ul>
-     *     <li>Only one catch clause is allowed, if the fail() assertion is in the try statement (if you test a method,
-     *     you expect only a specific exception to be thrown under a particular condition)</li>
+     *     <li>Only one catch clause is allowed (if you test a method, you expect only a specific exception to be thrown
+     *     under a particular condition). The method do not consider parametric tests.</li>
      *     <li>If the {@code TryStmt} contains a catch clause, the exception captured by the catch clause must be unique
      *     (no union type are admitted)</li>
      *     <li>If the {@code TryStmt} contains a catch clause, the last statement in the try block must be a method call
      *     or an object creation invocation</li>
+     *     <li>The last statement in the try block must be a fail() method (good practise is that test fails if the exception
+     *     is not thrown.</>
      * </ul>
      *
      *
@@ -2479,6 +2480,8 @@ public class TestUtils {
             if (catchesClauses.size() > 1 && failPositionAssertion.get() == BlockStatementsType.TRY) {
                 throw new IllegalStateException("Unexpected number of catch clauses in try statement within test case " + testCaseName);
             }
+        } else {
+            throw new IllegalStateException("Unexpected try/catch without fail() statement at the end of the try block in test case " + testCaseName);
         }
         // Check the last statement in the try block (must be a method call, an object creation invocation or a fail
         // assertion)
@@ -2562,6 +2565,7 @@ public class TestUtils {
         CatchClause catchClause = tryStmt.getCatchClauses().get(0);
         // Get the exception class from the catch clause
         com.github.javaparser.ast.type.Type exceptionClass = catchClause.getParameter().getType();
+        String exceptionVarName = catchClause.getParameter().getNameAsString();
         // Find the position of the fail method call in the try-catch block
         Optional<BlockStatementsType> failAssertionPosition = findFailMethodCall(tryStmt);
 
@@ -2617,7 +2621,7 @@ public class TestUtils {
             assertThrowsCall.setArguments(arguments);
             VariableDeclarator variableDeclarator = new VariableDeclarator(
                     new ClassOrInterfaceType(null, exceptionClass.asString()),
-                    "e" + variableID++,
+                    exceptionVarName + variableID++,
                     assertThrowsCall
             );
             VariableDeclarationExpr variableDeclarationExpr = new VariableDeclarationExpr(variableDeclarator);
@@ -2650,7 +2654,7 @@ public class TestUtils {
     /**
      * Find the fail method call in the try statement. The method returns {@code BlockStatementsType.TRY} if the fail
      * method call is found in the try block, {@code BlockStatementsType.CATCH} if the fail method call is found in the
-     * catch block. If the fail method is not found an {@code IllegalStateException} is thrown. The method assumes that
+     * catch block. If the fail method is not found an empty optional is returned. The method assumes that
      * the try-catching block contains only one catch clause.
      *
      * @param tryStmt the try statement to check
