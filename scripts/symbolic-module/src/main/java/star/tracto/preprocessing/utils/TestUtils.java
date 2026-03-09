@@ -40,6 +40,7 @@ import star.tracto.utils.javaParser.visitors.statements.helper.StmtVisitorHelper
 import javax.swing.plaf.nimbus.State;
 import javax.swing.text.html.Option;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -217,7 +218,7 @@ public class TestUtils {
             // Get junit version used in the test class
             JUnitVersion junitVersion = TestUtils.getJunitVersion(cu.getImports());
             // Get collection of variables defined in the test class, as hash set
-            HashMap<String, VariableDeclarator> classVariables = JavaParserUtils.collectExistingVariables(new HashMap<>(), testClass.getFields(), List.of());
+            HashMap<String, VariableDeclarator> classVariables = JavaParserUtils.collectExistingVariables(new HashMap<>(), testClass.getFields(), List.of(), ClassOrInterfaceDeclaration.class, 0);
             // Add import for all the assertion types at the beginning of the test class, depending on the JUnit version
             // used within the project. This is necessary when the LLMs approaches will generate target assertions not
             // known a priori
@@ -296,7 +297,8 @@ public class TestUtils {
                             normalizedTestCaseBody,
                             auxiliaryMethods,
                             integratedAuxiliaryMethods,
-                            JavaParserUtils.collectExistingVariables(testCaseExistingVariables, originalTestCase.getBody().get())
+                            JavaParserUtils.collectExistingVariables(testCaseExistingVariables, originalTestCase.getBody().get(), MethodDeclaration.class,0),
+                            junitVersion
                     );
 
                     if (thrownedException) {
@@ -1321,317 +1323,9 @@ public class TestUtils {
                 //     idx += result.getValue1().size();
                 // }
             } else if (statement.isTryStmt()) {
-                // Convert the try/catch statement into a plain assertion (assertThrows)
-                // Get the try statement
-                TryStmt tryStmt = statement.asTryStmt();
-
-                if (config.tryCatchFinallyStrategy() == TryCatchFinallyStrategyType.ASSERT_THROW && tryStmt.getResources().size() == 0) {
-                    // Check the try statement
-                    checkTryStmt(testCasePrefixName, tryStmt);
-                    // Check if the try statement contains a fail method call and, in that case, update
-                    // the number of assertions (a fail() assertion in the catch block does not split the test,
-                    // because it is removed in the current approach)
-                    if (tryStmt.getCatchClauses().size() > 0) {
-                        Optional<BlockStatementsType> failAssertionPosition = findFailMethodCall(tryStmt);
-                        if (failAssertionPosition.isPresent() && failAssertionPosition.get() == BlockStatementsType.CATCH) {
-                            numberOfAssertions--;
-                        }
-                    }
-                    // Flatten the try statement into a block statement
-                    BlockStmt flatTryStmt = flatTryStmt(junitVersion, tryStmt);
-                    // Parse the statements of the synchronized body and split it into multiple test cases
-                    Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> resultTry = parseSplitTestStatementsBlock(
-                            config,
-                            junitVersion,
-                            new ArrayList<>(flatTryStmt.getStatements()),
-                            splitTestCase,
-                            idx,
-                            auxiliaryMethods,
-                            blockStatementsType,
-                            exceptionsToThrow,
-                            recursionLevel + 1
-                    );
-                    // Update the split test case with the last generated from the synchronized statement
-                    splitTestCase = resultTry.getValue0();
-                    // Update the split test prefix
-                    splitTestCasePrefix = splitTestCase.clone();
-                    // Update the split test case body
-                    splitTestCaseBody = splitTestCase.getBody().get();
-                    // Add the split test cases generated from the synchronized statement to the list
-                    splitTestCases.addAll(resultTry.getValue1());
-                    // Add the split test prefixes generated from the synchronized statement to the list
-                    splitTestPrefixes.addAll(resultTry.getValue2());
-                    // Update idx of the split tests
-                    idx += resultTry.getValue1().size();
-
-                    // Remove the fake catch clause from the cloned try statement
-                    TryStmt lastsplitTestTry = JavaParserUtils.getLastStatementTypeOccurrence(splitTestCaseBody, TryStmt.class).get().asTryStmt();
-                    lastsplitTestTry.setCatchClauses(new NodeList<>());
-
-                    for (CatchClause catchClause : tryStmt.getCatchClauses()) {
-                        // Parse the statements of the catch block and split it into multiple test cases
-                        Statement catchStmtBody = catchClause.getBody();
-                        // Clone the catch statement and set the body to an empty block
-                        CatchClause catchClauseClone = catchClause.clone();
-                        catchClauseClone.setBody(new BlockStmt());
-                        addCatchClause(catchClauseClone, splitTestCaseBody);
-                        // Parse the statements of the catch body and split it into multiple test cases
-                        Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> resultCatch = parseSplitTestStatementsBlock(
-                                config,
-                                junitVersion,
-                                new ArrayList<>(Arrays.asList(catchStmtBody)),
-                                splitTestCase,
-                                idx,
-                                auxiliaryMethods,
-                                BlockStatementsType.CATCH,
-                                exceptionsToThrow,
-                                recursionLevel + 1
-                        );
-                        // Update the split test case with the last generated from the catch statement
-                        splitTestCase = resultCatch.getValue0();
-                        // Update the split test prefix
-                        splitTestCasePrefix = splitTestCase.clone();
-                        // Update the split test case body
-                        splitTestCaseBody = splitTestCase.getBody().get();
-                        // Add the split test cases generated from the catch statement to the list
-                        splitTestCases.addAll(resultCatch.getValue1());
-                        // Add the split test prefixes generated from the catch statement to the list
-                        splitTestPrefixes.addAll(resultCatch.getValue2());
-                        // Update idx of the split tests
-                        idx += resultCatch.getValue1().size();
-                    }
-
-                    if (tryStmt.getFinallyBlock().isPresent()) {
-                        splitTestCasePrefix = splitTestCase.clone();
-                        // Add the cloned while statement to the current split test case body
-                        addStatement(new BlockStmt(), splitTestCaseBody, BlockStatementsType.FINALLY);
-                        // Parse the statements of the try block and split it into multiple test cases
-                        Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
-                                config,
-                                junitVersion,
-                                new ArrayList<>(Arrays.asList(tryStmt.getFinallyBlock().get())),
-                                splitTestCase,
-                                idx,
-                                auxiliaryMethods,
-                                BlockStatementsType.FINALLY,
-                                exceptionsToThrow,
-                                recursionLevel + 1
-                        );
-                        // Update the split test case with the last generated from the while statement
-                        splitTestCase = result.getValue0();
-                        // Update the split test prefix
-                        splitTestCasePrefix = splitTestCase.clone();
-                        // Update the split test case body
-                        splitTestCaseBody = splitTestCase.getBody().get();
-                        // Add the split test cases generated from the while statement to the list
-                        splitTestCases.addAll(result.getValue1());
-                        // Add the split test prefixes generated from the while statement to the list
-                        splitTestPrefixes.addAll(result.getValue2());
-                        // Update idx of the split tests
-                        idx += result.getValue1().size();
-                    }
-                } else {
-                    // Parse the try statement and split the test case into multiple test cases
-                    Statement tryStmtBody = tryStmt.getTryBlock();
-                    // Clone the try statement and set the body to an empty block
-                    TryStmt tryStmtClone = new TryStmt();
-                    tryStmtClone.setResources(tryStmt.getResources());
-                    // Add temporary catch clause to the cloned try statement to avoid parsing problems
-                    // The fake catch close contains a block comment with a specific label, to easily remove it later
-                    com.github.javaparser.ast.type.Type type = new ClassOrInterfaceType(null, "Exception");
-                    Parameter param = new Parameter(type, "e");
-                    CatchClause fakeCatchClause = new CatchClause(param, new BlockStmt());
-                    fakeCatchClause.setComment(new BlockComment(TestUtils.FAKE_ELEMENT_LABEL));
-                    // Replace the catch clauses from the cloned try statement with the temporary fake catch clause
-                    tryStmtClone.setCatchClauses(new NodeList<>(fakeCatchClause));
-                    if (config.tryCatchFinallyStrategy() == TryCatchFinallyStrategyType.FLAT) {
-                        BlockStmt newSplitTestCaseBody = splitTestCaseBody.clone();
-                        tryStmtClone.setTryBlock((BlockStmt) tryStmtBody);
-                        splitTestCasePrefix = splitTestCase.clone();
-                        addStatement(tryStmtClone, newSplitTestCaseBody, blockStatementsType);
-                        TryStmt tryStmtFilteredStmtClone = tryStmtClone.clone();
-
-                        ExpressionStmtVisitor exprStmtCollector = new ExpressionStmtVisitor();
-                        List<ExpressionStmt> exprStmts = exprStmtCollector.visit(tryStmtFilteredStmtClone);
-
-                        for (ExpressionStmt exprStmt : exprStmts) {
-                            if (exprStmt.getExpression().isMethodCallExpr()) {
-                                MethodCallExpr methodCallExpr = exprStmt.getExpression().asMethodCallExpr();
-                                if (JUnitAssertionType.isJUnitAssertion(methodCallExpr.getNameAsString())) {
-                                    if (methodCallExpr.getNameAsString().contains("fail")) {
-                                        Optional<Node> parentNode = exprStmt.getParentNode();
-                                        while (parentNode.isPresent()) {
-                                            if (parentNode.get() instanceof BlockStmt) {
-                                                BlockStmt blockStmt = (BlockStmt) parentNode.get();
-                                                blockStmt.remove(exprStmt);
-                                                Statement fakeStmt = new ExpressionStmt(new MethodCallExpr("fail", new StringLiteralExpr(THROW_EXCEPTION_LABEL)));
-                                                blockStmt.addStatement(fakeStmt);
-                                                //Statement fakeStmt = new AssertStmt(new StringLiteralExpr(FAKE_ELEMENT_LABEL), new StringLiteralExpr(FAKE_ELEMENT_LABEL));
-                                                //fakeStmt.addOrphanComment(new LineComment(THROW_EXCEPTION_LABEL));
-                                                //addStatement(fakeStmt, splitTestCaseBody, blockStatementsType);
-                                                break;
-                                            }
-                                            if (parentNode.get() instanceof LambdaExpr) {
-                                                logger.error("Fail method call within lambda expression, not supported");
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        List<Statement> tryResourcesStmts = tryStmt.getResources().stream().map(r -> new ExpressionStmt(r)).collect(Collectors.toList());
-                        for(Statement resource: tryResourcesStmts) {
-                            splitTestCasePrefix = splitTestCase.clone();
-                            addStatement(resource, splitTestCaseBody, blockStatementsType);
-                        }
-
-                        NodeList<ReferenceType> clausesExceptions = new NodeList<>(exceptionsToThrow);
-                        for (CatchClause catchClause : tryStmt.getCatchClauses()) {
-                            // Get the exception type of the catch clause
-                            if (catchClause.getParameter().getType().isReferenceType()) {
-                                // Add the exception type to the list of exceptions to thrown
-                                clausesExceptions.add(catchClause.getParameter().getType().asReferenceType());
-                            } else {
-                                logger.error("Catch clause parameter type is not a reference type");
-                            }
-                        }
-
-                        // Parse the statements of the try block and split it into multiple test cases
-                        Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> resultTry = parseSplitTestStatementsBlock(
-                                config,
-                                junitVersion,
-                                new ArrayList<>(tryStmtFilteredStmtClone.getTryBlock().getStatements()),
-                                splitTestCase,
-                                idx,
-                                auxiliaryMethods,
-                                blockStatementsType,
-                                clausesExceptions,
-                                recursionLevel + 1
-                        );
-                        // Update the split test case with the last generated from the try statement
-                        splitTestCase = resultTry.getValue0();
-                        // Update the split test prefix
-                        splitTestCasePrefix = splitTestCase.clone();
-                        // Update the split test case body
-                        splitTestCaseBody = splitTestCase.getBody().get();
-                        // Add the split test cases generated from the try statement to the list
-                        splitTestCases.addAll(resultTry.getValue1());
-                        // Add the split test prefixes generated from the try statement to the list
-                        splitTestPrefixes.addAll(resultTry.getValue2());
-                        // Update idx of the split tests
-                        idx += resultTry.getValue1().size();
-                        if (resultTry.getValue1().size() > 0) {
-                            if (config.splitStrategy() == SplitStrategyType.STATEMENT && splitTestCases.size() > 0) {
-                                MethodDeclaration lastAddedSplitTestCase = splitTestCases.get(splitTestCases.size() - 1);
-                                if (lastAddedSplitTestCase.getBody().get().equals(splitTestCaseBody)) {
-                                    continue;
-                                }
-                            }
-                        }
-                        splitTestCase.setBody(newSplitTestCaseBody);
-                        // Initialize a new split test case, starting from the body of the previous one
-                        MethodDeclaration newSplitTestCase = initializeSplitTestCase(splitTestCase, testCasePrefixName, exceptionsToThrow, idx);
-                        // Update the split test case with the new one
-                        splitTestCase = newSplitTestCase;
-                        // Get the body of the new split test case
-                        splitTestCaseBody = splitTestCase.getBody().orElseThrow();
-                    } else if (config.tryCatchFinallyStrategy() == TryCatchFinallyStrategyType.STANDARD || (config.tryCatchFinallyStrategy() == TryCatchFinallyStrategyType.ASSERT_THROW && tryStmt.getResources().size() > 0)) {
-                        splitTestCasePrefix = splitTestCase.clone();
-                        // Add the cloned while statement to the current split test case body
-                        addStatement(tryStmtClone, splitTestCaseBody, blockStatementsType);
-                        // Parse the statements of the try block and split it into multiple test cases
-                        Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> resultTry = parseSplitTestStatementsBlock(
-                                config,
-                                junitVersion,
-                                new ArrayList<>(Arrays.asList(tryStmtBody)),
-                                splitTestCase,
-                                idx,
-                                auxiliaryMethods,
-                                BlockStatementsType.TRY,
-                                exceptionsToThrow,
-                                recursionLevel + 1
-                        );
-                        // Update the split test case with the last generated from the while statement
-                        splitTestCase = resultTry.getValue0();
-                        // Update the split test prefix
-                        splitTestCasePrefix = splitTestCase.clone();
-                        // Update the split test case body
-                        splitTestCaseBody = splitTestCase.getBody().get();
-                        // Add the split test cases generated from the while statement to the list
-                        splitTestCases.addAll(resultTry.getValue1());
-                        // Add the split test prefixes generated from the while statement to the list
-                        splitTestPrefixes.addAll(resultTry.getValue2());
-                        // Update idx of the split tests
-                        idx += resultTry.getValue1().size();
-                    }
-                    // Remove the fake catch clause from the cloned try statement
-                    TryStmt lastsplitTestTry = JavaParserUtils.getLastStatementTypeOccurrence(splitTestCaseBody, TryStmt.class).get().asTryStmt();
-                    lastsplitTestTry.setCatchClauses(new NodeList<>());
-                    for (CatchClause catchClause : tryStmt.getCatchClauses()) {
-                        // Parse the statements of the catch block and split it into multiple test cases
-                        Statement catchStmtBody = catchClause.getBody();
-                        // Clone the catch statement and set the body to an empty block
-                        CatchClause catchClauseClone = catchClause.clone();
-                        catchClauseClone.setBody(new BlockStmt());
-                        addCatchClause(catchClauseClone, splitTestCaseBody);
-                        // Parse the statements of the catch body and split it into multiple test cases
-                        Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> resultCatch = parseSplitTestStatementsBlock(
-                                config,
-                                junitVersion,
-                                new ArrayList<>(Arrays.asList(catchStmtBody)),
-                                splitTestCase,
-                                idx,
-                                auxiliaryMethods,
-                                BlockStatementsType.CATCH,
-                                exceptionsToThrow,
-                                recursionLevel + 1
-                        );
-                        // Update the split test case with the last generated from the catch statement
-                        splitTestCase = resultCatch.getValue0();
-                        // Update the split test prefix
-                        splitTestCasePrefix = splitTestCase.clone();
-                        // Update the split test case body
-                        splitTestCaseBody = splitTestCase.getBody().get();
-                        // Add the split test cases generated from the catch statement to the list
-                        splitTestCases.addAll(resultCatch.getValue1());
-                        // Add the split test prefixes generated from the catch statement to the list
-                        splitTestPrefixes.addAll(resultCatch.getValue2());
-                        // Update idx of the split tests
-                        idx += resultCatch.getValue1().size();
-                    }
-
-                    if (tryStmt.getFinallyBlock().isPresent()) {
-                        splitTestCasePrefix = splitTestCase.clone();
-                        // Add the cloned while statement to the current split test case body
-                        addStatement(new BlockStmt(), splitTestCaseBody, BlockStatementsType.FINALLY);
-                        // Parse the statements of the try block and split it into multiple test cases
-                        Triplet<MethodDeclaration, List<MethodDeclaration>, List<MethodDeclaration>> result = parseSplitTestStatementsBlock(
-                                config,
-                                junitVersion,
-                                new ArrayList<>(Arrays.asList(tryStmt.getFinallyBlock().get())),
-                                splitTestCase,
-                                idx,
-                                auxiliaryMethods,
-                                BlockStatementsType.FINALLY,
-                                exceptionsToThrow,
-                                recursionLevel + 1
-                        );
-                        // Update the split test case with the last generated from the while statement
-                        splitTestCase = result.getValue0();
-                        // Update the split test prefix
-                        splitTestCasePrefix = splitTestCase.clone();
-                        // Update the split test case body
-                        splitTestCaseBody = splitTestCase.getBody().get();
-                        // Add the split test cases generated from the while statement to the list
-                        splitTestCases.addAll(result.getValue1());
-                        // Add the split test prefixes generated from the while statement to the list
-                        splitTestPrefixes.addAll(result.getValue2());
-                        // Update idx of the split tests
-                        idx += result.getValue1().size();
-                    }
-                }
+                // Try/Catch statements should not be present anymore after normalization
+                // from try/catch to assertThrows
+                throw new IllegalStateException("Try statement should not appear in a test after the normalization.");
             } else if (statement.isWhileStmt()) {
                 // Parse the while statement and split the test case into multiple test cases
                 Statement whileStmtBody = statement.asWhileStmt().getBody();
@@ -1725,6 +1419,23 @@ public class TestUtils {
         return new Triplet<>(splitTestCase, splitTestCases, splitTestPrefixes);
     }
 
+    /**
+     * The method normalizes a test cases according to the following policies:
+     * <ul>
+     *     <li></li>
+     * </ul>
+     *
+     * @param testClass
+     * @param originalTestCase
+     * @param statements
+     * @param currentBlockStmt
+     * @param auxiliaryMethods
+     * @param integratedAuxiliaryMethods
+     * @param existingVariables
+     * @param junitVersion
+     * @return
+     * @throws IllegalStateException
+     */
     private static boolean parseNormalizeTestStatementsBlock(
             TypeDeclaration testClass,
             MethodDeclaration originalTestCase,
@@ -1732,7 +1443,8 @@ public class TestUtils {
             BlockStmt currentBlockStmt,
             HashMap<String, MethodDeclaration> auxiliaryMethods,
             List<MethodDeclaration> integratedAuxiliaryMethods,
-            HashMap<String, VariableDeclarator> existingVariables
+            HashMap<String, VariableDeclarator> existingVariables,
+            JUnitVersion junitVersion
     ) throws IllegalStateException {
         boolean thrownedException = false;
         // Iterate over the statements of the original test case
@@ -1750,7 +1462,8 @@ public class TestUtils {
                             currentBlockStmt,
                             auxiliaryMethods,
                             integratedAuxiliaryMethods,
-                            existingVariables
+                            existingVariables,
+                            junitVersion
                     );
 
                 } else if (statement.isDoStmt()) {
@@ -1770,7 +1483,8 @@ public class TestUtils {
                             doStmtCloneBody,
                             auxiliaryMethods,
                             integratedAuxiliaryMethods,
-                            existingVariables
+                            existingVariables,
+                            junitVersion
                     );
                 } else if (statement.isExpressionStmt()) {
                     Expression exprStmt = statement.asExpressionStmt().getExpression();
@@ -1820,7 +1534,8 @@ public class TestUtils {
                                     lambdaBodyClone,
                                     auxiliaryMethods,
                                     integratedAuxiliaryMethods,
-                                    existingVariables
+                                    existingVariables,
+                                    junitVersion
                             );
                         }
                     } else if (exprStmt.isVariableDeclarationExpr()) {
@@ -1854,7 +1569,8 @@ public class TestUtils {
                             forEachCloneBody,
                             auxiliaryMethods,
                             integratedAuxiliaryMethods,
-                            existingVariables
+                            existingVariables,
+                            junitVersion
                     );
                 } else if (statement.isForStmt()) {
                     // Parse the for statement and split the test case into multiple test cases
@@ -1873,7 +1589,8 @@ public class TestUtils {
                             forStmtCloneBody,
                             auxiliaryMethods,
                             integratedAuxiliaryMethods,
-                            existingVariables
+                            existingVariables,
+                            junitVersion
                     );
                 } else if (statement.isIfStmt()) {
                     IfStmt ifStmt = statement.asIfStmt();
@@ -1909,7 +1626,7 @@ public class TestUtils {
                             IfStmt lastIfStmt = traverseIfElseStatement(ifStmtClone);
                             lastIfStmt.setElseStmt(ifStmtCloneBody);
                         }
-                        // Parse the statements of the if body and split it into multiple test cases
+                        // Parse the statements of the if-body and split it into multiple test cases
                         thrownedException = parseNormalizeTestStatementsBlock(
                                 testClass,
                                 originalTestCase,
@@ -1917,7 +1634,8 @@ public class TestUtils {
                                 ifStmtCloneBody,
                                 auxiliaryMethods,
                                 integratedAuxiliaryMethods,
-                                existingVariables
+                                existingVariables,
+                                junitVersion
                         );
                         // Update the if statement clone
                         ifStmtClone = JavaParserUtils.getLastStatementTypeOccurrence(currentBlockStmt, IfStmt.class)
@@ -1943,91 +1661,30 @@ public class TestUtils {
                             synchronizedStmtBodyClone,
                             auxiliaryMethods,
                             integratedAuxiliaryMethods,
-                            existingVariables
+                            existingVariables,
+                            junitVersion
                     );
                 } else if (statement.isSwitchStmt()) {
                     throw new UnsupportedOperationException("Switch statement not supported yet.");
                 } else if (statement.isTryStmt()) {
+                    // Convert the try/catch statement into a plain assertion (assertThrows)
                     // Get the try statement
                     TryStmt tryStmt = statement.asTryStmt();
-                    // Parse the try statement and split the test case into multiple test cases
-                    Statement tryStmtBody = tryStmt.getTryBlock();
-                    // Clone the try statement and set the body to an empty block
-                    TryStmt tryStmtClone = new TryStmt();
-                    BlockStmt tryStmtBodyClone = new BlockStmt();
-                    tryStmtClone.setResources(tryStmt.getResources());
-
-                    for (Expression expr: tryStmtClone.getResources()) {
-                        Map<String, String> varMapping = new HashMap<>();
-                        if (expr.isVariableDeclarationExpr()) {
-                            VariableDeclarationExpr varDecl = expr.asVariableDeclarationExpr();
-                            for (VariableDeclarator var : varDecl.getVariables()) {
-                                String varName = var.getNameAsString();
-                                if (!existingVariables.containsKey(varName)) {
-                                    existingVariables.put(varName, var);
-                                } else {
-                                    int i = 0;
-                                    while (existingVariables.containsKey(varName + "_" + i)) {
-                                        i++;
-                                    }
-                                    var.setName(varName + "_" + i);
-                                    existingVariables.put(varName + "_" + i, var);
-                                    varMapping.put(varName, varName + "_" + i);
-                                }
-                            }
-                            replaceVariables(tryStmtBody.asBlockStmt(), varMapping);
-                        }
-                    }
-
-                    tryStmtClone.setTryBlock(tryStmtBodyClone);
-                    NodeList<CatchClause> catchClausesClone = new NodeList<>();
-                    tryStmtClone.setCatchClauses(catchClausesClone);
-                    // Add the cloned while statement to the current block
-                    currentBlockStmt.addStatement(tryStmtClone);
+                    // Check the try statement
+                    checkTryStmt(originalTestCase.getNameAsString(), tryStmt);
+                    // Flatten the try statement into a block statement
+                    BlockStmt flatTryStmtBlock = flatTryStmt(junitVersion, tryStmt, existingVariables);
                     // Parse the statements of the try block and split it into multiple test cases
                     thrownedException = parseNormalizeTestStatementsBlock(
                             testClass,
                             originalTestCase,
-                            new ArrayList<>(Arrays.asList(tryStmtBody)),
-                            tryStmtBodyClone,
+                            new ArrayList<>(Arrays.asList(flatTryStmtBlock)),
+                            currentBlockStmt,
                             auxiliaryMethods,
                             integratedAuxiliaryMethods,
-                            existingVariables
+                            existingVariables,
+                            junitVersion
                     );
-                    for (CatchClause catchClause : tryStmt.getCatchClauses()) {
-                        // Parse the statements of the catch block and split it into multiple test cases
-                        Statement catchStmtBody = catchClause.getBody();
-                        // Clone the catch statement and set the body to an empty block
-                        CatchClause catchClauseClone = catchClause.clone();
-                        BlockStmt catchStmtBodyClone = new BlockStmt();
-                        catchClauseClone.setBody(catchStmtBodyClone);
-                        catchClausesClone.add(catchClauseClone);
-                        // Parse the statements of the catch body and split it into multiple test cases
-                        thrownedException = parseNormalizeTestStatementsBlock(
-                                testClass,
-                                originalTestCase,
-                                new ArrayList<>(Arrays.asList(catchStmtBody)),
-                                catchStmtBodyClone,
-                                auxiliaryMethods,
-                                integratedAuxiliaryMethods,
-                                existingVariables
-                        );
-                    }
-                    if (tryStmt.getFinallyBlock().isPresent()) {
-                        // Add the cloned while statement to the current split test case body
-                        BlockStmt finallyStmtBodyClone = new BlockStmt();
-                        tryStmtClone.setFinallyBlock(finallyStmtBodyClone);
-                        // Parse the statements of the try block and split it into multiple test cases
-                        thrownedException = parseNormalizeTestStatementsBlock(
-                                testClass,
-                                originalTestCase,
-                                new ArrayList<>(Arrays.asList(tryStmt.getFinallyBlock().get())),
-                                finallyStmtBodyClone,
-                                auxiliaryMethods,
-                                integratedAuxiliaryMethods,
-                                existingVariables
-                        );
-                    }
                 } else if (statement.isWhileStmt()) {
                     // Parse the while statement and split the test case into multiple test cases
                     Statement whileStmtBody = statement.asWhileStmt().getBody();
@@ -2045,7 +1702,8 @@ public class TestUtils {
                             whileStmtBodyClone,
                             auxiliaryMethods,
                             integratedAuxiliaryMethods,
-                            existingVariables
+                            existingVariables,
+                            junitVersion
                     );
                 } else {
                     // Add the statement to the current split test case body
@@ -2109,9 +1767,24 @@ public class TestUtils {
         });
     }
 
+    /**
+     * Integrates the statements of a method called within the original test case within the normalized version of
+     * the test case. The method invoked within the original test case is defined as the <strong>auxiliary method</strong>.
+     * The normalized version of the test case, where the statements of the {@code auxiliaryMethodInvoked} are integrated
+     * into its body is referenced by the {@code currentBlockStmt} parameter.
+     *
+     * @param testClass The test class where the original test case and the auxiliary method are defined.
+     * @param currentBlockStmt The statements block of the normalized version of the original test case
+     * @param auxiliaryMethodInvoked The method call expression referring to the auxiliary method to integrate within the
+     *                               normalized version.
+     * @param auxiliaryMethods The collection of auxiliary methods defined within the test class
+     * @param existingVariables The collection of global variables already defined within the test class and local variables
+     *                          already defined within the normalized version of the original test case
+     * @return The method declaration of the auxiliary method to integrate within the normalized test case
+     */
     private static Optional<MethodDeclaration> integrateAuxiliaryMethodIntoBlockStmt(TypeDeclaration testClass, BlockStmt currentBlockStmt, MethodCallExpr auxiliaryMethodInvoked, HashMap<String, MethodDeclaration> auxiliaryMethods, HashMap<String,VariableDeclarator> existingVariables) {
+        // Get the signature of the target auxiliary method
         String methodSignature = "";
-
         try {
             Optional<Node> resolvedMethod = auxiliaryMethodInvoked.resolve().toAst();
             if (resolvedMethod.isPresent()) {
@@ -2123,17 +1796,23 @@ public class TestUtils {
                 methodSignature = callableDeclaration.getSignature().asString();
             }
         }
+        // Check if the signature of the auxiliary method matches one in the dictionary
         if (auxiliaryMethods.containsKey(methodSignature)) {
+            // Get the method declaration of the auxiliary method
             MethodDeclaration auxiliaryMethodDeclaration = auxiliaryMethods.get(methodSignature);
-
+            // Check that the method does not define generics
             if (auxiliaryMethodDeclaration.getTypeParameters().size() > 0) {
                 logger.error("Auxiliary method with type parameters is not supported.");
                 return Optional.empty();
             }
-
+            // Get the body of the auxiliary method
             BlockStmt auxBody = auxiliaryMethodDeclaration.getBody().get();
+            // Check the presence and the position of the auxiliary method to verify if the body
+            // can be added to the main block statement
             ReturnStmtVisitor returnStmtCollector = new ReturnStmtVisitor();
             List<ReturnStmt> returnStmts = returnStmtCollector.visit(auxBody);
+            // In the current implementation, auxiliary methods with multiple return statements
+            // cannot be integrated to the block statement
             if (returnStmts.size() > 1) {
                 logger.error("Multiple return statements in the auxiliary method.");
                 return Optional.empty();
@@ -2142,8 +1821,9 @@ public class TestUtils {
                 ReturnStmt returnStmt = returnStmts.get(0);
                 Optional<Expression> returnExpr = returnStmt.getExpression();
                 if (returnExpr.isEmpty()) {
-                    logger.error("Empty return statement in the auxiliary method.");
-                    return Optional.empty();
+                    logger.error("Empty return statement in the auxiliary method. Removed.");
+                    auxBody.remove(returnStmt);
+                    //return Optional.empty();
                 }
                 if (!(auxBody.getStatements().getLast().get() == returnStmt)) {
                     logger.error("Return statement not at the end of the auxiliary method.");
@@ -2159,16 +1839,25 @@ public class TestUtils {
             Map<String, Expression> paramMapping = new HashMap<>();
             // Map variables defined both in the auxiliary method and in the main method
             Map<String, String> varMapping = new HashMap<>();
+            // Get the list of concrete arguments passed to the auxiliary method from the main method
             List<Expression> arguments = auxiliaryMethodInvoked.getArguments();
+            // Get the list of parameters defined in the signature of the auxiliary method, that receives the arguments
+            // from the main method
             List<Parameter> parameters = auxiliaryMethodDeclaration.getParameters();
-            // Check that the number of invocation arguments and the declaration parameters coincide
+            // Check that the number of arguments passed from the main method and the parameters
+            // declared in the signature of the auxiliary method coincide. The analysis also checks
+            // if the last parameter is a varargs (...), allowing multiple arguments to be grouped
+            // into a single array, as last parameter of the function. In this case the number of
+            // arguments and parameters can be different.
             boolean lastParamVarArgs = parameters.get(parameters.size() - 1).isVarArgs();
+            // Check if the last parameter of the auxiliary method is a varargs
             if (lastParamVarArgs) {
+                // Create and initialize a varargs expression
                 ArrayCreationExpr varArgsArray = new ArrayCreationExpr();
                 varArgsArray.setElementType(((Parameter) ((NodeList) parameters).getLast().get()).getType());
                 ArrayInitializerExpr varArgsInititalizer = new ArrayInitializerExpr();
                 NodeList<Expression> varArgs = new NodeList<>();
-
+                // Create a custom varargs
                 Optional<VariableDeclarator> varArgsDeclarator = Optional.empty();
                 String varArgsName = parameters.get(parameters.size() - 1).getNameAsString() + "STAR";
                 if (existingVariables.containsKey(varArgsName)) {
@@ -2178,36 +1867,47 @@ public class TestUtils {
                     }
                     varArgsName = varArgsName + "_" + i;
                 }
+                // Find the mapping between the varargs and single argument (array) or the set of values (passed to the
+                // auxiliary method and grouped into the last varargs parameter as an array
                 boolean found = false;
-
                 if (arguments.size() == parameters.size()) {
+                    // If the number of arguments is equal to the number of parameters, the last argument must be an array
+                    // or a single value that would be passed and inserted in the argvars as a list with a single value
+                    // Within this block, only the first case is managed. The second case is managed in the following for
+                    // loop (within the `if (!found)` statement)
                     Expression lastArgument = arguments.get(arguments.size() - 1);
                     // TODO: Check all the possible types of the last argument (for example methodCallExpr)
                     if (lastArgument.isNameExpr() && existingVariables.containsKey(lastArgument.toString())) {
                         found = true;
+                        // Initialize the custom varargs accordingly
                         varArgsDeclarator = Optional.of(new VariableDeclarator(existingVariables.get(lastArgument.asNameExpr().getNameAsString()).getType(), varArgsName, lastArgument.asNameExpr()));
                     }
                 }
-
+                // If the last argument passed to the auxiliary function is not a variable of type array previously defined
+                // within the main method, the arguments passed to the auxiliary methods must be a set of primitive values or
+                // object instantiated within the auxiliary method call
                 if (!found) {
+                    // Iterate over the arguments to collect the last ones collected by the varargs
                     for (int i = 0; i < arguments.size(); i++) {
+                        // The argument corresponding to the last parameter idx and any additional argument
+                        // passed to the method call is considered an element collected by the param varargs
                         if (i >= (parameters.size() - 1)) {
                             varArgs.add(arguments.get(i));
                         }
                     }
+                    // Initialize the custom varargs accordingly
                     varArgsInititalizer.setValues(varArgs);
                     varArgsArray.setInitializer(varArgsInititalizer);
                     varArgsDeclarator = Optional.of(new VariableDeclarator(new ArrayType(varArgsArray.getElementType()), varArgsName, varArgsArray));
                 }
-
-                if (!varArgsDeclarator.isPresent()) {
-                    throw new IllegalStateException("Unexpected var arg declarator not instantiated when managing var args!");
-                }
-
+                // Create an assign expression to define a variable that store the varargs collection, and add it as a
+                // statement to the normalized test case where the auxiliary method is integrated
                 AssignExpr assignExpr = new AssignExpr();
                 assignExpr.setTarget(new VariableDeclarationExpr(varArgsDeclarator.get().getType(),varArgsDeclarator.get().getNameAsString()));
                 assignExpr.setValue(varArgsDeclarator.get().getInitializer().get());
                 currentBlockStmt.addStatement(assignExpr);
+                // Create a reference between the original parameter name representing the varargs in the auxiliary method
+                // and the new variable name defined within the normalized version of the original test case
                 paramMapping.put(parameters.get(parameters.size() - 1).getNameAsString(), new NameExpr(varArgsName));
             } else {
                 if (arguments.size() != parameters.size() && !lastParamVarArgs) {
@@ -2215,12 +1915,24 @@ public class TestUtils {
                     return Optional.empty();
                 }
             }
-
-
+            // Map all the parameter names defined in the signature of the auxiliary method with the corresponding variable
+            // names of the arguments passed to the auxiliary method
+            // For example:
+            //      method call --> auxiliaryMethodName(arg1Name, arg2Name)
+            //      signature   --> public void auxiliaryMethodName(Type1 param1, Type2 param2);
+            //
+            // Mapping:
+            //      {
+            //          param1 --> arg1
+            //          param2 --> arg2
+            //      }
+            //
             for (int i = 0; i < parameters.size(); i++) {
+                // Check if the argument passed to a function is an executable, like a lambda function
+
                 if (parameters.get(i).getType().toString().equals("Executable")) {
                     String executableVarName = parameters.get(i).getNameAsString() + "_executable_STAR";
-                    VariableDeclarationExpr executableVarDeclExpr = new VariableDeclarationExpr(parameters.get(i).getType(), parameters.get(i).getNameAsString() + "_executable_STAR");
+                    VariableDeclarationExpr executableVarDeclExpr = new VariableDeclarationExpr(parameters.get(i).getType(), executableVarName);
                     AssignExpr executableVarDeclExprAssign = new AssignExpr();
                     executableVarDeclExprAssign.setTarget(executableVarDeclExpr);
                     executableVarDeclExprAssign.setValue(arguments.get(i));
@@ -2232,24 +1944,10 @@ public class TestUtils {
                     }
                 }
             }
-            // Map the original variables containing the same name of the variables
-            // defined in the auxiliary method
-            VariableDeclarationExprVisitor varDeclarationExprCollector = new VariableDeclarationExprVisitor();
-            List<VariableDeclarationExpr> auxVarDeclarationExprs = varDeclarationExprCollector.visit(auxBody);
-            auxVarDeclarationExprs.forEach(auxVarDecl -> {
-                auxVarDecl.getVariables().forEach(auxVar -> {
-                    if (existingVariables.containsKey(auxVar.getNameAsString())) {
-                        int i = 0;
-                        while (existingVariables.containsKey(auxVar.getNameAsString() + "_" + i)) {
-                            i++;
-                        }
-                        varMapping.put(auxVar.getNameAsString(), auxVar.getNameAsString() + "_" + i);
-                        existingVariables.put(auxVar.getNameAsString() + "_" + i, auxVar);
-                    } else {
-                        existingVariables.put(auxVar.getNameAsString(), auxVar);
-                    }
-                });
-            });
+            // Collect the local variable names defined wihtin the auxiliary method that must be renamed whe integrated
+            // within the test case
+            varMapping = collectVariableMapping(auxBody, existingVariables);
+            // Replace any occurrence of the old names with the new ones within the auxiliary block of statements
             replaceParams(clonedAuxBody, paramMapping);
             replaceVariables(clonedAuxBody, varMapping);
             // Add the cloned auxiliary method body to the main method body
@@ -2257,6 +1955,79 @@ public class TestUtils {
             return Optional.of(auxiliaryMethodDeclaration);
         }
         return Optional.empty();
+    }
+
+    /**
+     * Collects all the local variable definitions within a pending block of statements and checks if exist variables
+     * with the same name in the collection of already defined variables. If so, define a new name for the local variable
+     * and create a map between the old name and the new one. This method is useful when integrating a block of statements,
+     * like a method body, within another main block of statements (for example the block from where the body of the method
+     * to integrate is called) or in case of flat operations, like when try/catch/finally blocks are substituted with an
+     * {@code assertThrows} and flattened to be part of the main block.
+     *
+     * @param integratingBody the block of statements containing the definitions of local variables to check
+     * @param existingVariables the collection of variables already defined in the reference block
+     * @return a {@link HashMap} that maps the list of local variable to be redefined when integrated within the main
+     * corpus of statements. The key represents the original name of the local variable. The value represents the updated
+     * name of the local variable
+     */
+    private static Map<String, String> collectVariableMapping(BlockStmt integratingBody, HashMap<String, VariableDeclarator> existingVariables) {
+        HashMap<String, String> varMapping = new HashMap<>();
+        // Iterate over the list of variable defined and used within the auxiliary method to check if the integration
+        // within the normalized test case could create conflicts with variable with the same name already defined
+        // in the normalized statements block
+        VariableDeclarationExprVisitor varDeclarationExprCollector = new VariableDeclarationExprVisitor();
+        List<VariableDeclarationExpr> localVarDeclarationExprs = varDeclarationExprCollector.visit(integratingBody);
+        localVarDeclarationExprs.forEach(localVarDecl -> {
+            localVarDecl.getVariables().forEach(localVar -> {
+                // If the name of a variable defined within an auxiliary method is also defined within the
+                // normalized version, rename it
+                if (existingVariables.containsKey(localVar.getNameAsString())) {
+                    int i = 0;
+                    while (existingVariables.containsKey(localVar.getNameAsString() + "_" + i)) {
+                        i++;
+                    }
+                    varMapping.put(localVar.getNameAsString(), localVar.getNameAsString() + "_" + i);
+                    existingVariables.put(localVar.getNameAsString() + "_" + i, localVar);
+                } else {
+                    existingVariables.put(localVar.getNameAsString(), localVar);
+                }
+            });
+        });
+        return varMapping;
+    }
+
+    /**
+     * Collects the local variable definition within a single expression (if present) and checks if exist variables with
+     * the same name in the collection of already defined variables. If so, define a new name for the local variable
+     * and create a map between the old name and the new one. This method is useful when integrating an expression statement
+     * that defines a variable, within another main block of statements.
+     *
+     * @param expr the expression statement containing the definition of local variable, if any
+     * @param existingVariables the collection of variables already defined in the reference block
+     * @return a {@link HashMap} that maps the list of local variables to be redefined. The key represents the original name
+     * of the local variable. The value represents the updated name of the local variable
+     */
+    private static Map<String,String> collectVariableMapping(Expression expr, HashMap<String, VariableDeclarator> existingVariables) {
+        Map<String,String> varMapping = new HashMap<>();
+        if (expr.isVariableDeclarationExpr()) {
+            VariableDeclarationExpr varDecl = expr.asVariableDeclarationExpr();
+            for (VariableDeclarator var : varDecl.getVariables()) {
+                String varName = var.getNameAsString();
+                if (!existingVariables.containsKey(varName)) {
+                    existingVariables.put(varName, var);
+                } else {
+                    int i = 0;
+                    while (existingVariables.containsKey(varName + "_" + i)) {
+                        i++;
+                    }
+                    var.setName(varName + "_" + i);
+                    existingVariables.put(varName + "_" + i, var);
+                    varMapping.put(varName, varName + "_" + i);
+                }
+            }
+        }
+        return varMapping;
     }
 
     /**
@@ -2454,14 +2225,12 @@ public class TestUtils {
      * Check that the try statement respect the rules for the split test cases.
      * The rules are:
      * <ul>
-     *     <li>Only one catch clause is allowed (if you test a method, you expect only a specific exception to be thrown
-     *     under a particular condition). The method do not consider parametric tests.</li>
+     *     <li>Only one catch clause is allowed, if the fail() assertion is in the try statement (if you test a method,
+     *     you expect only a specific exception to be thrown under a particular condition)</li>
      *     <li>If the {@code TryStmt} contains a catch clause, the exception captured by the catch clause must be unique
      *     (no union type are admitted)</li>
      *     <li>If the {@code TryStmt} contains a catch clause, the last statement in the try block must be a method call
      *     or an object creation invocation</li>
-     *     <li>The last statement in the try block must be a fail() method (good practise is that test fails if the exception
-     *     is not thrown.</>
      * </ul>
      *
      *
@@ -2480,8 +2249,6 @@ public class TestUtils {
             if (catchesClauses.size() > 1 && failPositionAssertion.get() == BlockStatementsType.TRY) {
                 throw new IllegalStateException("Unexpected number of catch clauses in try statement within test case " + testCaseName);
             }
-        } else {
-            throw new IllegalStateException("Unexpected try/catch without fail() statement at the end of the try block in test case " + testCaseName);
         }
         // Check the last statement in the try block (must be a method call, an object creation invocation or a fail
         // assertion)
@@ -2516,25 +2283,114 @@ public class TestUtils {
      *
      * @param junitVersion the version of JUnit used in the test class
      * @param tryStmt the try statement to flatten
-     * @return the flat try block
+     * @param existingVariables the collection of variables already defined within the statements block that represent the
+     *                          corpus of the normalized test case where the flat try block will be integrated
+     * @return try/catch/finally blocks as a flat block of statements
      */
-    private static BlockStmt flatTryStmt(JUnitVersion junitVersion, TryStmt tryStmt) {
-        BlockStmt flatTryStmt = new BlockStmt();
-        // Get the list of statements from the try block
-        List<Statement> statements = new ArrayList<>(tryStmt.getTryBlock().getStatements());
+    private static BlockStmt flatTryStmt(JUnitVersion junitVersion, TryStmt tryStmt, HashMap<String, VariableDeclarator> existingVariables) throws IllegalStateException {
+        // Define the flat block of statements (initially empty)
+        BlockStmt flatTryStmtBlock = new BlockStmt();
+        // Collect all the statements to insert within the final flat block
+        List<Statement> statements = new ArrayList<>();
         // Check if the try statement contains a catch clause, in which case collect the statements within it
         if (tryStmt.getCatchClauses().size() == 1) {
             // Convert catch clause into an assertThrows statement
-            Optional<Statement> assertThrowsStmt = generateAssertThrowsFromTryStmt(junitVersion, tryStmt);
-            if (assertThrowsStmt.isPresent()) {
-                // Remove the method called added to the assertion
+            Optional<MethodCallExpr> assertThrowsCall = generateAssertThrowsFromTryStmt(junitVersion, tryStmt);
+            if (assertThrowsCall.isPresent()) {
+                // Check if the try block contains resources
+                if (!tryStmt.getResources().isEmpty()) {
+                    Map<String,String> resourcesVarMapping = new HashMap<>();
+                    // Check the variable names of the resources and change their names if already defined within the
+                    // main block
+                    for (Expression expr: tryStmt.getResources()) {
+                        if (expr.isVariableDeclarationExpr()) {
+                            VariableDeclarationExpr varDecl = expr.asVariableDeclarationExpr();
+                            for (VariableDeclarator var : varDecl.getVariables()) {
+                                String varName = var.getNameAsString();
+                                if (!existingVariables.containsKey(varName)) {
+                                    existingVariables.put(varName, var);
+                                } else {
+                                    int i = 0;
+                                    while (existingVariables.containsKey(varName + "_" + i)) {
+                                        i++;
+                                    }
+                                    var.setName(varName + "_" + i);
+                                    existingVariables.put(varName + "_" + i, var);
+                                    resourcesVarMapping.put(varName, varName + "_" + i);
+                                }
+                            }
+                            // Replace any occurrence of the old name with the new one within the old try block
+                            replaceVariables(tryStmt.getTryBlock(), resourcesVarMapping);
+                        }
+                        // Add the resource to the flat version of the block
+                        statements.add(new ExpressionStmt(expr));
+                    }
+                }
+                // Replace local variables in the catch block, if already defined within the main block
+                Map<String,String> tryVarMapping = collectVariableMapping(tryStmt.getTryBlock(), existingVariables);
+                replaceVariables(tryStmt.getTryBlock(), tryVarMapping);
+                // Add the list of statements from the try block
+                statements.addAll(tryStmt.getTryBlock().getStatements());
+                // Remove the method now called in the assertThrows assertion
                 statements.remove(statements.size() - 2);
                 // Remove the fail() method call at the end of the try block
                 statements.remove(statements.size() - 1);
-                // Add the assertThrows statement to the flat try block
-                statements.add(assertThrowsStmt.get());
-                // Add the statements from the catch block to the flat try block
-                statements.addAll(tryStmt.getCatchClauses().get(0).getBody().getStatements());
+                // Get the exception class expression from the assertThrows
+                ClassExpr exceptionClassExpr;
+                if (junitVersion == JUnitVersion.JUNIT4) {
+                    // In JUnit 4 the exception class is passed as second argument
+                    exceptionClassExpr = assertThrowsCall.get().getArguments().get(1).asClassExpr();
+                } else {
+                    // In JUnit 5 the exception class is passed as first argument
+                    exceptionClassExpr = assertThrowsCall.get().getArguments().get(0).asClassExpr();
+                }
+                // Create a variable to save the exception thrown by the assertThrows (the catch statement
+                // is always defined with a variable containing the exception, that can be used within the
+                // catch block - for example to check the message of the error).
+                Parameter catchExceptionParam = tryStmt.getCatchClauses().get(0).getParameter();
+                // Check if the original name of the catch parameter is already defined within the main block
+                Optional<Pair<String,String>> catchExceptionParamRenaming = renameLocalParam(catchExceptionParam, existingVariables.keySet());
+                BlockStmt catchBlockStmt = tryStmt.getCatchClauses().get(0).getBody();
+                String newExceptionParamName = catchExceptionParam.getNameAsString();
+                // If the original name of the exception defined within the catch clause is already defined within the
+                // main block, redefine it
+                if (catchExceptionParamRenaming.isPresent()) {
+                    Map<String,String>  variableMapping = new HashMap<>();
+                    String oldExceptionParamName = catchExceptionParamRenaming.get().getValue0();
+                    newExceptionParamName = catchExceptionParamRenaming.get().getValue1();
+                    variableMapping.put(oldExceptionParamName, newExceptionParamName);
+                    replaceVariables(catchBlockStmt, variableMapping);
+                }
+                // Define a variable declarator to store the exception returned by the assertThrow
+                // In the original catch clause, it could use it for example to check the correctness of the
+                // message associated to the thrown exception
+                VariableDeclarator exceptionVarDecl = new VariableDeclarator(
+                        new ClassOrInterfaceType(null, exceptionClassExpr.getTypeAsString()),
+                        newExceptionParamName,
+                        assertThrowsCall.get()
+                );
+                VariableDeclarationExpr exceptionVarDeclExpr = new VariableDeclarationExpr(exceptionVarDecl);
+                // Create an expression statement for the assertThrows call
+                Statement assertStmt = new ExpressionStmt(exceptionVarDeclExpr);
+                statements.add(assertStmt);
+                // Add the generated variable to the collection of existing variables
+                existingVariables.put(newExceptionParamName, exceptionVarDecl);
+                // Replace local variables in the catch block, if already defined within the main block
+                Map<String,String> catchVarMapping = collectVariableMapping(catchBlockStmt, existingVariables);
+                replaceVariables(catchBlockStmt, catchVarMapping);
+                // Add the statements from the catch block to the flat main block
+                statements.addAll(catchBlockStmt.getStatements());
+                // Get the finally block, if present
+                Optional<BlockStmt> finallyBlockStmt = tryStmt.getFinallyBlock();
+                if (finallyBlockStmt.isPresent()) {
+                    // Replace local variables in the catch block, if already defined within the main block
+                    Map<String,String> finallyVarMapping = collectVariableMapping(finallyBlockStmt.get(), existingVariables);
+                    replaceVariables(finallyBlockStmt.get(), finallyVarMapping);
+                    // Add the statements from the catch block to the main block
+                    statements.addAll(finallyBlockStmt.get().getStatements());
+                }
+            } else {
+                throw new IllegalStateException("The test case does not respect the requirements to flat the try/catch/finally blocks: the last method call within the try block must be a `fail` method.");
             }
         }
         // Check if the try statement contains a finally block, in which case collect the statements within it
@@ -2545,45 +2401,97 @@ public class TestUtils {
         // Iterate over the statements in the try block
         for (Statement statement : statements) {
             // Add the statement to the flat try block
-            flatTryStmt.addStatement(statement);
+            flatTryStmtBlock.addStatement(statement);
         }
         // Return the flat try block
-        return flatTryStmt;
+        return flatTryStmtBlock;
     }
 
     /**
-     * Generate an assertThrows statement from a try statement. The assertThrows statement is created using the exception
-     * class from the catch clause and the last method call in the try block. If the last method call is a fail() method
-     * call, the message of the fail() method is used as the message of the assertThrows statement.
+     * Checks if the variable name of the variable {@link VariableDeclarator} passed to the function is already defined
+     * in the collection of the existing variables. In this case the method renames the variable using a simple incremental
+     * logic (adding an index at the end of the variable)
+     *
+     * @param var the variable to check
+     * @param existingVariables the collection of existing variables
+     * @return If the variable name already exists in the collection, an optional {@link Optional} containing a pair of
+     * elements where the first element is the old variable name and the second element is the new variable name. Otherwise,
+     * an empty optional {@link Optional}
+     */
+    private static Optional<Pair<String,String>> renameLocalVar(VariableDeclarator var, HashMap<String, VariableDeclarator> existingVariables) {
+        String varName = var.getNameAsString();
+        if (!existingVariables.containsKey(varName)) {
+            existingVariables.put(varName, var);
+            return Optional.empty();
+        }
+        int i = 0;
+        while (existingVariables.containsKey(varName + "_" + i)) {
+            i++;
+        }
+        String newVarName = varName + "_" + i;
+        var.setName(newVarName);
+        existingVariables.put(newVarName, var);
+        return Optional.of(new Pair<>(varName, newVarName));
+    }
+
+    /**
+     * Checks if the parameter name of the parameter {@link Parameter} passed to the function is already defined
+     * in the collection of the existing variable names. In this case the method renames the variable using a simple incremental
+     * logic (adding an index at the end of the variable)
+     *
+     * @param param the parameter to check
+     * @param existingVariableNames the collection of existing variable names
+     * @return If the parameter name already exists in the collection, an optional {@link Optional} containing a pair of
+     * elements where the first element is the old parameter name and the second element is the new parameter name. Otherwise,
+     * an empty optional {@link Optional}
+     */
+    private static Optional<Pair<String,String>> renameLocalParam(Parameter param, Set<String> existingVariableNames) {
+        String paramName = param.getNameAsString();
+        if (!existingVariableNames.contains(paramName)) {
+            return Optional.empty();
+        }
+        int i = 0;
+        while (existingVariableNames.contains(paramName + "_" + i)) {
+            i++;
+        }
+        String newParamName = paramName + "_" + i;
+        return Optional.of(new Pair<>(paramName, newParamName));
+    }
+
+    /**
+     * Generate an assertThrows method call expression from a try statement. The assertThrows is created using the exception
+     * class from the catch clause and the last method call in the try block preceding the fail() method. If the fail() method
+     * contains a message, it is set as the message of the assertThrows statement.
      *
      * @param junitVersion the version of JUnit used in the test class
-     * @param tryStmt the try statement to generate the assertThrows statement from
-     * @return the assertThrows statement, if the fail() method call is found in the try block. An empty optional otherwise.
+     * @param tryStmt the try statement to generate the assertThrows method call expression from
+     * @return the assertThrows method call expression, if the fail() method call is found in the try block. An empty optional otherwise.
      */
-    private static Optional<Statement> generateAssertThrowsFromTryStmt(JUnitVersion junitVersion, TryStmt tryStmt) {
+    private static Optional<MethodCallExpr> generateAssertThrowsFromTryStmt(JUnitVersion junitVersion, TryStmt tryStmt) {
         // Get catch clause
         CatchClause catchClause = tryStmt.getCatchClauses().get(0);
         // Get the exception class from the catch clause
         com.github.javaparser.ast.type.Type exceptionClass = catchClause.getParameter().getType();
-        String exceptionVarName = catchClause.getParameter().getNameAsString();
-        // Find the position of the fail method call in the try-catch block
+        // Find the position of the `fail()` method call in the try-catch block
         Optional<BlockStatementsType> failAssertionPosition = findFailMethodCall(tryStmt);
-
+        // Proceed only if the fail method is present within the try block, as the last statement of the block
         if (failAssertionPosition.isPresent() && failAssertionPosition.get() == BlockStatementsType.TRY) {
             if (tryStmt.getTryBlock().getStatements().size() < 2) {
                 throw new IllegalStateException("Unexpected fail method call as unique statement in try block");
             }
-            // Get the last method call in the try block it is considered the method that must throw the
-            // exception. The last call is usually the fail() method (if the expected exception
-            // is not thrown by the focal method it makes the test fail)
+            // Get the penultimate method call in the try block (the last before the `fail()`: it is considered the method
+            // that must throw the exception. The last call is usually the fail() method (if the expected exception is not
+            // thrown by the focal method it makes the test fail)
             int tryStmtSize = tryStmt.getTryBlock().getStatements().size();
             List<Statement> statements = tryStmt.getTryBlock().getStatements();
+            // The last call before the `fail()` that must throw the exception
             Statement lastMethodCallStatement = statements.get(tryStmtSize - 2);
             Expression lastMethodCall = lastMethodCallStatement.asExpressionStmt().getExpression();
+            // The `fail()` method call
             Statement failMethodCallStatement = statements.get(tryStmtSize - 1);
             MethodCallExpr failMethodCall = failMethodCallStatement.asExpressionStmt().getExpression().asMethodCallExpr();
             String failMessage = "";
-            // Check if the last method call (fail method) has a comment. If so, use it as the fail message
+            // Check if the fail method has a comment. If so, use it as the fail message in the new `assertThrow` statement
             if (failMethodCall.getArguments().size() > 0) {
                 if (failMethodCall.getArguments().get(0).isStringLiteralExpr()) {
                     // The replaceAll method is used to escape double quotes in the fail message (not escaped by the asString() method)
@@ -2596,15 +2504,7 @@ public class TestUtils {
             } else if (lastMethodCall.isVariableDeclarationExpr()) {
                 lastMethodCall = lastMethodCall.asVariableDeclarationExpr().getVariables().get(0).getInitializer().get();
             }
-            LambdaExpr lambdaExpr;
-            if (lastMethodCall.isMethodCallExpr() && JUnitAssertionType.isJUnitAssertion(lastMethodCall.asMethodCallExpr().getNameAsString()) && lastMethodCall.asMethodCallExpr().getNameAsString().equals("assertThrows")) {
-                BlockStmt lambdaBody = new BlockStmt();
-                ThrowStmt throwStmt = new ThrowStmt(lastMethodCall);
-                lambdaBody.addStatement(throwStmt);
-                lambdaExpr = new LambdaExpr(new NodeList<>(), lambdaBody, true);
-            } else {
-                lambdaExpr = new LambdaExpr(new NodeList<>(), new ExpressionStmt(lastMethodCall), true);
-            }
+            LambdaExpr lambdaExpr = new LambdaExpr(new NodeList<>(), new ExpressionStmt(lastMethodCall), true);
             // Create the assertThrows statement
             MethodCallExpr assertThrowsCall = new MethodCallExpr(JUnitAssertionType.ASSERT_THROWS.getAssertionMethodName());
             // Add the arguments to the assertThrows statement (exception class and last method call)
@@ -2619,15 +2519,7 @@ public class TestUtils {
                 }
             }
             assertThrowsCall.setArguments(arguments);
-            VariableDeclarator variableDeclarator = new VariableDeclarator(
-                    new ClassOrInterfaceType(null, exceptionClass.asString()),
-                    exceptionVarName + variableID++,
-                    assertThrowsCall
-            );
-            VariableDeclarationExpr variableDeclarationExpr = new VariableDeclarationExpr(variableDeclarator);
-            // Create an expression statement for the assertThrows call
-            Statement assertStmt = new ExpressionStmt(variableDeclarationExpr);
-            return Optional.of(assertStmt);
+            return Optional.of(assertThrowsCall);
         }
         return Optional.empty();
     }
@@ -2654,7 +2546,7 @@ public class TestUtils {
     /**
      * Find the fail method call in the try statement. The method returns {@code BlockStatementsType.TRY} if the fail
      * method call is found in the try block, {@code BlockStatementsType.CATCH} if the fail method call is found in the
-     * catch block. If the fail method is not found an empty optional is returned. The method assumes that
+     * catch block. If the fail method is not found an {@code IllegalStateException} is thrown. The method assumes that
      * the try-catching block contains only one catch clause.
      *
      * @param tryStmt the try statement to check

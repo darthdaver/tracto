@@ -1550,27 +1550,56 @@ public class JavaParserUtils {
 
     public static HashMap<String, VariableDeclarator> collectExistingVariables(
             HashMap<String, VariableDeclarator> existingVariables,
-            BlockStmt blockStmt
+            BlockStmt blockStmt,
+            Class scope,
+            int hierarchicalLevel
     ) {
         VariableDeclarationExprVisitor varDeclarationExprCollector = new VariableDeclarationExprVisitor();
         List<VariableDeclarationExpr> newVarDeclarationExprs = varDeclarationExprCollector.visit(blockStmt);
         newVarDeclarationExprs.forEach(varDecl -> {
             varDecl.getVariables().forEach(var -> {
-                String varName = var.getNameAsString();
-                if (!existingVariables.containsKey(varName)) {
-                    existingVariables.put(varName, var);
+                if (checkVariableScope(var, scope, hierarchicalLevel)) {
+                    String varName = var.getNameAsString();
+                    if (!existingVariables.containsKey(varName)) {
+                        existingVariables.put(varName, var);
+                    }
                 }
             });
         });
         return existingVariables;
     }
 
+    private static boolean checkVariableScope(
+            Node node,
+            Class scope,
+            int hierarchyLevel
+    ) {
+        boolean valid = false;
+        Optional<Node> parentNode = node.getParentNode();
+        while(parentNode.isPresent() && (hierarchyLevel + 1) >= 0) {
+            if (scope.isInstance(parentNode.get())) {
+                valid = true;
+                break;
+            }
+            if (parentNode.get() instanceof BlockStmt) {
+                hierarchyLevel--;
+            }
+            parentNode = parentNode.get().getParentNode();
+        }
+        return valid;
+    }
+
     public static HashMap<String, VariableDeclarator> collectExistingVariables(
             HashMap<String, VariableDeclarator> existingVariables,
             List<FieldDeclaration> fieldDeclarations,
-            List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules
+            List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules,
+            Class scope,
+            int hierarchyLevel
     ) {
         for (FieldDeclaration fieldDecl : fieldDeclarations) {
+            if (!checkVariableScope(fieldDecl, scope, hierarchyLevel)) {
+                continue;
+            }
             if (!checkModifiersRules(modifiersRules, fieldDecl.getModifiers())) {
                 // Skip the field declaration if it does not satisfy the modifiers rules
                 continue;

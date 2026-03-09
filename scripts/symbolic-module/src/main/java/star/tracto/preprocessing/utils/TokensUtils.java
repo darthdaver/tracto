@@ -926,12 +926,18 @@ public class TokensUtils {
         // Collect the fields defined within the test class and the test prefix (immediately accessible)
         HashMap<String, List<Pair<VariableDeclarator,Type>>> fieldTypeIdentifiers = new HashMap<>();
         try {
-            updateHashMapOfFieldTypeIdentifiers(fieldTypeIdentifiers, tc.getFields(), List.of(
-                    List.of(new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))),
-                    List.of(new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(true))),
-                    List.of(new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(true)))
-            ));
-            updateHashMapOfFieldTypeIdentifiers(fieldTypeIdentifiers, tp);
+            updateHashMapOfFieldTypeIdentifiers(
+                    fieldTypeIdentifiers,
+                    tc.getFields(),
+                    List.of(
+                        List.of(new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))),
+                        List.of(new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(true))),
+                        List.of(new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(true)))
+                    ),
+                    ClassOrInterfaceDeclaration.class,
+                    0
+            );
+            updateHashMapOfFieldTypeIdentifiers(fieldTypeIdentifiers, tp, 0);
         } catch (Exception e) {
             String message = "Error collecting root variables type identifiers for test case: " + tp.getNameAsString() + " - " + e.getMessage();
             logger.error(message);
@@ -1573,7 +1579,7 @@ public class TokensUtils {
                     case THIS:
                         try {
                             // Retrieve the private, protected and public fields defined within the test class
-                            updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, tc.getFields(), new ArrayList<>());
+                            updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, tc.getFields(), new ArrayList<>(), ClassOrInterfaceDeclaration.class, 0);
                             // Retrieve the private, protected and public methods defined within the test class (excluding test methods)
                             updateHashMapOfMethodUsageIdentifiers(methodIdentifiers, tc, new ArrayList<>(), List.of(new Pair("Test", Boolean.valueOf(false))));
                             // This keyword excludes constructors
@@ -1847,7 +1853,7 @@ public class TokensUtils {
                                         // Methods and fields must be static and public or protected (if in the same package)
                                         updateHashMapOfMethodUsageIdentifiers(methodIdentifiers, targetTypeDeclaration, modifiers, List.of(new Pair("Test", Boolean.valueOf(false))));
                                         updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
-                                        updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, targetTypeDeclaration.getFields(), modifiers);
+                                        updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, targetTypeDeclaration.getFields(), modifiers, TypeDeclaration.class, 0);
                                         updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, fieldIdentifiers);
                                     }
                                 } catch (IOException e) {
@@ -2169,7 +2175,7 @@ public class TokensUtils {
                                     }
                                     //updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
                                     List<FieldDeclaration> fieldDeclarations =  resolvedType.asReferenceType().getTypeDeclaration().get().toAst().get().findAll(FieldDeclaration.class);
-                                    updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, fieldDeclarations, modifiers);
+                                    updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, fieldDeclarations, modifiers, TypeDeclaration.class, 0);
                                     //updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, fieldIdentifiers);
                                 } catch (Exception e) {
                                     String message = "Error resolving reference type: " + resolvedType + " - " + e.getMessage();
@@ -2306,7 +2312,7 @@ public class TokensUtils {
                         // Methods and fields must be static and public or protected (if in the same package)
                         updateHashMapOfMethodUsageIdentifiers(methodIdentifiers, targetTypeDeclaration, modifiers, List.of(new Pair("Test", Boolean.valueOf(false))));
                         updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
-                        updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, targetTypeDeclaration.getFields(), modifiers);
+                        updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, targetTypeDeclaration.getFields(), modifiers, TypeDeclaration.class, 0);
                         updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, fieldIdentifiers);
                     }
                 } catch (IOException e) {
@@ -2743,13 +2749,18 @@ public class TokensUtils {
      * @param variableDeclaratorIdentifiers The map to update with variable declarators
      * @param fieldDeclarations The list of fields from which to extract the types of variable declarators
      * @param modifiersRules The modifiers to filter the variables (e.g., public, private)
+     * @param scope The reference element that defines a block statement where to stop the research (can be a class, a method,
+     *              a try/catch, etc.)
+     * @param hierarchicalLevel The count of how many inner blocks where the variable is defined from the scope is accepted
      */
     public static void updateHashMapOfFieldTypeIdentifiers(
             HashMap<String, List<Pair<VariableDeclarator,Type>>> variableDeclaratorIdentifiers,
             List<FieldDeclaration> fieldDeclarations,
-            List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules
+            List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules,
+            Class scope,
+            int hierarchicalLevel
     ) {
-        HashMap<String, VariableDeclarator> tcVariablesMap = JavaParserUtils.collectExistingVariables(new HashMap<>(), fieldDeclarations, modifiersRules);
+        HashMap<String, VariableDeclarator> tcVariablesMap = JavaParserUtils.collectExistingVariables(new HashMap<>(), fieldDeclarations, modifiersRules, scope, hierarchicalLevel);
 
         for (Map.Entry<String, VariableDeclarator> entry : tcVariablesMap.entrySet()) {
             String variableName = entry.getKey();
@@ -2771,14 +2782,16 @@ public class TokensUtils {
      *
      * @param fieldTypeIdentifiers The map to update with variable declarators
      * @param methodDeclaration The method declaration from which to collect variable declarators
+     * @param hierarchicalLevel The count of how many inner blocks where the variable is defined from the scope is accepted
      */
     public static void updateHashMapOfFieldTypeIdentifiers(
             HashMap<String, List<Pair<VariableDeclarator,Type>>> fieldTypeIdentifiers,
-            MethodDeclaration methodDeclaration
+            MethodDeclaration methodDeclaration,
+            int hierarchicalLevel
     ) {
-        HashMap<String, VariableDeclarator> tcVariablesMap = JavaParserUtils.collectExistingVariables(new HashMap<>(), methodDeclaration.getBody().get());
+        HashMap<String, VariableDeclarator> tpVariablesMap = JavaParserUtils.collectExistingVariables(new HashMap<>(), methodDeclaration.getBody().get(), MethodDeclaration.class, hierarchicalLevel);
 
-        for (Map.Entry<String, VariableDeclarator> entry : tcVariablesMap.entrySet()) {
+        for (Map.Entry<String, VariableDeclarator> entry : tpVariablesMap.entrySet()) {
             String variableName = entry.getKey();
             VariableDeclarator variableDeclarator = entry.getValue();
             Type variableType = variableDeclarator.getType();
