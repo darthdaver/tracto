@@ -55,15 +55,11 @@ import java.util.stream.Collectors;
  */
 public class TestUtils {
 
-    /* A unique id for placeholder variable names when inserting oracles. */
-    private static int variableID = 0;
-
     /* The logger for the class. */
     private static final Logger logger = LoggerFactory.getLogger(TestUtils.class);
     /* helper labels to identify fake elements added to avoid JavaParser parsing problems, like in try-catch statements */
     private static final String FAKE_ELEMENT_LABEL = "<FAKE_ELEMENT>";
     private static final String THROW_EXCEPTION_LABEL = "THROW EXCEPTION";
-
     /* Do not instantiate this class. */
     private TestUtils() {
         throw new UnsupportedOperationException("This class cannot be instantiated.");
@@ -125,10 +121,17 @@ public class TestUtils {
      * @param m2tMatchingType the type of matching to use (any occurrence or last occurrence)
      *
      */
-    public static void matchMethodsToTests(Path testFilePath, Path repoRootPath, Path outputDirPath, M2TMatchingType m2tMatchingType) {
+    public static void matchMethodsToTests(Path testFilePath, Path repoRootPath, Path outputDirPath, M2TMatchingType m2tMatchingType) {}
 
-    }
-
+    /**
+     * Returns the JUnit version used within a test class, identifying it from the collection of imports defined in it and
+     * passed to the function.
+     *
+     * @param imports the collection of `imports` statements defined within a test class
+     * @return the JUnit version used within the test class
+     * @throws IllegalStateException if the JUnit version cannot be identified within the collection of `imports` passed
+     * to the function
+     */
     public static JUnitVersion getJunitVersion(NodeList<ImportDeclaration> imports) {
         for (ImportDeclaration importDeclaration : imports) {
             if (importDeclaration.getNameAsString().contains("junit")) {
@@ -143,7 +146,10 @@ public class TestUtils {
     }
 
     /**
-     * Check if the test case is in the filter list collected during the tracking of repositories.
+     * Check if the test case is in the filter list of test cases collected during the tracking of repositories.
+     * The list contains the test cases that has been added after the training cutoff-date of a given model. During
+     * the generation of a dataset for experimental evaluation, it prevents to consider test cases that the model
+     * could have already seen during the pre-training.
      *
      * @param originalTestCase the test case in the test class
      * @param testCaseFilterList the list of test cases collected during the tracking of repositories
@@ -182,7 +188,25 @@ public class TestUtils {
     }
 
     /**
-     * Process the test class and integrate additional assertion in auxiliary methods, if present.
+     * Process the test class and its test cases and normalize them according to the following policies:
+     *
+     * <ul>
+     *     <li>Integrates the body of auxiliary methods within the test. An auxiliary method is a method invoked within
+     *     the test case and defined within the test class, that can contain assertions or whose body can improve the
+     *     understandability of the semantic of the test case (improved explainability) for the model that receives the
+     *     test case in input. Auxiliary methods can also contain parametric assertions shared among different test
+     *     cases. When integrated within a test case they contribute to the generation of additional datapoints, when
+     *     the dataset is built.</li>
+     *     <li>`Try-catch-finally` blocks are flattened. The block must satisfy strict requirements: the last method in
+     *     the try block must be a `fail` method. The penultimate method call is considered as the method that must throw
+     *     an exception to check. The `try-catch` block can contain a single catch clause. The `try` block is flattened
+     *     (the statements within the `try` block are extracted and added to the reference block of statements). The
+     *     penultimate statement within the original `try` block is integrated within an `assertThrows` call and the
+     *     expected exception to throw is considered as the exception defined in the catch clause of the original test
+     *     case. The statements within the catch clause are flattened as well and inserted after the `assertThrows` in
+     *     the normalized reference block. If a `finally` block is present, it is flattened after the catch-clause statements.
+     *     If the try block contains resources, they are integrated, before the try statements.</li>
+     * </ul>
      *
      * @param config the configuration options for the dataset to generate
      * @param repoRootPath the path to the root of the repository
@@ -213,33 +237,20 @@ public class TestUtils {
         try {
             // Parse the test class
             CompilationUnit cu = JavaParserUtils.getCompilationUnit(testFilePath);
-            // Set the methods of the test case to the normalized test methods
             TypeDeclaration testClass = cu.getPrimaryType().get();
-            // Get junit version used in the test class
+            // Get the junit version used in the test class
             JUnitVersion junitVersion = TestUtils.getJunitVersion(cu.getImports());
-            // Get collection of variables defined in the test class, as hash set
+            // Get the collection of variables defined in the test class
             HashMap<String, VariableDeclarator> classVariables = JavaParserUtils.collectExistingVariables(new HashMap<>(), testClass.getFields(), List.of(), ClassOrInterfaceDeclaration.class, 0);
             // Add import for all the assertion types at the beginning of the test class, depending on the JUnit version
             // used within the project. This is necessary when the LLMs approaches will generate target assertions not
-            // known a priori
+            // known a priori (the generated test cases would not compile otherwise, if the corresponding assertion is
+            // not imported. The import all `*` is inefficient in terms of performances, but prevent this error to happen
             if (junitVersion == JUnitVersion.JUNIT4) {
                 cu.addImport("static org.junit.Assert.*");
             } else {
                 cu.addImport("static org.junit.jupiter.api.Assertions.*");
             }
-
-            // Get the list of all the methods defined within the test class
-            // List<MethodDeclaration> testClassMethods = cu.findAll(MethodDeclaration.class);
-            // testClassMethods = testClassMethods.stream()
-            //        .filter(m -> {
-            //            Node parent = m.getParentNode().orElse(null);
-            //            if (parent instanceof TypeDeclaration<?>) {
-            //                return true;
-            //            }
-            //            return false;
-            //        })
-            //        .collect(Collectors.toList());
-
             // Distribute the methods of the class according to their meaning
             Triplet<List<MethodDeclaration>, HashMap<String, MethodDeclaration>, HashMap<String, MethodDeclaration>> testClassMethodsDistribution = distributeMethods(testClass.getMethods());
             // Get the list of all the original test cases within the given test class
@@ -249,17 +260,23 @@ public class TestUtils {
             // Define list of auxiliary methods integrated into the normalized test case body
             // (they have to be removed from the test class since integrated and no more called)
             List<MethodDeclaration> integratedAuxiliaryMethods = new ArrayList<>();
-            int testCaseIdx = 0;
-            // Rename all the constructors in the test class
+            // Rename all the constructors in the test class according to the name given to the normalized version of the class
             List<ConstructorDeclaration> constructors = testClass.getConstructors();
             for (ConstructorDeclaration constructor: constructors) {
                 constructor.setName(constructor.getNameAsString() + NamingConvention.NORMALIZED_TEST_CLASS.getConventionName());
             }
             // Iterate over the original test cases
             for (MethodDeclaration originalTestCase : originalTestCases) {
-                // Check if the test case is in the filter list
+                // If a filter list of test cases to process exists, check if the test case is in the filter list.
+                // This is useful when performing experiments to avoid data leakage problems: excluding from the
+                // experiments the test cases added before the training cutoff-date reduces the risk of unfair
+                // benchmark generation
                 if (testCaseFilterList.isPresent()) {
+                    // Check if the test case is not in the filter list of test cases to process, collected during the
+                    // tracking of repositories
                     if (!matchTestCaseWithRepoTrackTestCase(originalTestCase, testCaseFilterList)) {
+                        // Add a label to ignore the test case, if it is not in the list: in JUnit 4 the `@Ignore`
+                        // annotation is used, while in Junit 5 it has been substituted by the `@Disabled` annotation
                         if (junitVersion == JUnitVersion.JUNIT4) {
                             boolean hasIgnore = originalTestCase.getAnnotations().stream().anyMatch(a -> a.getNameAsString().equals("Ignore"));
                             if (!hasIgnore) {
@@ -282,9 +299,13 @@ public class TestUtils {
                 // Generate a mold of the test case and set the body to an empty block
                 MethodDeclaration normalizedTestCase = originalTestCase.clone();
                 BlockStmt normalizedTestCaseBody = normalizedTestCase.getBody().orElseThrow();
-                if (!(auxiliaryMethods.isEmpty() || !config.integrateAuxiliaryMethods())) {
+                // Normalize test case only if the configuration file require the normalization of the test case
+                if (!config.integrateAuxiliaryMethods()) {
                     normalizedTestCaseBody = new BlockStmt();
                     normalizedTestCase.setBody(normalizedTestCaseBody);
+                    // Collect the list of the existing variables defined within the test case
+                    // Initially copy the references to the global variables defined within the test class
+                    // (accessible in all the points)
                     HashMap<String, VariableDeclarator> testCaseExistingVariables = new HashMap<>();
                     for (String classVarName : classVariables.keySet()) {
                         testCaseExistingVariables.put(classVarName, classVariables.get(classVarName));
@@ -294,39 +315,18 @@ public class TestUtils {
                             testClass,
                             originalTestCase,
                             originalTestCaseStatements,
+                            // The reference block is the body of the normalized test case (initially empty)
                             normalizedTestCaseBody,
                             auxiliaryMethods,
                             integratedAuxiliaryMethods,
+                            // Add the local variables defined within the first block "level" in the test case
                             JavaParserUtils.collectExistingVariables(testCaseExistingVariables, originalTestCase.getBody().get(), MethodDeclaration.class,0),
                             junitVersion
                     );
-
+                    // If an exception occurred during the normalization of the method, keep track of it for future
+                    // debugging and analysis
                     if (thrownedException) {
-                        // Define the error test class compilation unit
-                        CompilationUnit errorCu = cu;
-                        // Define the error test class
-                        TypeDeclaration errorTestClass = cu.getPrimaryType().get();
-                        // Check if the error test class already exists. Otherwise, create a new one from the original test class
-                        if (!Files.exists(errorOutputPath)) {
-                            errorTestClass.setMembers(new NodeList<>());
-                        } else {
-                            // Get the error test class from the existing file
-                            errorCu = JavaParserUtils.getCompilationUnit(errorOutputPath);
-                            try {
-                                errorTestClass = errorCu.getPrimaryType().get();
-                            } catch (NoSuchElementException e) {
-                                errorTestClass = errorCu.getType(0);
-                            }
-                        }
-                        // Get the list of methods already added in the error test class (if any)
-                        List<MethodDeclaration> errorTestClassMethods = errorTestClass.getMethods();
-                        // Check if the error test class already contains the original test case
-                        if (!errorTestClassMethods.stream().anyMatch(m -> m.getNameAsString().equals(originalTestCase.getNameAsString()))) {
-                            // Add the original test case to the error test class
-                            errorTestClass.addMember(originalTestCase);
-                            // Save the error test class to the error output path
-                            FilesUtils.writeJavaFile(errorOutputPath, errorCu);
-                        }
+                        collectNormalizationErrors(cu, originalTestCase, errorOutputPath);
                     }
                 }
                 // Instantiate the test stats builder to collect the statistics of the test
@@ -411,6 +411,45 @@ public class TestUtils {
             logger.error("Error reading file: " + testFilePath);
         }
         return new Pair<>(testRepoOutputPath, testStatsList);
+    }
+
+    /**
+     * Saves information about errors occurred during the normalization of a test class for future analysis and debugging.
+     *
+     * @param cu the compilation unit of the test class
+     * @param originalTestCase the method declaration of the test case that threw the exception during the normalization
+     * @param errorOutputPath the path where to save the information about the error to collect
+     */
+    private static void collectNormalizationErrors(
+            CompilationUnit cu,
+            MethodDeclaration originalTestCase,
+            Path errorOutputPath
+    ) throws IOException {
+        // Define the error test class compilation unit
+        CompilationUnit errorCu = cu;
+        // Define the error test class
+        TypeDeclaration errorTestClass = cu.getPrimaryType().get();
+        // Check if the error test class already exists. Otherwise, create a new one from the original test class
+        if (!Files.exists(errorOutputPath)) {
+            errorTestClass.setMembers(new NodeList<>());
+        } else {
+            // Get the error test class from the existing file
+            errorCu = JavaParserUtils.getCompilationUnit(errorOutputPath);
+            try {
+                errorTestClass = errorCu.getPrimaryType().get();
+            } catch (NoSuchElementException e) {
+                errorTestClass = errorCu.getType(0);
+            }
+        }
+        // Get the list of methods already added in the error test class (if any)
+        List<MethodDeclaration> errorTestClassMethods = errorTestClass.getMethods();
+        // Check if the error test class already contains the original test case
+        if (!errorTestClassMethods.stream().anyMatch(m -> m.getNameAsString().equals(originalTestCase.getNameAsString()))) {
+            // Add the original test case to the error test class
+            errorTestClass.addMember(originalTestCase);
+            // Save the error test class to the error output path
+            FilesUtils.writeJavaFile(errorOutputPath, errorCu);
+        }
     }
 
     /**
@@ -1420,21 +1459,70 @@ public class TestUtils {
     }
 
     /**
-     * The method normalizes a test cases according to the following policies:
+     * Normalizes a list of statements appending them to the reference block of statements {@code currentBlockStmt} passed
+     * to the function. The method iterates over each statement and normalizes them according to the
+     * following policies:
+     *
      * <ul>
-     *     <li></li>
+     *     <li>If the statement is an assertion in the form of {@link AssertStmt}, includes it in the reference block of
+     *     statements {@code currentBlockStmt}.</li>
+     *     <li>If the statement refers to a block of statements {@link BlockStmt}, process the statements within the
+     *     block calling the function recursively.</li>
+     *     <li>If the statement is a `do` statement {@link DoStmt}, the `do` wrapper with the condition is cloned and the
+     *     body is processed as a block statement calling the function recursively. The result of the recursion is
+     *     appended to the body of the cloned `do` wrapper.</li>
+     *     <li>If the statement is an expression statement {@link ExpressionStmt}, it is analyzed and added to the reference
+     *     block of statements, according to their type: (i) if the expression refers to a method call to an auxiliary method,
+     *     the body of the method is integrated in the reference block of statements (if possible); (ii) if the expression
+     *     is a lambda expression, the signature and the parameters of the lambda are cloned and the body of the lambda
+     *     expression is processed recursively to be normalized as well; (iii) if the expression refers to a variable
+     *     declaration, the statement is added to the reference block as it is; (iv) any other type of expression could
+     *     contain method calls that cannot be integrated within the reference block of statements. Therefore they are
+     *     added to the reference block as they are</li>
+     *     <li>If the statement is a `forEach` statement {@link ForEachStmt} the `foreach` wrapper with the condition
+     *     is cloned and the body is processed as a block statement calling the function recursively. The result of the
+     *     recursion is appended to the body of the cloned `do` wrapper.</li>
+     *     <li>If the statement is a `for` statement {@link ForStmt} the `for` wrapper with the condition is cloned and
+     *     the body is processed as a block statement calling the function recursively. The result of the recursion is
+     *     appended to the body of the cloned `do` wrapper.</li>
+     *     <li>If the statement is an `if-then-else` statement {@link IfStmt} each block of `if`, `if-else`, `else` is
+     *     processed: the conditions are cloned and each block processed recursively to be normalized.</li>
+     *     <li>If the statement is a synchronized statement {@link SynchronizedStmt} the `synchronized` wrapper is cloned
+     *     and the body is processed as a block statement calling the function recursively. The result of the recursion is
+     *     appended to the body of the cloned `synchronized` wrapper.</li>
+     *     <li>If the statement is a switch statement {@link SwitchStmt}, an exception is thrown: no switch statements are
+     *     expected within a test case. The statement process is therefore no supported yet.</li>
+     *     <li>If the statement is a `try-catch-finally` statement {@link TryStmt}, the block is normalized and flattened.
+     *     The block must satisfy strict requirements: the last method in the try block must be a `fail` method. The
+     *     penultimate method call is considered as the method that must throw an exception to check. The `try-catch` block
+     *     can contain a single catch clause. The `try` block is flattened (the statements within the `try` block are
+     *     extracted and added to the reference block of statements). The penultimate statement within the original `try`
+     *     block is integrated within an `assertThrows` call and the expected exception to throw is considered as the
+     *     exception defined in the catch clause of the original test case. The statements within the catch clause are
+     *     flattened as well and inserted after the `assertThrows` in the normalized reference block. If a `finally`
+     *     block is present, it is flattened after the catch-clause statements. If the try block contains resources, they
+     *     are integrated, before the try statements.</li>
+     *     <li>If the statement is a `while` statement {@link WhileStmt} the `while` wrapper with the condition is cloned and
+     *     the body is processed as a block statement calling the function recursively. The result of the recursion is
+     *     appended to the body of the cloned `while` wrapper.</li>
+     *     <li>For any other statement type, they are added to the normalized reference block as they are.</li>
      * </ul>
      *
-     * @param testClass
-     * @param originalTestCase
-     * @param statements
-     * @param currentBlockStmt
-     * @param auxiliaryMethods
-     * @param integratedAuxiliaryMethods
-     * @param existingVariables
-     * @param junitVersion
-     * @return
-     * @throws IllegalStateException
+     * @param testClass the test class where the original test case to normalize has been defined
+     * @param originalTestCase the method declaration of the original test case that must be normalized
+     * @param statements the list of statements to process
+     * @param currentBlockStmt the reference block of statements representing the normalized body of the test case
+     * @param auxiliaryMethods the list of methods defined within the test class that are not test cases and can contain
+     *                         assertions. The bodies of auxiliary methods containing assertions are integrated within
+     *                         the normalized version of the test case
+     * @param integratedAuxiliaryMethods a list of auxiliary methods already integrated within the normalized version of
+     *                                   the test case
+     * @param existingVariables the collection of global variables already defined within the test class and local variables
+     *                          already defined within the normalized version of the test case
+     * @param junitVersion the version of JUnit imported and used within the test class
+     * @return A boolean. True if an exception has been thrown during the normalization of the block of statements, false
+     * otherwise.
+     * @throws IllegalStateException In case of error when processing an `if` statement
      */
     private static boolean parseNormalizeTestStatementsBlock(
             TypeDeclaration testClass,
@@ -1465,7 +1553,6 @@ public class TestUtils {
                             existingVariables,
                             junitVersion
                     );
-
                 } else if (statement.isDoStmt()) {
                     // Parse the do statement
                     Statement doStmtBody = statement.asDoStmt().getBody();
@@ -1480,6 +1567,7 @@ public class TestUtils {
                             testClass,
                             originalTestCase,
                             new ArrayList<>(Arrays.asList(doStmtBody)),
+                            // The reference block is now the body of the cloned `do` wrapper
                             doStmtCloneBody,
                             auxiliaryMethods,
                             integratedAuxiliaryMethods,
@@ -1488,41 +1576,63 @@ public class TestUtils {
                     );
                 } else if (statement.isExpressionStmt()) {
                     Expression exprStmt = statement.asExpressionStmt().getExpression();
+                    // Check if the expression is a method call to an auxiliary method (not an assertion)
                     if (exprStmt.isMethodCallExpr() && !(JUnitAssertionType.isJUnitAssertion(exprStmt.asMethodCallExpr().getNameAsString()))) {
                         try {
+                            // Try to integrate the body of the auxiliary method within the current block of statements
+                            // Auxiliary methods can contain additional assertions
                             Optional<MethodDeclaration> auxiliaryMethodDeclaration = exprStmt.asMethodCallExpr().getScope().isEmpty() ? integrateAuxiliaryMethodIntoBlockStmt(testClass, currentBlockStmt, exprStmt.asMethodCallExpr(), auxiliaryMethods, existingVariables) : Optional.empty();
                             if (auxiliaryMethodDeclaration.isPresent()) {
+                                // Add the method to the list of auxiliary methods integrated within the test case
                                 integratedAuxiliaryMethods.add(auxiliaryMethodDeclaration.get());
                             } else {
+                                // If the body of the invoked method cannot be integrated within the test case,
+                                // simply add the expression statement to the current body of the normalized test
+                                // case
                                 currentBlockStmt.addStatement(statement);
                             }
                         } catch (Exception e) {
                             // Log the error occurred while parsing the statements of the test case
                             logger.error(e.getMessage());
+                            // If any exception is thrown during the integration of the auxiliary method within the
+                            // body of the normalized test case, simply skip the integration and add the expression
+                            // statement to the body
                             currentBlockStmt.addStatement(statement);
                             thrownedException = true;
                         }
                     } else if (exprStmt.isLambdaExpr()) {
+                        // Clone the lambda statement and the lambda parameters
+                        // The body of the clone lambda statement is set to an empty body
                         LambdaExpr lambdaExpr = exprStmt.asLambdaExpr();
                         Statement lambdaBody = lambdaExpr.getBody();
                         LambdaExpr lambdaExprClone = lambdaExpr.clone();
                         BlockStmt lambdaBodyClone = new BlockStmt();
                         lambdaExprClone.setParameters(new NodeList<>(lambdaExpr.getParameters()));
                         lambdaExprClone.setBody(lambdaBodyClone);
+                        // The cloned lambda statement is added to the reference block of statements
+                        // It's body is still empty, but it is referenced and passed recursively to the
+                        // function to be fulfilled after processing each statement within the original
+                        // lambda body
                         ExpressionStmt lambdaExprStmt = new ExpressionStmt(lambdaExprClone);
                         currentBlockStmt.addStatement(lambdaExprStmt);
+                        // Check if the lambda contains a single statement or if it is composed of a block of statements
                         if (lambdaBody.isExpressionStmt()) {
                             try {
+                                // If the original lambda only contains a single statement (a method call), try to
+                                // integrate the body of the auxiliary method within the cloned lambda body
                                 Optional<MethodDeclaration> auxiliaryMethodDeclaration = integrateAuxiliaryMethodIntoBlockStmt(testClass, lambdaBodyClone, lambdaBody.asExpressionStmt().getExpression().asMethodCallExpr(), auxiliaryMethods, existingVariables);
                                 if (auxiliaryMethodDeclaration.isPresent()) {
                                     integratedAuxiliaryMethods.add(auxiliaryMethodDeclaration.get());
                                 } else {
+                                    // If the integration fails, clone the original body and set it as the new body
                                     lambdaExprClone.setBody(lambdaBody.clone());
                                 }
                             } catch (Exception e) {
                                 // Log the error occurred while parsing the statements of the test case
                                 logger.error(e.getMessage());
                                 thrownedException = true;
+                                // If the integration fails because of an exception, clone the original body and set
+                                // it as the new body
                                 lambdaExprClone.setBody(lambdaBody.clone());
                             }
                         } else {
@@ -1531,6 +1641,7 @@ public class TestUtils {
                                     testClass,
                                     originalTestCase,
                                     new ArrayList<>(Arrays.asList(lambdaBody)),
+                                    // The reference block is now the body of the cloned lambda
                                     lambdaBodyClone,
                                     auxiliaryMethods,
                                     integratedAuxiliaryMethods,
@@ -1539,17 +1650,12 @@ public class TestUtils {
                             );
                         }
                     } else if (exprStmt.isVariableDeclarationExpr()) {
-//                        List<MethodCallExpr> methodCalls = exprStmt.asVariableDeclarationExpr().findAll(MethodCallExpr.class);
-//                        if (methodCalls.size() > 0) {
-//                            Optional<MethodDeclaration> auxiliaryMethodDeclaration = exprStmt.asMethodCallExpr().getScope().isEmpty() ? integrateAuxiliaryMethodIntoBlockStmt(testClass, currentBlockStmt, exprStmt.asMethodCallExpr(), auxiliaryMethods, existingVariables) : Optional.empty();
-//                            if (auxiliaryMethodDeclaration.isPresent()) {
-//                                integratedAuxiliaryMethods.add(auxiliaryMethodDeclaration.get());
-//                            } else {
-//                                currentBlockStmt.addStatement(statement);
-//                            }
-//                        }
+                        // Variable declarations are added to the reference block of statements as they were in the
+                        // original test case
                         currentBlockStmt.addStatement(statement);
                     } else {
+                        // Any other type of expression should not contain method calls that can be integrated within
+                        // the reference block of statements, therefore they are added to it unchanged
                         currentBlockStmt.addStatement(statement);
                     }
                 } else if (statement.isForEachStmt()) {
@@ -1566,6 +1672,7 @@ public class TestUtils {
                             testClass,
                             originalTestCase,
                             new ArrayList<>(Arrays.asList(forEachStmtBody)),
+                            // The reference block is now the body of the cloned foreach
                             forEachCloneBody,
                             auxiliaryMethods,
                             integratedAuxiliaryMethods,
@@ -1581,11 +1688,12 @@ public class TestUtils {
                     forStmtClone.setBody(forStmtCloneBody);
                     // Add the cloned for statement to the current block
                     currentBlockStmt.addStatement(forStmtClone);
-                    // Parse the statements of the for current body and add them to the cloned for statement
+                    // Parse the statements of the for current body and add them to the cloned `for` statement
                     thrownedException = parseNormalizeTestStatementsBlock(
                             testClass,
                             originalTestCase,
                             new ArrayList<>(Arrays.asList(forStmtBody)),
+                            // The reference block is now the body of the cloned `for`
                             forStmtCloneBody,
                             auxiliaryMethods,
                             integratedAuxiliaryMethods,
@@ -1596,20 +1704,27 @@ public class TestUtils {
                     IfStmt ifStmt = statement.asIfStmt();
                     List<Pair<Optional<Expression>, Statement>> ifStmts = new ArrayList<>();
                     ifStmts.add(new Pair<>(Optional.of(ifStmt.getCondition()), ifStmt.getThenStmt()));
+                    // Check if the `if` statement is single or part of a `if-then-else` block
                     if (ifStmt.getElseStmt().isPresent()) {
                         Optional<Statement> elseIfStmt = ifStmt.getElseStmt();
+                        // Iterate over the list of if-else and collect their respective conditions and bodies
                         while (elseIfStmt.isPresent()) {
                             if (elseIfStmt.get().isIfStmt()) {
+                                // Extract the condition and the body of the `if-else`
                                 ifStmts.add(new Pair<>(Optional.of(elseIfStmt.get().asIfStmt().getCondition()), elseIfStmt.get().asIfStmt().getThenStmt()));
                             } else {
+                                // Extract the condition and the body of the `else`
                                 ifStmts.add(new Pair<>(Optional.empty(), elseIfStmt.get()));
                             }
+                            // Get the next `if-else` or `else`, if present
                             elseIfStmt = elseIfStmt.get().isIfStmt() ? elseIfStmt.get().asIfStmt().getElseStmt() : Optional.empty();
                         }
                     }
-                    // Define if statement clone
+                    // Define `if` statement clone
                     IfStmt ifStmtClone = null;
+                    // Process the collection of `if-then-else` conditions
                     for (Pair<Optional<Expression>, Statement> ifStmtPair : ifStmts) {
+                        // Create a new `if-then` block. Copy the condition and create an empty body
                         Optional<Expression> ifCondition = ifStmtPair.getValue0();
                         Statement ifStmtBody = ifStmtPair.getValue1();
                         BlockStmt ifStmtCloneBody = new BlockStmt();
@@ -1626,18 +1741,19 @@ public class TestUtils {
                             IfStmt lastIfStmt = traverseIfElseStatement(ifStmtClone);
                             lastIfStmt.setElseStmt(ifStmtCloneBody);
                         }
-                        // Parse the statements of the if-body and split it into multiple test cases
+                        // Parse the statements of the if-body and add it to the corresponding block of statements
                         thrownedException = parseNormalizeTestStatementsBlock(
                                 testClass,
                                 originalTestCase,
                                 new ArrayList<>(Arrays.asList(ifStmtBody)),
+                                // The reference block is now the body of the cloned `if-then` or `else` statement
                                 ifStmtCloneBody,
                                 auxiliaryMethods,
                                 integratedAuxiliaryMethods,
                                 existingVariables,
                                 junitVersion
                         );
-                        // Update the if statement clone
+                        // Update the `if` statement clone
                         ifStmtClone = JavaParserUtils.getLastStatementTypeOccurrence(currentBlockStmt, IfStmt.class)
                                 .orElseThrow(() -> new IllegalStateException(
                                         "No statement of type " + IfStmt.class + " found in the block of statements."
