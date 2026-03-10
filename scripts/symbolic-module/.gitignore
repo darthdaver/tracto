@@ -9,3 +9,4 @@ target/
 tmp/
 # Excel files:
 ~$*
+lib/
