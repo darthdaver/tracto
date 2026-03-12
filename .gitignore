@@ -12,3 +12,6 @@
 /symbolic-module/src/main/java/star/tracto/lsp/antlr4/antlr4Class/JavaParser.tokens
 scripts/utils/resources
 resources/temp-test.csv
+
+.vscode
+logs/

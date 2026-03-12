@@ -13,6 +13,8 @@ source "${current_dir}/utils/local_variables.sh"
 
 dataset_type=${1:-"oracles"}
 target_dir=${2:-"training"}
+rag_config=${3:-"${PROMPT_DIR}/rag/config.json"}
+rag_enabled=${4:-true}
 
 OUTPUT_DATASET_DIR=""
 
@@ -42,10 +44,15 @@ for config_path in "${config_paths[@]}"; do
   mkdir -p "$(dirname "$log_file")"
   echo "================================================================" >> "$log_file"
   echo "Generating prompt for ${dataset_type} dataset with configuration ${config_num}" >> "$log_file"
+  echo "RAG enabled: ${rag_enabled}, RAG config: ${rag_config}" >> "$log_file"
   echo "================================================================" >> "$log_file"
   # Generate LLM oracles input
   "${PY_ENV}" "${PROMPT_DIR}/prompt_qwen.py" \
       --input "${OUTPUT_DATASET_DIR}" \
       --output "${OUTPUT_DIR}/${config_num}/${dataset_type}" \
-      --config "${PROMPT_DIR}/resources/config/${config_num}/ewash_config_qwen.json" >> "$log_file"
+      --config "${PROMPT_DIR}/resources/config/${config_num}/ewash_config_qwen.json" \
+      --rag-config "${rag_config}" \
+      --rag-enabled "${rag_enabled}" \
+      --rag-max-snippets 5 \
+      --rag-threshold 0.7 >> "$log_file"
 done

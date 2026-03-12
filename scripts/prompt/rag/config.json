@@ -1,0 +1,14 @@
+{
+  "embedding_model": "Qwen/Qwen3-Embedding-4B",
+  "embedding_dimension": 2048,
+  "max_snippets": 5,
+  "similarity_threshold": 0.7,
+  "max_snippet_length": 500,
+  "max_chunk_size": 512,
+  "chunk_overlap": 64,
+  "search_fields": ["test_class", "focal_class", "oracles"],
+  "code_directory": "../../input/github-repos/davidb/scala-maven-plugin",
+  "cache_embeddings": true,
+  "cache_file": "../resources/embeddings_cache.pkl",
+  "rag_enabled": true
+}

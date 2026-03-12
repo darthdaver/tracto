@@ -25,3 +25,19 @@ class EwashArgsParser:
         default="STRING_LITERAL",
         metadata={"help": "Phase of the model to be used: 'choice' or 'emit'."}
     )
+    rag_config: str = field(
+        default=os.path.join(os.path.abspath(os.path.dirname(__file__)), '../rag/config.json'),
+        metadata={"help": "Path to RAG configuration file"}
+    )
+    rag_enabled: bool = field(
+        default=True,
+        metadata={"help": "Enable/disable RAG context integration"}
+    )
+    rag_max_snippets: int = field(
+        default=5,
+        metadata={"help": "Maximum number of snippets to retrieve with RAG"}
+    )
+    rag_threshold: float = field(
+        default=0.7,
+        metadata={"help": "Minimum similarity score for RAG retrieval (0-1)"}
+    )

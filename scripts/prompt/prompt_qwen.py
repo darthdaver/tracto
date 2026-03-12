@@ -10,6 +10,14 @@ from src.EwashArgsParser import EwashArgsParser
 from src.EWashQwen import EWash
 from src.Logger import Logger
 
+# Import RAG module for dynamic context retrieval
+try:
+    from rag import SemanticSimilaritySearch
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
+    logging.warning("RAG module not available. Install sentence-transformers to enable RAG: pip install sentence-transformers>=2.2.0")
+
 
 # Setup the logger
 logger = Logger("main", "ewash")
@@ -78,6 +86,16 @@ if __name__ == '__main__':
     # Load the dictionary of intro comments for each section of the input for the E-WASH approach
     with open(intros_path, 'r') as intros_file:
         intros_template = json.load(intros_file)
+
+    # Initialize RAG retriever if enabled and available
+    rag_retriever = None
+    if args.rag_enabled and RAG_AVAILABLE and args.rag_config:
+        try:
+            rag_retriever = SemanticSimilaritySearch(args.rag_config)
+            rag_retriever.initialize()
+            logger.log(f"RAG context retrieval initialized", logging.INFO)
+        except Exception as e:
+            logger.log(f"RAG initialization failed, RAG context will not be used: {e}", logging.WARNING)
     # Collect files to process
     if os.path.isdir(input_path):
         raw_dataset_files = []
@@ -143,6 +161,23 @@ if __name__ == '__main__':
                         oracle = d['target']
                         intros = copy.deepcopy(intros_template)
                         logger.log(f"Processing datapoint {tp['signature']}, oracle: {oracle}", logging.INFO)
+
+                        # Retrieve RAG context if enabled and available
+                        if rag_retriever and ewash_config['type'] == 'oracles':
+                            try:
+                                relevant_context = rag_retriever.retrieve_relevant_context(
+                                    test_prefix=tp['body'],
+                                    max_snippets=args.rag_max_snippets,
+                                    threshold=args.rag_threshold
+                                )
+                                # Add RAG context to intros dictionary
+                                intros['additional_context'] = {
+                                    'label': '// ADDITIONAL CONTEXTUAL INFORMATION (from RAG):\n',
+                                    'content': relevant_context
+                                }
+                                logger.log(f"Retrieved RAG context ({len(relevant_context.split(chr(10)))} lines)", logging.INFO)
+                            except Exception as e:
+                                logger.log(f"RAG retrieval failed, using standard context: {e}", logging.WARNING)
 
                         if ewash_config['type'] == "oracles":
                             # Get target (the whole oracle)
