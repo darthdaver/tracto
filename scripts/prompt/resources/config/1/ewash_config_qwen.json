@@ -20,6 +20,6 @@
   "sections" : ["test_prefix", "test_class", "focal_class"],
   "types" : ["methods", "fields"],
   "strategy": "cascade",
-  "type": "tokens",
+  "type": "oracles",
   "max_length" : 262144
 }

@@ -33,6 +33,7 @@ except ImportError:
 @dataclass
 class CodeSnippet:
     """Represents a code snippet with metadata."""
+
     content: str
     filepath: str
     language: str = "java"
@@ -89,16 +90,27 @@ class CodeSnippet:
             chunks = [chunk.strip() for chunk in chunks if chunk.strip()]
 
             if chunks:
-                logging.debug(f"AST-based chunking: {len(self.content)} chars -> {len(chunks)} chunks")
+                logging.debug(
+                    f"AST-based chunking: {len(self.content)} chars -> {len(chunks)} chunks"
+                )
                 return chunks
 
             return None
 
         except Exception as e:
-            logging.warning(f"AST-based chunking failed: {e}, falling back to token-based")
+            logging.warning(
+                f"AST-based chunking failed: {e}, falling back to token-based"
+            )
             return None
 
-    def _chunk_node(self, node: Node, text: str, last_end: int = 0, current_chunk: Optional[dict] = None, new_chunks: Optional[List[dict]] = None) -> List[dict]:
+    def _chunk_node(
+        self,
+        node: Node,
+        text: str,
+        last_end: int = 0,
+        current_chunk: Optional[dict] = None,
+        new_chunks: Optional[List[dict]] = None,
+    ) -> List[dict]:
         """
         Recursively chunk an AST node into smaller code snippets based on character limits and AST type.
 
@@ -117,7 +129,7 @@ class CodeSnippet:
             return new_chunks
 
         # Get max chunk size from metadata
-        max_chars = self.metadata.get('max_chunk_size', 1024 * 4)
+        max_chars = self.metadata.get("max_chunk_size", 1024 * 4)
 
         for child in node.children:
             # Skip too long comments
@@ -135,15 +147,23 @@ class CodeSnippet:
                     new_chunks.append(current_chunk)
 
                 # Start new chunk with this child
-                current_chunk = {"text": "", "metadata": {"abstract_syntax_names": set()}}
-                new_chunks.extend(self._chunk_node(child, text, last_end, current_chunk, new_chunks))
+                current_chunk = {
+                    "text": "",
+                    "metadata": {"abstract_syntax_names": set()},
+                }
+                new_chunks.extend(
+                    self._chunk_node(child, text, last_end, current_chunk, new_chunks)
+                )
             # Child would make current chunk too big, start new chunk
             elif (
                 len(current_chunk["text"]) + child.end_byte - child.start_byte
                 > max_chars
             ):
                 new_chunks.append(current_chunk)
-                current_chunk = {"text": "", "metadata": {"abstract_syntax_names": set()}}
+                current_chunk = {
+                    "text": "",
+                    "metadata": {"abstract_syntax_names": set()},
+                }
                 current_chunk["text"] = text[last_end : child.end_byte]
                 self._inject_metadata(child, current_chunk, text)
             # Otherwise, add child to current chunk
@@ -188,10 +208,14 @@ class CodeSnippet:
                     break
             if end_byte:
                 method_signature = text[start_byte:end_byte].strip()
-                current_chunk["metadata"]["methods"] = current_chunk["metadata"].get("methods", [])
+                current_chunk["metadata"]["methods"] = current_chunk["metadata"].get(
+                    "methods", []
+                )
                 current_chunk["metadata"]["methods"].append(method_signature)
 
-    def _collect_method_signatures(self, node: Node, text: str, method_signatures: List[str]):
+    def _collect_method_signatures(
+        self, node: Node, text: str, method_signatures: List[str]
+    ):
         """
         Recursively collects method signatures within a class.
         """
@@ -223,7 +247,7 @@ class CodeSnippetStore:
         embedding_model_name: str = "Qwen/Qwen3-Embedding-4B",
         chunk_size: int = 1024 * 4,
         chunk_overlap: int = 512,
-        embedding_dimension: int = 2048
+        embedding_dimension: int = 2048,
     ):
         """
         Initialize the code snippet store.
@@ -273,17 +297,17 @@ class CodeSnippetStore:
         snippet_count = 0
 
         # Supported file extensions
-        supported_extensions = {'.java', '.kt', '.py', '.js', '.ts'}
+        supported_extensions = {".java", ".kt", ".py", ".js", ".ts"}
 
-        for file_path in self.code_directory.rglob('*'):
+        for file_path in self.code_directory.rglob("*"):
             if file_path.suffix in supported_extensions and file_path.is_file():
                 try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
+                    with open(file_path, "r", encoding="utf-8") as f:
                         content = f.read()
 
                     # Truncate snippet if too long
                     if len(content) > self.max_snippet_length:
-                        content = content[:self.max_snippet_length]
+                        content = content[: self.max_snippet_length]
 
                     # Extract metadata from filepath
                     relative_path = file_path.relative_to(self.code_directory)
@@ -293,18 +317,23 @@ class CodeSnippetStore:
                     class_name = None
                     function_name = None
 
-                    if file_path.suffix == '.java':
+                    if file_path.suffix == ".java":
                         # Try to extract class name
-                        for line in content.split('\n'):
-                            if line.strip().startswith('class '):
-                                class_name = line.strip().split('class ')[1].split('{')[0].strip()
+                        for line in content.split("\n"):
+                            if line.strip().startswith("class "):
+                                class_name = (
+                                    line.strip()
+                                    .split("class ")[1]
+                                    .split("{")[0]
+                                    .strip()
+                                )
                                 break
 
                     # Prepare metadata for chunking
                     metadata = {
-                        'full_path': str(file_path),
-                        'max_chunk_size': self.chunk_size,
-                        'chunk_overlap': self.chunk_overlap
+                        "full_path": str(file_path),
+                        "max_chunk_size": self.chunk_size,
+                        "chunk_overlap": self.chunk_overlap,
                     }
 
                     snippet = CodeSnippet(
@@ -312,13 +341,15 @@ class CodeSnippetStore:
                         filepath=filepath,
                         language=file_path.suffix[1:],
                         class_name=class_name,
-                        metadata=metadata
+                        metadata=metadata,
                     )
 
                     # Initialize tokenizer for this model if Qwen
                     if self.tokenizer is None:
                         try:
-                            self.tokenizer = AutoTokenizer.from_pretrained(self.embedding_model_name)
+                            self.tokenizer = AutoTokenizer.from_pretrained(
+                                self.embedding_model_name
+                            )
                         except Exception as e:
                             logging.warning(f"Failed to load Qwen tokenizer: {e}")
                             self.tokenizer = None
@@ -339,17 +370,23 @@ class CodeSnippetStore:
         Returns:
             True if cache loaded successfully, False otherwise
         """
-        if not self.cache_embeddings or not self.cache_file or not self.cache_file.exists():
+        if (
+            not self.cache_embeddings
+            or not self.cache_file
+            or not self.cache_file.exists()
+        ):
             return False
 
         try:
-            with self.cache_file.open('rb') as f:
+            with self.cache_file.open("rb") as f:
                 cache_data = pickle.load(f)
 
-            if 'embeddings' in cache_data and 'snippets' in cache_data:
-                self.embeddings = cache_data['embeddings']
-                self.snippets = cache_data['snippets']
-                logging.info(f"Loaded embeddings for {len(self.snippets)} snippets from cache")
+            if "embeddings" in cache_data and "snippets" in cache_data:
+                self.embeddings = cache_data["embeddings"]
+                self.snippets = cache_data["snippets"]
+                logging.info(
+                    f"Loaded embeddings for {len(self.snippets)} snippets from cache"
+                )
                 return True
             else:
                 logging.warning("Invalid cache format")
@@ -365,12 +402,9 @@ class CodeSnippetStore:
             return
 
         try:
-            cache_data = {
-                'embeddings': self.embeddings,
-                'snippets': self.snippets
-            }
+            cache_data = {"embeddings": self.embeddings, "snippets": self.snippets}
 
-            with self.cache_file.open('wb') as f:
+            with self.cache_file.open("wb") as f:
                 pickle.dump(cache_data, f)
 
             logging.info(f"Saved embeddings for {len(self.snippets)} snippets to cache")
@@ -407,7 +441,9 @@ class CodeSnippetStore:
                 # Model not found locally, try to download from Hugging Face
                 if "does not exist" in str(e) or "cannot find" in str(e):
                     logging.warning(f"Model not found locally: {model_name}")
-                    logging.info(f"Attempting to download from Hugging Face: {model_name}")
+                    logging.info(
+                        f"Attempting to download from Hugging Face: {model_name}"
+                    )
 
                     try:
                         from huggingface_hub import snapshot_download, login
@@ -416,13 +452,13 @@ class CodeSnippetStore:
                         try:
                             login(token=os.getenv("HF_TOKEN", None))
                         except:
-                            logging.info("Skipping Hugging Face login (token not provided or already logged in)")
+                            logging.info(
+                                "Skipping Hugging Face login (token not provided or already logged in)"
+                            )
 
                         # Download model from Hugging Face
                         model_path = snapshot_download(
-                            repo_id=model_name,
-                            repo_type="model",
-                            resume_download=True
+                            repo_id=model_name, repo_type="model", resume_download=True
                         )
 
                         logging.info(f"Model downloaded successfully to: {model_path}")
@@ -439,9 +475,15 @@ class CodeSnippetStore:
                             f"Install it with: pip install huggingface_hub"
                         )
                     except Exception as download_error:
-                        logging.error(f"Failed to download model from Hugging Face: {download_error}")
-                        logging.error(f"Available Qwen models at: https://huggingface.co/models?search=Qwen")
-                        logging.error("Set HF_TOKEN environment variable to authenticate:")
+                        logging.error(
+                            f"Failed to download model from Hugging Face: {download_error}"
+                        )
+                        logging.error(
+                            f"Available Qwen models at: https://huggingface.co/models?search=Qwen"
+                        )
+                        logging.error(
+                            "Set HF_TOKEN environment variable to authenticate:"
+                        )
                         logging.error("  export HF_TOKEN=your_token_here")
                         raise
 
@@ -454,14 +496,15 @@ class CodeSnippetStore:
 
         else:
             raise ImportError(
-                f"No suitable embedding model loader available. "
-                f"Model: {model_name}"
+                f"No suitable embedding model loader available. " f"Model: {model_name}"
             )
 
     def embed_snippets(self):
         """Generate embeddings for all stored snippets."""
         if not self._model_loaded:
-            raise RuntimeError("Embedding model not loaded. Call load_embedding_model() first.")
+            raise RuntimeError(
+                "Embedding model not loaded. Call load_embedding_model() first."
+            )
 
         if not self.snippets:
             logging.warning("No snippets to embed")
@@ -474,21 +517,28 @@ class CodeSnippetStore:
 
             for snippet in self.snippets:
                 # For multi-chunk snippets, embed all chunks
-                chunks_to_embed = snippet.chunks if snippet.chunks else [snippet.content]
+                chunks_to_embed = (
+                    snippet.chunks if snippet.chunks else [snippet.content]
+                )
 
                 for chunk in chunks_to_embed:
-                    if hasattr(self, 'tokenizer') and self.tokenizer is not None:
+                    if hasattr(self, "tokenizer") and self.tokenizer is not None:
                         # Qwen token-level embedding
                         inputs = self.tokenizer(
                             chunk,
                             return_tensors="pt",
                             padding=True,
                             truncation=True,
-                            max_length=512
+                            max_length=512,
                         )
                         outputs = self.embedding_model(**inputs)
                         # Mean pooling to get single embedding
-                        embedding = outputs.last_hidden_state.mean(dim=1).detach().numpy().flatten()
+                        embedding = (
+                            outputs.last_hidden_state.mean(dim=1)
+                            .detach()
+                            .numpy()
+                            .flatten()
+                        )
                     else:
                         raise RuntimeError("No tokenizer available for Qwen model")
 
@@ -496,7 +546,9 @@ class CodeSnippetStore:
 
                 self.embeddings = np.array(all_embeddings)
 
-            logging.info(f"Successfully embedded {len(self.snippets)} snippets (total {len(self.embeddings)} embeddings)")
+            logging.info(
+                f"Successfully embedded {len(self.snippets)} snippets (total {len(self.embeddings)} embeddings)"
+            )
 
             # Save to cache if enabled
             if self.cache_embeddings:
@@ -517,7 +569,9 @@ class CodeSnippetStore:
             Query embedding vector, or None if model not loaded
         """
         if not self._model_loaded:
-            raise RuntimeError("Embedding model not loaded. Call load_embedding_model() first.")
+            raise RuntimeError(
+                "Embedding model not loaded. Call load_embedding_model() first."
+            )
 
         try:
             return self.embedding_model.encode(query, convert_to_numpy=True)
@@ -530,7 +584,7 @@ class CodeSnippetStore:
         query: str,
         top_k: int = 5,
         threshold: float = 0.7,
-        return_scores: bool = True
+        return_scores: bool = True,
     ) -> List[Tuple[CodeSnippet, float]]:
         """
         Find the most similar code snippets to a query.
@@ -547,7 +601,9 @@ class CodeSnippetStore:
             List of (snippet, similarity_score) tuples
         """
         if not self._model_loaded:
-            raise RuntimeError("Embedding model not loaded. Call load_embedding_model() first.")
+            raise RuntimeError(
+                "Embedding model not loaded. Call load_embedding_model() first."
+            )
 
         if not self.snippets or self.embeddings is None:
             return []
@@ -557,17 +613,21 @@ class CodeSnippetStore:
             query_embedding = self.embed_query(query)
 
             # Compute cosine similarity
-            if SentenceTransformer is not None and not self.embedding_model_name.startswith("Qwen"):
+            if (
+                SentenceTransformer is not None
+                and not self.embedding_model_name.startswith("Qwen")
+            ):
                 # Sentence-transformers approach
                 cos_scores = util.cos_sim(query_embedding, self.embeddings)[0]
             else:
                 # Qwen approach - compute cosine similarity with numpy
                 cos_scores = np.dot(self.embeddings, query_embedding) / (
-                    np.linalg.norm(self.embeddings, axis=1) * np.linalg.norm(query_embedding)
+                    np.linalg.norm(self.embeddings, axis=1)
+                    * np.linalg.norm(query_embedding)
                 )
 
             # Get top-k results
-            top_indices = np.argsort(cos_scores)[::-1][:min(top_k, len(self.snippets))]
+            top_indices = np.argsort(cos_scores)[::-1][: min(top_k, len(self.snippets))]
 
             # Filter by threshold
             filtered_results = []
@@ -642,12 +702,12 @@ class SemanticSimilaritySearch:
                 "search_fields": ["test_class", "focal_class", "oracles"],
                 "code_directory": script_dir.parent.parent / "input" / "github-repos",
                 "cache_embeddings": True,
-                "cache_file": script_dir / "resources" / "embeddings_cache.pkl"
+                "cache_file": script_dir / "resources" / "embeddings_cache.pkl",
             }
             return default_config
 
         try:
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 config = json.load(f)
 
             # Convert string paths to Path objects
@@ -679,17 +739,21 @@ class SemanticSimilaritySearch:
                 "search_fields": ["test_class", "focal_class", "oracles"],
                 "code_directory": script_dir.parent.parent / "input" / "github-repos",
                 "cache_embeddings": True,
-                "cache_file": script_dir / "resources" / "embeddings_cache.pkl"
+                "cache_file": script_dir / "resources" / "embeddings_cache.pkl",
             }
 
     def initialize(self):
         """Initialize the snippet store with code snippets and embeddings."""
         # Resolve code directory path relative to config file
-        config_dir = os.path.dirname(os.path.abspath(self.config.get("config_file", ".")))
+        config_dir = os.path.dirname(
+            os.path.abspath(self.config.get("config_file", "."))
+        )
         code_dir = self.config.get("code_directory")
 
         if code_dir is None:
-            raise ValueError("Missing code_directory of the target project in the config file!")
+            raise ValueError(
+                "Missing code_directory of the target project in the config file!"
+            )
 
         # Resolve to absolute path
         if not os.path.isabs(code_dir):
@@ -700,10 +764,12 @@ class SemanticSimilaritySearch:
             max_snippet_length=self.config.get("max_snippet_length", 500),
             cache_embeddings=self.config.get("cache_embeddings", True),
             cache_file=str(self.config.get("cache_file", None)),
-            embedding_model_name=self.config.get("embedding_model", "Qwen/Qwen3-Embedding-4B"),
+            embedding_model_name=self.config.get(
+                "embedding_model", "Qwen/Qwen3-Embedding-4B"
+            ),
             chunk_size=self.config.get("max_chunk_size", 1024 * 4),
             chunk_overlap=self.config.get("chunk_overlap", 512),
-            embedding_dimension=self.config.get("embedding_dimension", 2048)
+            embedding_dimension=self.config.get("embedding_dimension", 2048),
         )
 
         self.snippet_store.initialize()
@@ -712,7 +778,7 @@ class SemanticSimilaritySearch:
         self,
         test_prefix: str,
         max_snippets: Optional[int] = None,
-        threshold: Optional[float] = None
+        threshold: Optional[float] = None,
     ) -> str:
         """
         Retrieve relevant code snippets for a given test prefix.
@@ -734,9 +800,7 @@ class SemanticSimilaritySearch:
 
         # Find similar snippets
         results = self.snippet_store.find_similar_snippets(
-            query=test_prefix,
-            top_k=max_snippets,
-            threshold=threshold
+            query=test_prefix, top_k=max_snippets, threshold=threshold
         )
 
         # Format results
@@ -757,7 +821,7 @@ def retrieve_relevant_context(
     test_prefix: str,
     config_path: str = "scripts/prompt/rag/config.json",
     max_snippets: int = 5,
-    threshold: float = 0.7
+    threshold: float = 0.7,
 ) -> str:
     """
     Convenience function to retrieve relevant context for a test prefix.
@@ -774,7 +838,5 @@ def retrieve_relevant_context(
     search = SemanticSimilaritySearch(config_path)
     search.initialize()
     return search.retrieve_relevant_context(
-        test_prefix=test_prefix,
-        max_snippets=max_snippets,
-        threshold=threshold
+        test_prefix=test_prefix, max_snippets=max_snippets, threshold=threshold
     )

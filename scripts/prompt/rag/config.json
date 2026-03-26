@@ -7,7 +7,7 @@
   "max_chunk_size": 512,
   "chunk_overlap": 64,
   "search_fields": ["test_class", "focal_class", "oracles"],
-  "code_directory": "../../input/github-repos/davidb/scala-maven-plugin",
+  "code_directory": "../../input/github-repos/datadog/java-dogstatsd-client",
   "cache_embeddings": true,
   "cache_file": "../resources/embeddings_cache.pkl",
   "rag_enabled": true
