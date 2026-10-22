@@ -2760,11 +2760,11 @@ public class TokensUtils {
             Class scope,
             int hierarchicalLevel
     ) {
-        HashMap<String, VariableDeclarator> tcVariablesMap = JavaParserUtils.collectExistingVariables(new HashMap<>(), fieldDeclarations, modifiersRules, scope, hierarchicalLevel);
+        Set<VariableDeclarator> tcVariablesMap = Collections.newSetFromMap(new IdentityHashMap<>());
+        JavaParserUtils.collectExistingVariables(tcVariablesMap, fieldDeclarations, modifiersRules, scope, hierarchicalLevel);
 
-        for (Map.Entry<String, VariableDeclarator> entry : tcVariablesMap.entrySet()) {
-            String variableName = entry.getKey();
-            VariableDeclarator variableDeclarator = entry.getValue();
+        tcVariablesMap.forEach(variableDeclarator -> {
+            String variableName = variableDeclarator.getNameAsString();
             Type variableType = variableDeclarator.getType();
             if (!variableDeclaratorIdentifiers.containsKey(variableName)) {
                 variableDeclaratorIdentifiers.put(variableName, new ArrayList<>());
@@ -2773,7 +2773,7 @@ public class TokensUtils {
             if (!isAlreadyPresent) {
                 variableDeclaratorIdentifiers.get(variableName).add(new Pair(variableDeclarator, variableType));
             }
-        }
+        });
     }
 
     /**
@@ -2789,11 +2789,11 @@ public class TokensUtils {
             MethodDeclaration methodDeclaration,
             int hierarchicalLevel
     ) {
-        HashMap<String, VariableDeclarator> tpVariablesMap = JavaParserUtils.collectExistingVariables(new HashMap<>(), methodDeclaration.getBody().get(), MethodDeclaration.class, hierarchicalLevel);
+        Set<VariableDeclarator> tpVariablesMap = Collections.newSetFromMap(new IdentityHashMap<>());
+        JavaParserUtils.collectExistingVariables(tpVariablesMap, methodDeclaration.getBody().get(), MethodDeclaration.class, hierarchicalLevel);
 
-        for (Map.Entry<String, VariableDeclarator> entry : tpVariablesMap.entrySet()) {
-            String variableName = entry.getKey();
-            VariableDeclarator variableDeclarator = entry.getValue();
+        tpVariablesMap.forEach(variableDeclarator -> {
+            String variableName = variableDeclarator.getNameAsString();
             Type variableType = variableDeclarator.getType();
             if (!fieldTypeIdentifiers.containsKey(variableName)) {
                 fieldTypeIdentifiers.put(variableName, new ArrayList<>());
@@ -2802,7 +2802,7 @@ public class TokensUtils {
             if (!isAlreadyPresent) {
                 fieldTypeIdentifiers.get(variableName).add(new Pair(variableDeclarator, variableType));
             }
-        }
+        });
     }
 
     /**

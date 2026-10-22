@@ -40,10 +40,12 @@ import star.tracto.preprocessing.components.TestClazzDatapoints;
 import star.tracto.preprocessing.utils.TokensUtils;
 import star.tracto.utils.FilesUtils;
 import star.tracto.utils.JavaUtils;
+import star.tracto.utils.javaParser.visitors.expressions.NameExprVisitor;
 import star.tracto.utils.javaParser.visitors.expressions.VariableDeclarationExprVisitor;
 import star.tracto.utils.javaParser.visitors.statements.helper.StmtVisitorHelper;
 
 import java.io.IOException;
+import java.io.StringWriter;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
@@ -1548,33 +1550,146 @@ public class JavaParserUtils {
         return lastOccurrence;
     }
 
-    public static HashMap<String, VariableDeclarator> collectExistingVariables(
-            HashMap<String, VariableDeclarator> existingVariables,
+    /**
+     * Collects the names of a set of parameters {@link Parameter} and returns the list as a set.
+     * @param existingParameters The set of parameters to process
+     * @return The set of corresponding parameter names
+     */
+    public static Set<String> parametersToNames(Set<Parameter> existingParameters) {
+        return new HashSet<>(existingParameters.stream().map(Parameter::getNameAsString).toList());
+    }
+
+    /**
+     * Collects the names of a set of variables {@link VariableDeclarator} and returns the list as a set.
+     * @param variableDeclarators The set of variables to process
+     * @return The set of corresponding variable names
+     */
+    public static Set<String> variableDeclaratorsToNames(Set<VariableDeclarator> variableDeclarators) {
+        return new HashSet<>(variableDeclarators.stream().map(VariableDeclarator::getNameAsString).toList());
+    }
+
+    /**
+     * Checks if the field declaration is within the scope to be collected and satisfies the modifiers rules (like `private`,
+     * `public`, `static`) and adds all the corresponding variable declarations to the set of existing variables, if not
+     * present.
+     *
+     * Warning: The variable declarations are added to the set, according to the type of set passed to the function. For
+     * example if the set is an instance of `HashSet` the equality check is internally performed as `equals()`, while
+     * for an instance created from an `IdentityHashMap` the equality check is performed by reference (`==`).
+     *
+     * @param existingVariables The set of existing variables already defined (that will be filled with the new variables
+     *                          defined in the {@code fieldDeclarations} passed to the function
+     * @param blockStmt The block of statement within which the variables to check and add are defined (at any level)
+     * @param scope the visibility scope (the type to which the block of statements passed to the function refers to,
+     *              like a method declaration or a for statement, for example)
+     * @param hierarchyLevel the hierarchy level up to which to accept variable definitions (for example if hierarchy level
+     *                       is 0 and the scope is a method declaration, the variables defined within an inner block defined
+     *                       within the main block of the method are not considered). Check {@link #checkNodeScope}. Any
+     *                       inner block of statement adds a hierarchical level
+     */
+    public static void collectExistingVariables(
+            Set<VariableDeclarator> existingVariables,
             BlockStmt blockStmt,
             Class scope,
-            int hierarchicalLevel
+            int hierarchyLevel
     ) {
         VariableDeclarationExprVisitor varDeclarationExprCollector = new VariableDeclarationExprVisitor();
         List<VariableDeclarationExpr> newVarDeclarationExprs = varDeclarationExprCollector.visit(blockStmt);
         newVarDeclarationExprs.forEach(varDecl -> {
             varDecl.getVariables().forEach(var -> {
-                if (checkVariableScope(var, scope, hierarchicalLevel)) {
-                    String varName = var.getNameAsString();
-                    if (!existingVariables.containsKey(varName)) {
-                        existingVariables.put(varName, var);
-                    }
+                if (checkNodeScope(var, scope, hierarchyLevel)) {
+                    existingVariables.add(var);
                 }
             });
         });
-        return existingVariables;
     }
 
-    private static boolean checkVariableScope(
+    /**
+     * Checks if the field declaration is within the scope to be collected and satisfies the modifiers rules (like `private`,
+     * `public`, `static`) and adds all the corresponding variable declarations to the set of existing variables, if not
+     * present.
+     *
+     * Warning: The variable declarations are added to the set, according to the type of set passed to the function. For
+     * example if the set is an instance of `HashSet` the equality check is internally performed as `equals()`, while
+     * for an instance created from an `IdentityHashMap` the equality check is performed by reference (`==`).
+     *
+     * @param existingVariables The set of existing variables already defined (that will be filled with the new variables
+     *                          defined in the {@code fieldDeclarations} passed to the function
+     * @param fieldDeclarations The list of field declarations to process
+     * @param modifiersRules The list of rules related to the modifiers that the field declarations must satisfy
+     * @param scope the visibility scope (like a class or a method declaration or a for statement, etc.)
+     * @param hierarchyLevel the hierarchy level up to which to accept variable definitions (for example if hierarchy level
+     *                       is 0 and the scope is a method declaration, the variables defined within an inner block defined
+     *                       within the main block of the method are not considered). Check {@link #checkNodeScope}. Any
+     *                       inner block of statement adds a hierarchical level
+     */
+    public static void collectExistingVariables(
+            Set<VariableDeclarator> existingVariables,
+            List<FieldDeclaration> fieldDeclarations,
+            List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules,
+            Class<?> scope,
+            int hierarchyLevel
+    ) {
+        for (FieldDeclaration fieldDecl : fieldDeclarations) {
+            if (!checkNodeScope(fieldDecl, scope, hierarchyLevel)) {
+                continue;
+            }
+            if (!checkModifiersRules(modifiersRules, fieldDecl.getModifiers())) {
+                // Skip the field declaration if it does not satisfy the modifiers rules
+                continue;
+            }
+            existingVariables.addAll(fieldDecl.getVariables());
+        }
+    }
+
+    /**
+     * Checks if the node is in the visibility scope or not, given it's hierarchical level of definition.
+     * For example, given a node instance of {@link VariableDeclarator}, a method declaration as a scope {@link MethodDeclaration}
+     * and a hierarchical level equal to 0, returns {@code true} only if the variable is directly defined in the block of
+     * the method declaration, containing the statements of the method. If the variable is defined within another block
+     * of statements declared within the block of the method, the hierarchical level is 1. The variable declared within a
+     * condition of a statement with a block (like the variable defined within a `for` initialization or the resources
+     * defined within a `try` statement) inherit the hierarchy of the block of the corresponding statement.
+     *
+     * Example:
+     *      // Hierarchical level 0
+     *      {
+     *          // BlockStmt of the method declaration
+     *          [Type] var1 = ...;
+     *          // Creation of new hierarchical level 1 --> `for` statement
+     *          for ([Type] var2 = ...; ...; ...) {
+     *              // BlockStmt of the `for` statement
+     *              [Type] var3 = ...;
+     *              // Creation of new hierarchical level 2 --> `try` statement
+     *              try ([Type] var4 = ...) {
+     *                  // BlockStmt of the `try` statement
+     *                  [Type] var5 = ...;
+     *              }
+     *          }
+     *      }
+     *
+     *      var1 --> hierarchical level 0 with respect to the method declaration
+     *      var2 --> hierarchical level 1 with respect to the method declaration
+     *      var3 --> hierarchical level 1 with respect to the method declaration
+     *      var4 --> hierarchical level 2 with respect to the method declaration
+     *      var5 --> hierarchical level 2 with respect to the method declaration
+     *
+     * @param node the node to check
+     * @param scope the visibility scope (like a class or a block of statements of a method or a for loop, etc.)
+     * @param hierarchyLevel the hierarchy level up to which to accept the node.
+     * @return
+     */
+    private static boolean checkNodeScope(
             Node node,
             Class scope,
             int hierarchyLevel
     ) {
+        if (!((node instanceof VariableDeclarator) || (node instanceof FieldDeclaration))) {
+            throw new IllegalStateException("The node passed to the function is not a variable or a field declaration.");
+        }
+
         boolean valid = false;
+        boolean varInStmtCondition = true;
         Optional<Node> parentNode = node.getParentNode();
         while(parentNode.isPresent() && (hierarchyLevel + 1) >= 0) {
             if (scope.isInstance(parentNode.get())) {
@@ -1583,35 +1698,21 @@ public class JavaParserUtils {
             }
             if (parentNode.get() instanceof BlockStmt) {
                 hierarchyLevel--;
+                varInStmtCondition = false;
+            } else if (
+                    parentNode.get() instanceof DoStmt ||
+                    parentNode.get() instanceof ForEachStmt ||
+                    parentNode.get() instanceof ForStmt ||
+                    parentNode.get() instanceof TryStmt ||
+                    parentNode.get() instanceof WhileStmt
+            ) {
+                if (varInStmtCondition) {
+                    hierarchyLevel--;
+                }
             }
             parentNode = parentNode.get().getParentNode();
         }
         return valid;
-    }
-
-    public static HashMap<String, VariableDeclarator> collectExistingVariables(
-            HashMap<String, VariableDeclarator> existingVariables,
-            List<FieldDeclaration> fieldDeclarations,
-            List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules,
-            Class scope,
-            int hierarchyLevel
-    ) {
-        for (FieldDeclaration fieldDecl : fieldDeclarations) {
-            if (!checkVariableScope(fieldDecl, scope, hierarchyLevel)) {
-                continue;
-            }
-            if (!checkModifiersRules(modifiersRules, fieldDecl.getModifiers())) {
-                // Skip the field declaration if it does not satisfy the modifiers rules
-                continue;
-            }
-            for (VariableDeclarator varDecl : fieldDecl.getVariables()) {
-                String varName = varDecl.getNameAsString();
-                if (!existingVariables.containsKey(varName)) {
-                    existingVariables.put(varName, varDecl);
-                }
-            }
-        }
-        return existingVariables;
     }
 
     public static HashMap<String, List<Path>> collectPathsOfClassesInSamePackage(
@@ -1917,6 +2018,295 @@ public class JavaParserUtils {
             }
         }
         return true;
+    }
+
+    /**
+     * Checks if the variable name of the variable {@link VariableDeclarator} passed to the function is already defined
+     * in the collection of the existing variables. In this case the method renames the variable using a simple incremental
+     * logic (adding an index at the end of the variable)
+     *
+     * @param var the variable to check
+     * @param existingVariables the collection of existing variables
+     * @return If the variable name already exists in the collection, an optional {@link Optional} containing a pair of
+     * elements where the first element is the old variable name and the second element is the new variable name. Otherwise,
+     * an empty optional {@link Optional}
+     */
+    public static Optional<Pair<String,String>> renameLocalVar(VariableDeclarator var, HashMap<String, VariableDeclarator> existingVariables) {
+        String varName = var.getNameAsString();
+        if (!existingVariables.containsKey(varName)) {
+            existingVariables.put(varName, var);
+            return Optional.empty();
+        }
+        int i = 0;
+        while (existingVariables.containsKey(varName + "_" + i)) {
+            i++;
+        }
+        String newVarName = varName + "_" + i;
+        var.setName(newVarName);
+        existingVariables.put(newVarName, var);
+        return Optional.of(new Pair<>(varName, newVarName));
+    }
+
+    public static Pair<VariableDeclarator, VariableDeclarationExpr> generateNewVariable(String originalName, Set<VariableDeclarator> existingVariables, com.github.javaparser.ast.type.Type varType, Expression expr, Optional<String> suffix) {
+        String newVarName = originalName + suffix.orElse("");
+        int idx = 0;
+        Set<String> existingVariableNames = variableDeclaratorsToNames(existingVariables);
+        while (existingVariableNames.contains(newVarName)) {
+            newVarName = newVarName + ++idx;
+        }
+        VariableDeclarator newVarDecl = new VariableDeclarator(
+                new ClassOrInterfaceType(null, varType.asString()),
+                newVarName,
+                expr
+        );
+        VariableDeclarationExpr executableVarDeclExpr = new VariableDeclarationExpr(newVarDecl);
+        return new Pair<>(newVarDecl, executableVarDeclExpr);
+    }
+
+    /**
+     * Checks if the parameter name of the parameter {@link Parameter} passed to the function is already defined
+     * in the collection of the existing variable names. In this case the method renames the variable using a simple incremental
+     * logic (adding an index at the end of the variable)
+     *
+     * @param param the parameter to check
+     * @param existingVariables the collection of existing variables
+     * @return If the parameter name already exists in the collection, an optional {@link Optional} the new parameter name.
+     * Otherwise, an empty optional {@link Optional}
+     */
+    public static Optional<String> renameLocalParam(Parameter param, Set<VariableDeclarator> existingVariables) {
+        Set<String> existingVariableNames = JavaParserUtils.variableDeclaratorsToNames(existingVariables);
+        String paramName = param.getNameAsString();
+        if (!existingVariableNames.contains(paramName)) {
+            return Optional.empty();
+        }
+        int i = 0;
+        while (existingVariableNames.contains(paramName + "_" + i)) {
+            i++;
+        }
+        String newParamName = paramName + "_" + i;
+        return Optional.of(newParamName);
+    }
+
+    /**
+     * Given a BlockStmt representing the body of a method, and the mapping of the parameters to replace in the block of
+     * statements, replace the parameters with the actual arguments in the block of statements.
+     * @param blockStmt the body of the method to process
+     * @param paramMapping the mapping of the parameters to replace in the block of statements
+     */
+    public static void replaceParams(BlockStmt blockStmt, Map<String, Expression> paramMapping) {
+        NameExprVisitor nameExprCollector = new NameExprVisitor();
+        List<NameExpr> nameExprs = nameExprCollector.visit(blockStmt);
+        nameExprs.forEach(nameExpr -> {
+            String varName = nameExpr.getNameAsString();
+            if (paramMapping.containsKey(varName)) {
+                nameExpr.replace(paramMapping.get(varName).clone());
+            }
+        });
+    }
+
+    /**
+     * Given a MethodDeclaration, renames all usages of the specified parameters in the method body,
+     * along with the parameter declarations themselves.
+     *
+     * Uses JavaSymbolSolver to resolve each NameExpr to its exact Parameter declaration, safely handling:
+     * <ul>
+     *   <li>Local variables shadowing a parameter name inside the body</li>
+     *   <li>Field name collisions with parameter names</li>
+     * </ul>
+     *
+     * A parameter is renamed (both its declaration and all usages in the body) only if ALL its usages
+     * were successfully resolved. If any usage fails to resolve, the parameter is left entirely
+     * unchanged to avoid producing inconsistent code.
+     *
+     * Prerequisite: {@link com.github.javaparser.symbolsolver.JavaSymbolSolver} must be configured
+     * on {@link com.github.javaparser.StaticJavaParser} before calling this method.
+     *
+     * @param blockStmt the body of the method to process
+     * @param paramMapping the mapping of the parameters (paramter → new name) to replace
+     */
+    public static void replaceParameters(BlockStmt blockStmt, Map<Parameter, String> paramMapping) {
+        // PASS 1: Collect pending NameExpr renames grouped by their resolved Parameter.
+        // Track parameters for which at least one NameExpr usage failed to resolve.
+        // No mutations are applied in this pass.
+        Map<Parameter, List<NameExpr>> pendingRenames = new IdentityHashMap<>();
+        Set<Parameter> failedParams = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<String> existingParamNames = parametersToNames(paramMapping.keySet());
+        blockStmt.findAll(NameExpr.class).forEach(nameExpr -> {
+            if (!existingParamNames.contains(nameExpr.getNameAsString())) return;
+            try {
+                nameExpr.resolve().toAst()
+                        // Unlike local variables, toAst() returns Parameter directly —
+                        // no VariableDeclarationExpr unwrapping needed.
+                        .filter(node -> node instanceof Parameter)
+                        .map(node -> (Parameter) node)
+                        .filter(paramMapping::containsKey) // identity check — only OUR targets
+                        .ifPresent(param -> pendingRenames
+                                .computeIfAbsent(param, k -> new ArrayList<>())
+                                .add(nameExpr));
+            } catch (UnsolvedSymbolException | UnsupportedOperationException ignored) {
+                // Resolution failed: conservatively mark all target parameters sharing this
+                // name as failed, since we cannot determine which one this NameExpr binds to.
+                paramMapping.keySet().stream()
+                        .filter(p -> p.getNameAsString().equals(nameExpr.getNameAsString()))
+                        .forEach(failedParams::add);
+            }
+        });
+        // PASS 2: Apply renames atomically — only for parameters with no resolution failures.
+        // Both NameExpr usages in the body and the parameter declaration itself are renamed
+        // together, or not at all.
+        paramMapping.forEach((param, newName) -> {
+            if (failedParams.contains(param)) return;
+            pendingRenames.getOrDefault(param, Collections.emptyList())
+                    .forEach(nameExpr -> nameExpr.setName(newName));
+            param.setName(newName);
+        });
+    }
+
+
+
+    public static void normalizeVariableNames(
+            BlockStmt blockStmt
+    ) {
+        Set<VariableDeclarator> existingVariables = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<String> existingIdentifiers = new HashSet<>();
+        HashMap<VariableDeclarator, String> newVariablesToChange = new HashMap<>();
+        VariableDeclarationExprVisitor varDeclarationExprCollector = new VariableDeclarationExprVisitor();
+        List<VariableDeclarationExpr> varDeclarationExprs = varDeclarationExprCollector.visit(blockStmt);
+        Set<Parameter> existingParams = Collections.newSetFromMap(new IdentityHashMap<>());
+        List<Parameter> parameters = blockStmt.findAll(Parameter.class);
+        HashMap<Parameter, String> newParametersToChange = new HashMap<>();
+
+        varDeclarationExprs.forEach(varDecl -> {
+            varDecl.getVariables().forEach(var -> {
+                String varName = var.getNameAsString();
+                if (!existingIdentifiers.contains(varName)) {
+                    existingVariables.add(var);
+                    existingIdentifiers.add(varName);
+                } else {
+                    String newVarName = varName;
+                    int idx = 0;
+                    while (existingIdentifiers.contains(newVarName)) {
+                        newVarName = varName + ++idx;
+                    }
+                    existingIdentifiers.add(newVarName);
+                    newVariablesToChange.put(var, newVarName);
+                }
+            });
+        });
+
+        parameters.forEach(parameter -> {
+            String paramName = parameter.getNameAsString();
+            if (!existingIdentifiers.contains(paramName)) {
+                existingParams.add(parameter);
+                existingIdentifiers.add(paramName);
+            } else {
+                String newParamName = paramName;
+                int idx = 0;
+                while (existingIdentifiers.contains(newParamName)) {
+                    newParamName = paramName + ++idx;
+                }
+                existingIdentifiers.add(newParamName);
+                newParametersToChange.put(parameter, newParamName);
+            }
+        });
+        JavaParserUtils.replaceVariables(blockStmt, newVariablesToChange);
+        JavaParserUtils.replaceParameters(blockStmt, newParametersToChange);
+    }
+
+    /**
+     * Retrieves the variable declarator {@link VariableDeclarator} of a variable, from a name expression {@link NameExpr}.
+     * If the variable declarator is found returns it, otherwise returns an empty optional {@link Optional}.
+     *
+     * @param nameExpr the name expression to process
+     * @param existingVariables the list of variables already defined, among to which look for the name expression
+     * @return An optional containing the retrieved variable declarator or an empty optional, otherwise.
+     */
+    public static Optional<VariableDeclarator> getVarFromNameExpr(NameExpr nameExpr, Set<VariableDeclarator> existingVariables) {
+        return nameExpr.resolve().toAst()
+                .flatMap(node -> {
+                    // toAst() may return either the VariableDeclarator directly,
+                    // or the parent VariableDeclarationExpr — handle both.
+                    if (node instanceof VariableDeclarator vd) {
+                        return Optional.of(vd);
+                    } else if (node instanceof VariableDeclarationExpr vde) {
+                        // A VariableDeclarationExpr can declare multiple variables (e.g. int x=1, y=2),
+                        // so we find the one matching this specific NameExpr's name.
+                        return vde.getVariables().stream()
+                                .filter(vd -> vd.getNameAsString().equals(nameExpr.getNameAsString()))
+                                .findFirst();
+                    }
+                    return Optional.empty();
+                })
+                .filter(existingVariables::contains);
+    }
+
+    /**
+     * Given a BlockStmt representing the body of a method, and the mapping of the variables to replace
+     * in the block of statements, replace the variables with the renamed names in the block of statements.
+     *
+     * Uses JavaSymbolSolver to resolve each NameExpr to its exact declaration, safely handling:
+     * <ul>
+     *   <li>Variable shadowing in nested scopes</li>
+     *   <li>Field name collisions with local variables</li>
+     * </ul>
+     *
+     * A variable is renamed (both declaration and all usages) only if ALL its usages were successfully
+     * resolved. If any usage fails to resolve, the variable is left entirely unchanged to avoid
+     * producing inconsistent code.
+     *
+     * Prerequisite: {@link com.github.javaparser.symbolsolver.JavaSymbolSolver} must be configured
+     * on {@link com.github.javaparser.StaticJavaParser} before calling this method.
+     *
+     * @param blockStmt  the body of the method to process
+     * @param varMapping the mapping of the variables (old name → new name) to replace
+     */
+    public static void replaceVariables(BlockStmt blockStmt, Map<VariableDeclarator, String> varMapping) {
+        // PASS 1: Collect pending NameExpr renames grouped by their resolved VariableDeclarator.
+        // Track declarators for which at least one NameExpr usage failed to resolve.
+        // No mutations are applied in this pass.
+        Map<VariableDeclarator, List<NameExpr>> pendingRenames = new IdentityHashMap<>();
+        Set<VariableDeclarator> failedDeclarators = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<String> existingVariableNames = variableDeclaratorsToNames(varMapping.keySet());
+        blockStmt.findAll(NameExpr.class).forEach(nameExpr -> {
+            if (!existingVariableNames.contains(nameExpr.getNameAsString())) return;
+            try {
+                Optional<VariableDeclarator> resolved = nameExpr.resolve().toAst()
+                        .flatMap(node -> {
+                            // toAst() may return either the VariableDeclarator directly,
+                            // or the parent VariableDeclarationExpr — handle both.
+                            if (node instanceof VariableDeclarator vd) {
+                                return Optional.of(vd);
+                            } else if (node instanceof VariableDeclarationExpr vde) {
+                                // A VariableDeclarationExpr can declare multiple variables (e.g. int x=1, y=2),
+                                // so we find the one matching this specific NameExpr's name.
+                                return vde.getVariables().stream()
+                                        .filter(vd -> vd.getNameAsString().equals(nameExpr.getNameAsString()))
+                                        .findFirst();
+                            }
+                            return Optional.empty();
+                        })
+                        .filter(varMapping::containsKey); // identity check — must be a target declarator
+
+                resolved.ifPresent(vd -> pendingRenames
+                        .computeIfAbsent(vd, k -> new ArrayList<>())
+                        .add(nameExpr));
+
+            } catch (UnsolvedSymbolException | UnsupportedOperationException ignored) {
+                varMapping.keySet().stream()
+                        .filter(vd -> vd.getNameAsString().equals(nameExpr.getNameAsString()))
+                        .forEach(failedDeclarators::add);
+            }
+        });
+        // PASS 2: Apply renames atomically — only for declarators with no resolution failures.
+        // Both NameExpr usages and the declaration itself are renamed together, or not at all.
+        varMapping.forEach((vd, newName) -> {
+            if (failedDeclarators.contains(vd)) {
+                return;
+            }
+            pendingRenames.getOrDefault(vd, Collections.emptyList())
+                    .forEach(nameExpr -> nameExpr.setName(newName));
+            vd.setName(newName);
+        });
     }
 
     /**
