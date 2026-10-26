@@ -159,6 +159,8 @@ public class OraclesDataset {
             }
             // }
         }
+        // Store the number of test cases discarded during the normalization (the reason of each one is in its statistics)
+        statistics.put("discardedTestCases", (int) testStatsList.stream().filter(testStats -> testStats.discardReason() != null).count());
         // Update java parser considering the new split files generated within the repository
         JavaParserUtils.setRepoJavaParser(repoRootPath, classpath);
         // Define the list to store the test pair of split test cases (generated from the original test cases) and the

@@ -21,6 +21,7 @@ public class TestStatsBuilder {
     private  int numberOfMethodCalls;
     private  int numberOfVariables;
     private HashMap<String, Integer> assertionsDistribution;
+    private String discardReason;
 
     /**
      * Builds a {@link star.tracto.preprocessing.components.TestStats} object with the values set in this builder.
@@ -37,7 +38,8 @@ public class TestStatsBuilder {
                 this.numberOfAssertions,
                 this.numberOfMethodCalls,
                 this.numberOfVariables,
-                this.assertionsDistribution
+                this.assertionsDistribution,
+                this.discardReason
         );
     }
 
@@ -122,4 +124,12 @@ public class TestStatsBuilder {
         this.assertionsDistribution = assertionsDistribution;
     }
 
+    /**
+     * Sets the reason why the test case has been discarded during the normalization.
+     *
+     * @param discardReason the reason, or {@code null} if the test case has been normalized
+     */
+    public void setDiscardReason(String discardReason) {
+        this.discardReason = discardReason;
+    }
 }

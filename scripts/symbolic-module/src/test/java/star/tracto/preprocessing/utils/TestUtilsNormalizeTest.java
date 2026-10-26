@@ -13,6 +13,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import star.tracto.data.enums.TryCatchFinallyStrategyType;
 import star.tracto.data.records.OraclesDatasetConfig;
 import star.tracto.preprocessing.components.TestStats;
 
@@ -20,7 +21,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -28,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class TestUtilsNormalizeTest {
 
     private static final OraclesDatasetConfig CONFIG = FixtureRepo.CONFIG;
+    private static final OraclesDatasetConfig KEEP_TRY_CATCH = new ConfigBuilder().tryCatchFinally(TryCatchFinallyStrategyType.KEEP_TRY_CATCH).build();
 
     @TempDir
     Path tempDir;
@@ -102,12 +106,14 @@ class TestUtilsNormalizeTest {
                     }
 
                     @Test
-                    public void testMultiCatch() {
-                        try {
-                            Integer.parseInt("x");
-                            fail("should throw");
-                        } catch (IllegalArgumentException | IllegalStateException e) {
-                            assertNotNull(e);
+                    public void testSwitch() {
+                        int v = base;
+                        switch (v) {
+                            case 1:
+                                assertEquals(1, v);
+                                break;
+                            default:
+                                fail("unexpected");
                         }
                     }
 
@@ -130,11 +136,11 @@ class TestUtilsNormalizeTest {
 
         CompilationUnit normalized = StaticJavaParser.parse(result.getValue0());
         assertEquals(List.of("base"), fieldNames(normalized));
-        assertEquals(List.of("setUp", "testMultiCatch", "testTwoLoops"), methodNames(normalized));
-        // The multi-catch try cannot be flattened, so only that test case is reported in the error file
+        assertEquals(List.of("setUp", "testSwitch", "testTwoLoops"), methodNames(normalized));
+        // The normalization does not support switch statements, so only that test case is reported in the error file
         Path errorFile = outputPath.resolve("error/normalized/repo/src/test/java/com/acme/ErrorsTestSTARNormalizedTest.java");
         assertTrue(Files.exists(errorFile), "Expected error file " + errorFile);
-        assertEquals(List.of("testMultiCatch"), methodNames(StaticJavaParser.parse(errorFile)));
+        assertEquals(List.of("testSwitch"), methodNames(StaticJavaParser.parse(errorFile)));
     }
 
     @Test
@@ -808,6 +814,223 @@ class TestUtilsNormalizeTest {
                 """), findMethod(normalized, "testThrows").getBody().orElseThrow());
     }
 
+    @Test
+    void normalizationErrorFollowedByABlockStatementIsReported() throws IOException {
+        normalizeHelperTest("""
+                    @Test
+                    public void testSwitchThenLoop() {
+                        int v = 1;
+                        switch (v) {
+                            default:
+                                assertEquals(1, v);
+                        }
+                        for (int i = 0; i < 2; i++) {
+                            assertTrue(i >= 0);
+                        }
+                    }
+                """);
+
+        Path errorFile = outputPath.resolve("error/normalized/repo/src/test/java/com/acme/HelperTestSTARNormalizedTest.java");
+        assertTrue(Files.exists(errorFile), "Expected error file " + errorFile);
+        assertEquals(List.of("testSwitchThenLoop"), methodNames(StaticJavaParser.parse(errorFile)));
+    }
+
+    static Stream<Arguments> unsupportedTryStatements() {
+        return Stream.of(
+                Arguments.of("MULTI_CATCH", """
+                        try {
+                            Integer.parseInt(s);
+                            fail();
+                        } catch (NumberFormatException e) {
+                            assertNotNull(e);
+                        } catch (IllegalStateException e) {
+                            assertNotNull(e);
+                        }
+                        """),
+                // Before Step 9 the try block was silently dropped (D11)
+                Arguments.of("MULTI_CATCH", """
+                        try {
+                            int v = Integer.parseInt(s);
+                            assertEquals(1, v);
+                        } catch (NumberFormatException e) {
+                            assertNotNull(e);
+                        } catch (IllegalStateException e) {
+                            assertNotNull(e);
+                        }
+                        """),
+                Arguments.of("UNION_CATCH", """
+                        try {
+                            Integer.parseInt(s);
+                            fail();
+                        } catch (NumberFormatException | IllegalStateException e) {
+                            assertNotNull(e);
+                        }
+                        """),
+                // Before Step 9 the fail() call was wrapped in the assertThrows (D10)
+                Arguments.of("FAIL_NOT_LAST", """
+                        try {
+                            Integer.parseInt(s);
+                            fail("should throw");
+                            assertEquals("never", s);
+                        } catch (NumberFormatException e) {
+                            assertNotNull(e);
+                        }
+                        """),
+                Arguments.of("UNSUPPORTED_FAILING_STATEMENT", """
+                        try {
+                            if (s.isEmpty()) {
+                                Integer.parseInt(s);
+                            }
+                            fail();
+                        } catch (NumberFormatException e) {
+                            assertNotNull(e);
+                        }
+                        """),
+                Arguments.of("MUST_NOT_THROW", """
+                        try {
+                            Integer.parseInt(s);
+                        } catch (NumberFormatException e) {
+                            fail("unexpected");
+                        }
+                        """),
+                Arguments.of("CATCH_WITHOUT_FAIL", """
+                        try {
+                            Integer.parseInt(s);
+                        } catch (NumberFormatException e) {
+                            assertNotNull(e);
+                        }
+                        """),
+                Arguments.of("EMPTY_CATCH", """
+                        try {
+                            Integer.parseInt(s);
+                        } catch (NumberFormatException e) {
+                        }
+                        """),
+                // A try statement nested in another statement discards the test case as well
+                Arguments.of("EMPTY_CATCH", """
+                        for (int i = 0; i < 2; i++) {
+                            try {
+                                Integer.parseInt(s + i);
+                            } catch (NumberFormatException e) {
+                            }
+                        }
+                        """)
+        );
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("unsupportedTryStatements")
+    void testCaseWithUnsupportedTryStatementIsDiscarded(String expectedReason, String tryStatement) throws IOException {
+        Path testFile = writeTestClass("com/acme/DiscardTest.java", """
+                package com.acme;
+
+                import org.junit.jupiter.api.Test;
+                import static org.junit.jupiter.api.Assertions.*;
+
+                public class DiscardTest {
+                    @Test
+                    public void testDiscarded() {
+                        String s = "x";
+                        %s
+                        assertEquals("x", s);
+                    }
+
+                    @Test
+                    public void testKept() {
+                        assertEquals(1, 1);
+                    }
+                }
+                """.formatted(tryStatement));
+
+        Pair<Path, List<TestStats>> result = assertDoesNotThrow(
+                () -> TestUtils.normalizeTest(CONFIG, repoRoot, testFile, outputPath, Optional.empty()));
+
+        assertEquals(List.of("testKept"), methodNames(StaticJavaParser.parse(result.getValue0())));
+        assertEquals(Map.of("testDiscarded", expectedReason), discardReasons(result.getValue1()));
+        Path discardedFile = outputPath.resolve("discarded/normalized/repo/src/test/java/com/acme/DiscardTestSTARNormalizedTest.java");
+        assertTrue(Files.exists(discardedFile), "Expected discarded file " + discardedFile);
+        assertEquals(List.of("testDiscarded"), methodNames(StaticJavaParser.parse(discardedFile)));
+    }
+
+    @Test
+    void tryStatementIsKeptWithItsBlocksNormalizedWithKeepTryCatch() throws IOException {
+        Path normalized = normalizeHelperTest(KEEP_TRY_CATCH, """
+                    @Test
+                    public void testKeep() {
+                        int x = 1;
+                        try {
+                            check(x);
+                            Integer.parseInt("x");
+                            fail("should throw");
+                        } catch (NumberFormatException e) {
+                            check(x);
+                        } finally {
+                            check(x);
+                        }
+                    }
+
+                    private void check(int v) {
+                        assertEquals(1, v);
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    int x = 1;
+                    try {
+                        assertEquals(1, x);
+                        Integer.parseInt("x");
+                        fail("should throw");
+                    } catch (NumberFormatException e) {
+                        assertEquals(1, x);
+                    } finally {
+                        assertEquals(1, x);
+                    }
+                }
+                """), findMethod(normalized, "testKeep").getBody().orElseThrow());
+    }
+
+    @Test
+    void tryWithResourcesIsKeptWithKeepTryCatch() throws IOException {
+        Path normalized = normalizeHelperTest(KEEP_TRY_CATCH, """
+                    @Test
+                    public void testRead() throws IOException {
+                        try (InputStream in = new ByteArrayInputStream(new byte[] {7})) {
+                            assertEquals(7, in.read());
+                        }
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    try (InputStream in = new ByteArrayInputStream(new byte[] {7})) {
+                        assertEquals(7, in.read());
+                    }
+                }
+                """), findMethod(normalized, "testRead").getBody().orElseThrow());
+    }
+
+    @Test
+    void testCaseWithUnsupportedTryStatementIsDiscardedWithKeepTryCatch() throws IOException {
+        Path normalized = normalizeHelperTest(KEEP_TRY_CATCH, """
+                    @Test
+                    public void testMustNotThrow() {
+                        try {
+                            Integer.parseInt("1");
+                        } catch (NumberFormatException e) {
+                            fail("unexpected");
+                        }
+                    }
+
+                    @Test
+                    public void testKept() {
+                        assertEquals(1, 1);
+                    }
+                """);
+
+        assertEquals(List.of("testKept"), methodNames(StaticJavaParser.parse(normalized)));
+    }
+
     // Known defects (docs/design-review-2026-10-26.md). The expected results follow the decisions of 2026-10-26:
     // generated variables only when needed, with Java-style names.
 
@@ -1117,6 +1340,14 @@ class TestUtilsNormalizeTest {
      * path to the normalized file.
      */
     private Path normalizeHelperTest(String members) throws IOException {
+        return normalizeHelperTest(CONFIG, members);
+    }
+
+    /**
+     * Normalizes, with the given configuration, a JUnit 5 test class {@code com.acme.HelperTest} whose members are the
+     * given source, and returns the path to the normalized file.
+     */
+    private Path normalizeHelperTest(OraclesDatasetConfig config, String members) throws IOException {
         Path testFile = writeTestClass("com/acme/HelperTest.java", """
                 package com.acme;
 
@@ -1131,7 +1362,7 @@ class TestUtilsNormalizeTest {
                 }
                 """.formatted(members));
         return assertDoesNotThrow(
-                () -> TestUtils.normalizeTest(CONFIG, repoRoot, testFile, outputPath, Optional.empty())).getValue0();
+                () -> TestUtils.normalizeTest(config, repoRoot, testFile, outputPath, Optional.empty())).getValue0();
     }
 
     private static List<String> fieldNames(CompilationUnit cu) {
@@ -1139,6 +1370,13 @@ class TestUtilsNormalizeTest {
                 .filter(v -> v.getParentNode().orElse(null) instanceof FieldDeclaration)
                 .map(VariableDeclarator::getNameAsString)
                 .toList();
+    }
+
+    /** Returns the discard reason of each discarded test case, by name. */
+    private static Map<String, String> discardReasons(List<TestStats> testStats) {
+        return testStats.stream()
+                .filter(stats -> stats.discardReason() != null)
+                .collect(Collectors.toMap(TestStats::identifier, TestStats::discardReason));
     }
 
     private static List<String> methodNames(CompilationUnit cu) {

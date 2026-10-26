@@ -9,7 +9,7 @@ import star.tracto.data.enums.*;
 public record OraclesDatasetConfig(
         /* The split strategy: statement or assertion. */
         @JsonProperty("split") SplitStrategyType splitStrategy,
-        /* The try-catch-finally strategy: standard or flat. */
+        /* The try-catch-finally strategy: keep-try-catch or to-assert-throws. Required. */
         @JsonProperty("try-catch-finally") TryCatchFinallyStrategyType tryCatchFinallyStrategy,
         /* The assert-throws strategy: standard or flat. */
         @JsonProperty("assertThrows") AssertThrowsStrategyType assertThrowsStrategy,
@@ -31,4 +31,10 @@ public record OraclesDatasetConfig(
         @JsonProperty("keep-statements-after-last-assertion") boolean keepStatementsAfterLastAssertion,
         /* Policy to assert that the number of split test cases is equal to the number of assertions found in the original test case */
         @JsonProperty("num-assertions-match") NumAssertionsMatchStrategyType numAssertionsMatchStrategy
-) {}
+) {
+    public OraclesDatasetConfig {
+        if (tryCatchFinallyStrategy == null) {
+            throw new IllegalArgumentException("Missing key \"try-catch-finally\" in the configuration of the oracles dataset (values: \"keep-try-catch\", \"to-assert-throws\").");
+        }
+    }
+}

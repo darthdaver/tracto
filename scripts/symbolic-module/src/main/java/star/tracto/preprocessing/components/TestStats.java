@@ -25,5 +25,8 @@ public record TestStats(
         /* The number of variables defined and used within the test case */
         int numberOfVariables,
         /* The counter of the different types of assertions detected within the test case */
-        HashMap<String,Integer> assertionsDistribution
+        HashMap<String,Integer> assertionsDistribution,
+        /* The reason why the test case has been discarded during the normalization (for example `MULTI_CATCH`), or
+           null if the test case has been normalized */
+        String discardReason
 ) {}

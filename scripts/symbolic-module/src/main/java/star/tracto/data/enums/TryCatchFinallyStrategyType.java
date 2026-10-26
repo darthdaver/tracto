@@ -3,10 +3,15 @@ package star.tracto.data.enums;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
+/**
+ * The strategy to handle the try statements of the test cases, applied during the normalization.
+ */
 public enum TryCatchFinallyStrategyType {
-    ASSERT_THROW("assert_throws"),
-    STANDARD("standard"),
-    FLAT("flat");
+    /* Keep the try/catch/finally structure, normalizing the statements within its blocks */
+    KEEP_TRY_CATCH("keep-try-catch"),
+    /* Flatten the try statements, converting an expected exception (`try { ...; call(); fail(); } catch (E e) {...}`)
+       into an `assertThrows` */
+    TO_ASSERT_THROWS("to-assert-throws");
 
     private final String type;
 

@@ -77,6 +77,17 @@ class OraclesDatasetTest {
                         assertEquals(4, calc.total());
                     }
 
+                    @Test
+                    public void testNoException() {
+                        Calc calc = new Calc();
+                        try {
+                            calc.accumulate(1);
+                        } catch (IllegalStateException e) {
+                            fail("unexpected");
+                        }
+                        assertEquals(1, calc.total());
+                    }
+
                     private void accumulateTwice(Calc calc, int value) {
                         calc.accumulate(value);
                         calc.accumulate(value);
@@ -109,6 +120,16 @@ class OraclesDatasetTest {
         assertEquals(1, statistics.get("perfectMatches").asInt());
         assertEquals(1, statistics.get("testClassesProcessed").asInt());
         assertEquals(4, statistics.get("oracleDatapoints").asInt());
+        // The test case checking that no exception is thrown (fail() in the catch block) is discarded
+        assertEquals(1, statistics.get("discardedTestCases").asInt());
+        JsonNode testStats = readJson(outputPath.resolve("statistics-oracles-dataset-training/fixture/test-stats-fixture.json"));
+        List<String> discarded = new ArrayList<>();
+        for (JsonNode testCaseStats : testStats) {
+            if (!testCaseStats.get("discardReason").isNull()) {
+                discarded.add(testCaseStats.get("identifier").asText() + ": " + testCaseStats.get("discardReason").asText());
+            }
+        }
+        assertEquals(List.of("testNoException: MUST_NOT_THROW"), discarded);
         // The assertion of the auxiliary method is inlined in the test case, so it becomes a target too
         assertEquals(List.of(
                 "assertEquals(3, calc.add(1, 2));",

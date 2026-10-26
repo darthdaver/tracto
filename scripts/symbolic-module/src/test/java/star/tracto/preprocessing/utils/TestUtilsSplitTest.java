@@ -13,6 +13,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import star.tracto.data.enums.NumAssertionsMatchStrategyType;
 import star.tracto.data.enums.SplitStrategyType;
+import star.tracto.data.enums.TryCatchFinallyStrategyType;
 import star.tracto.data.records.OraclesDatasetConfig;
 
 import java.io.IOException;
@@ -441,6 +442,65 @@ class TestUtilsSplitTest {
                 """);
 
         assertEquals(List.of("testThrows_split_0", "testThrows_split_1"), List.copyOf(methodBodies(result.getValue0()).keySet()));
+    }
+
+    @Test
+    @Disabled("D26: a statement containing an anonymous class with methods makes the splitter drop the test case")
+    void statementContainingAnAnonymousClassIsKeptAsItIs() throws IOException {
+        Pair<Path, Path> result = split(FixtureRepo.CONFIG, """
+                @Test
+                public void testAnonymous() {
+                    Runnable task = new Runnable() {
+                        @Override
+                        public void run() {
+                            System.out.println("run");
+                        }
+                    };
+                    task.run();
+                    assertNotNull(task);
+                }
+                """);
+
+        assertEquals(Map.of(
+                "testAnonymous_split_0", block("""
+                        Runnable task = new Runnable() {
+                            @Override
+                            public void run() {
+                                System.out.println("run");
+                            }
+                        };
+                        task.run();
+                        assertNotNull(task);
+                        """)
+        ), methodBodies(result.getValue0()));
+    }
+
+    @Test
+    @Disabled("Step 10: splitting within try statements, kept by the keep-try-catch strategy")
+    void failAndAssertionsWithinATryStatementAreSplitPointsWithKeepTryCatch() throws IOException {
+        Pair<Path, Path> result = split(new ConfigBuilder().tryCatchFinally(TryCatchFinallyStrategyType.KEEP_TRY_CATCH).build(), """
+                @Test
+                public void testKeep() {
+                    String s = "x";
+                    try {
+                        Integer.parseInt(s);
+                        fail("should throw");
+                    } catch (NumberFormatException e) {
+                        assertNotNull(e);
+                    }
+                }
+                """);
+
+        assertEquals(Map.of(
+                "testKeep_split_0", block("""
+                        String s = "x";
+                        try { Integer.parseInt(s); fail("should throw"); } catch (NumberFormatException e) { }
+                        """),
+                "testKeep_split_1", block("""
+                        String s = "x";
+                        try { Integer.parseInt(s); fail("should throw"); } catch (NumberFormatException e) { assertNotNull(e); }
+                        """)
+        ), methodBodies(result.getValue0()));
     }
 
     /**

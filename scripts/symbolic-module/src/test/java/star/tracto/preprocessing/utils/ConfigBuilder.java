@@ -10,7 +10,7 @@ import star.tracto.data.records.OraclesDatasetConfig;
 final class ConfigBuilder {
 
     private SplitStrategyType split = SplitStrategyType.ASSERTION;
-    private TryCatchFinallyStrategyType tryCatchFinally = TryCatchFinallyStrategyType.STANDARD;
+    private TryCatchFinallyStrategyType tryCatchFinally = TryCatchFinallyStrategyType.TO_ASSERT_THROWS;
     private AssertThrowsStrategyType assertThrows = AssertThrowsStrategyType.STANDARD;
     private StatementStrategyType statement = StatementStrategyType.KEEP;
     private AssertionStrategyType condition = AssertionStrategyType.KEEP;
@@ -24,6 +24,11 @@ final class ConfigBuilder {
 
     ConfigBuilder split(SplitStrategyType split) {
         this.split = split;
+        return this;
+    }
+
+    ConfigBuilder tryCatchFinally(TryCatchFinallyStrategyType tryCatchFinally) {
+        this.tryCatchFinally = tryCatchFinally;
         return this;
     }
 

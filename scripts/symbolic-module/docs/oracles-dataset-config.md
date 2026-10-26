@@ -7,7 +7,7 @@ it accepts, where the code reads it, and its current status.
 **Loaded into:** the record `star.tracto.data.records.OraclesDatasetConfig` (via Jackson, `FilesUtils.readJSON`)
 **Passed by:** `bash/oracles-dataset.sh`, as the 7th argument of the jar (`oracles <id> <repo> <output> <base> <java> <config>`)
 
-Last reviewed: 2026-10-23, on branch `22-test-processing-refactoring`.
+Last reviewed: 2026-10-26, on branch `22-test-processing-refactoring` (the `try-catch-finally` key was redefined in Step 9).
 
 ## How the file is loaded
 
@@ -26,7 +26,7 @@ Values are case-sensitive and lower case (`"assertion"`, not `"ASSERTION"`).
 ```json
 {
   "split": "assertion",
-  "try-catch-finally": "standard",
+  "try-catch-finally": "to-assert-throws",
   "statement": "keep",
   "condition": "keep",
   "assertion": "mask",
@@ -38,8 +38,8 @@ Values are case-sensitive and lower case (`"assertion"`, not `"ASSERTION"`).
 }
 ```
 
-The file has not changed since 2025-08-15. Two keys are missing: `assertThrows` (→ `null`, behaves as `flat`) and
-`num-assertions-match` (→ `null`, the check is disabled).
+The file changed on 2026-10-26 (Step 9: `try-catch-finally` from `standard` to `to-assert-throws`). Two keys are
+missing: `assertThrows` (→ `null`, behaves as `flat`) and `num-assertions-match` (→ `null`, the check is disabled).
 
 ## Summary of the keys
 
@@ -55,7 +55,7 @@ The file has not changed since 2025-08-15. Two keys are missing: `assertThrows` 
 | `num-assertions-match` | `strict`, `loose` | `null` → no check | Used |
 | `mask-placeholder` | any string | `null` | Used (with `mask`) |
 | `no-assertion-target-placeholder` | any string | `null` | Used |
-| `try-catch-finally` | `standard`, `flat`, `assert_throws` | `null` | **Not used** since 2026-03-09 (see below) |
+| `try-catch-finally` | `to-assert-throws`, `keep-try-catch` | **error** at startup (required since Step 9) | Used |
 | `condition` | `keep`, `mask`, `remove` | `null` | **Never used** (not implemented) |
 
 ## How a datapoint is built
@@ -142,42 +142,41 @@ Details of `flat`:
 
 Since the committed config does not contain the key, every dataset generated so far used `flat`.
 
-### `try-catch-finally`: not used since 2026-03-09
+### `try-catch-finally`: how try statements are normalized
 
-The three values were read by the **splitter** until commit `6db6ac15` (2026-03-09, *"Try/catch/finally flattening
-within the normalization phase"*), which moved the handling of try statements into the normalization phase and removed
-every read of this key. Their meaning, reconstructed from the code before that commit (`git show 6db6ac15^:...TestUtils.java`):
+Read in `TestUtils.parseNormalizeTestStatementsBlock` (since Step 9, `docs/fixes/step-09-try-statement-classification.md`).
+The key is required: a configuration without it, or with one of the old values (`standard`, `flat`, `assert_throws`),
+is rejected when it is loaded.
 
-| Value | Meaning in the old splitter |
-|-------|-----------------------------|
-| `standard` | **Keep the try/catch/finally structure.** The split test cases contain the `try` statement; the statements of the try block, then of each catch block, then of the finally block are split points, inside that structure. |
-| `flat` | **Inline the try block.** The statements of the try block are copied into the test case without the `try`, the `fail(...)` call is replaced by `fail("THROW EXCEPTION")` (target `THROW EXCEPTION`), and the exceptions of the catch clauses are added to the `throws` clause of the split test case. The following split test cases continue with the original `try` statement. This is the origin of the `THROW EXCEPTION` label and of the `throws` clause. |
-| `assert_throws` | **Convert into `assertThrows`.** A try statement without resources was checked (`checkTryStmt`) and converted by `flatTryStmt` into the statements of the try block plus `assertThrows(<exception>, () -> <call before fail>)` and the statements of the catch/finally blocks. The result was then split, and the `assertThrows` was handled according to the `assertThrows` key. A try statement with resources fell back to `standard`. |
+Every try statement reached by the normalization is first classified (`TryStatementClassifier`). Three shapes are
+supported; a test case containing a try statement of any other shape is **discarded**: it is removed from the
+normalized test class (so it produces no datapoints), saved in `discarded/normalized/...`, and the reason is recorded in
+its statistics (`discardReason` in `test-stats-<project>.json`, total `discardedTestCases` in `statistics-<project>.json`).
 
-How try statements are handled today (whatever the value of `try-catch-finally`):
-- normalization always converts the standard pattern `try { ...; call(); fail(...); } catch (E e) { ... }` into
-  `E e = assertThrows(E.class, () -> call(), ...)` followed by the catch statements, which is the old `assert_throws`
-  behaviour (fixed in Step 6, see `docs/fixes/step-06-flatten-try-catch-fail.md`);
-- a try statement **without catch clauses** (try-with-resources, try/finally) is flattened: the resource declarations,
-  then the statements of the try block, then the statements of the finally block (Step 7,
-  `docs/fixes/step-07-flatten-try-without-catch.md`). Before Step 7 the resources and the try block were silently
-  dropped;
-- any other try statement (several catch clauses, `fail` in the catch block, …) is kept as it is, and the splitter then
-  **drops the whole test case** ("Try statement should not appear in a test after the normalization");
-- the representation of the generated `assertThrows` in the dataset is decided by the `assertThrows` key.
+| Shape | Example | Supported |
+|-------|---------|-----------|
+| `RESOURCES_WITHOUT_CATCH` | `try (R r = open()) { ... }` | yes |
+| `FINALLY_WITHOUT_CATCH` | `try { ... } finally { ... }` | yes |
+| `EXPECTED_EXCEPTION` | `try { ...; call(); fail(); } catch (E e) { ... }` (one catch clause, resources and finally allowed; the statement before `fail()` must be a method call or an object creation, possibly assigned to a variable) | yes |
+| `MULTI_CATCH` | more than one catch clause | no |
+| `UNION_CATCH` | `catch (A \| B e)` | no |
+| `FAIL_NOT_LAST` | `fail()` in the try block, but not as its last statement | no |
+| `UNSUPPORTED_FAILING_STATEMENT` | the statement before `fail()` is not a call (`if`, loop, `a / b`, …) or is missing | no |
+| `MUST_NOT_THROW` | `fail()` in the catch block | no |
+| `CATCH_WITHOUT_FAIL` | no `fail()`, non-empty catch block | no |
+| `EMPTY_CATCH` | no `fail()`, empty catch block | no |
 
-**Planned change (decided on 2026-10-23, in progress).** The key will keep two values, both handled in the
-normalization phase:
+The two values decide what happens to the supported shapes:
 
-| New value | Meaning |
-|-----------|---------|
-| `to-assert-throws` (committed config) | Convert the expected-exception pattern into `assertThrows`; flatten try-with-resources and try/finally without catch clauses. |
-| `keep-try-catch` | Keep the try/catch/finally structure (normalized inside its blocks); the splitter splits inside the try, catch and finally blocks. |
+| Value | Meaning |
+|-------|---------|
+| `to-assert-throws` (committed config) | The try statement is flattened: the resources, then the statements of the try block, then those of the finally block. An expected exception becomes `E e = assertThrows(E.class, () -> call(), ...)` followed by the statements of the catch block. |
+| `keep-try-catch` | The structure is kept (resources, catch parameters), and the statements of the try, catch and finally blocks are normalized. **The splitter does not support try statements yet** (Step 10): with this value the test cases containing a try statement produce no datapoints for now. |
 
-In both modes, the test cases containing a try statement with a bad or unsupported pattern are discarded, with the
-reason logged: more than one catch clause, a union type in the catch clause, `fail()` in the catch block ("must not
-throw"), a catch clause without any `fail()` (the test passes even if nothing is thrown), an empty catch block, `fail()`
-not as the last statement of the try block. The old `flat` behaviour is dropped.
+History: until commit `6db6ac15` (2026-03-09) the key had the values `standard`, `flat` and `assert_throws`, read by
+the splitter; that commit moved the handling of try statements into the normalization and left the key unused until
+Step 9. The old `flat` behaviour (the origin of the `THROW EXCEPTION` target and of the `throws` clause of the split test
+cases) is dropped.
 
 ### `integrate-auxiliary-methods`: inline helper methods
 
@@ -237,12 +236,10 @@ exists. Presumably meant to keep, mask or remove the conditions of `if`/loops in
 
 ## Open points
 
-1. `try-catch-finally` and `condition` have no effect. Options: remove them from the config and the record, or
-   re-implement them (for example, `standard` = keep the try structure for the try shapes that cannot be converted,
-   instead of dropping the test case).
-2. Missing keys are silently `null`. Validating the record when it is loaded (a compact constructor that rejects
-   `null` values, or explicit defaults) would make the choice visible; until then, it is safer to write every key
-   explicitly in the config file.
+1. `condition` has no effect. Options: remove it from the config and the record, or implement it.
+2. Missing keys are silently `null` (except `try-catch-finally`, validated by a compact constructor since Step 9).
+   Validating the other keys the same way (or giving them explicit defaults) would make the choice visible; until then,
+   it is safer to write every key explicitly in the config file.
 3. `assertThrows` is the only camelCase key.
 4. Known bugs in combinations not used by the committed config (from the code review, not yet fixed):
    - `split = assertion`, `target = statement`, `assertion = mask`: the target stays in the prefix and the mask is
