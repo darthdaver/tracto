@@ -2222,7 +2222,15 @@ public class JavaParserUtils {
      * @return An optional containing the retrieved variable declarator or an empty optional, otherwise.
      */
     public static Optional<VariableDeclarator> getVarFromNameExpr(NameExpr nameExpr, Set<VariableDeclarator> existingVariables) {
-        return nameExpr.resolve().toAst()
+        Optional<Node> declaration;
+        try {
+            declaration = nameExpr.resolve().toAst();
+        } catch (UnsolvedSymbolException | UnsupportedOperationException e) {
+            // The name expression does not refer to a resolvable variable (for example it is the name of a class,
+            // like `Integer` in `Integer.parseInt(s)`)
+            return Optional.empty();
+        }
+        return declaration
                 .flatMap(node -> {
                     // toAst() may return either the VariableDeclarator directly,
                     // or the parent VariableDeclarationExpr — handle both.
