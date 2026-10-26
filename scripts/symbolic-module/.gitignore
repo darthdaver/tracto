@@ -9,3 +9,5 @@ target/
 tmp/
 # Excel files:
 ~$*
+# JDK sources used as classpath of the symbol solver (downloaded by bash/oracles-dataset.sh)
+lib/java*/
