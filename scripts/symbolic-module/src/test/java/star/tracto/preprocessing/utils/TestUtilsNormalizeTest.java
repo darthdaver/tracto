@@ -1013,6 +1013,36 @@ class TestUtilsNormalizeTest {
                 """.formatted(expectedAssertThrows)), findMethod(normalized, "testThrows").getBody().orElseThrow());
     }
 
+    static Stream<Arguments> catchBlocksNotUsingTheException() {
+        return Stream.of(
+                Arguments.of("empty catch block", "", ""),
+                Arguments.of("catch block with other statements", "assertTrue(true);", "assertTrue(true);")
+        );
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("catchBlocksNotUsingTheException")
+    void assertThrowsIsNotAssignedWhenTheCatchBlockDoesNotUseTheException(String description, String catchBlock, String expectedStatements) throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    @Test
+                    public void testThrows() {
+                        try {
+                            Integer.parseInt("x");
+                            fail();
+                        } catch (NumberFormatException e) {
+                            %s
+                        }
+                    }
+                """.formatted(catchBlock));
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    assertThrows(NumberFormatException.class, () -> Integer.parseInt("x"));
+                    %s
+                }
+                """.formatted(expectedStatements)), findMethod(normalized, "testThrows").getBody().orElseThrow());
+    }
+
     @Test
     void classNameInFailingCallIsNotCopiedAsVariable() throws IOException {
         Path normalized = normalizeHelperTest("""

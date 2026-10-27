@@ -32,8 +32,7 @@ if __name__ == "__main__":
         "assertTimeout",
         "assertTimeoutPreemptively",
         "assertTrue",
-        "fail",
-        "THROW EXCEPTION"
+        "fail"
     ]
 
     for assertion_type in assetions_types:

@@ -7,6 +7,7 @@ import org.junit.jupiter.api.io.TempDir;
 import star.tracto.data.enums.AssertionStrategyType;
 import star.tracto.data.enums.SplitStrategyType;
 import star.tracto.data.enums.TargetStrategyType;
+import star.tracto.data.enums.TryCatchFinallyStrategyType;
 import star.tracto.data.records.OraclesDatasetConfig;
 import star.tracto.preprocessing.components.Callable;
 import star.tracto.preprocessing.components.OracleDatapoint;
@@ -148,6 +149,27 @@ class TestUtilsDatapointsTest {
                 datapoints.stream().map(OracleDatapoint::target).toList());
     }
 
+    /**
+     * A compound statement without statements within it is one split point: its target is the statement, not its
+     * empty body.
+     */
+    @Test
+    void emptyLoopIsATargetWithStatementSplitAndStatementTarget() throws IOException {
+        OraclesDatasetConfig config = new ConfigBuilder().split(SplitStrategyType.STATEMENT).target(TargetStrategyType.STATEMENT).build();
+
+        List<OracleDatapoint> datapoints = datapoints(config, """
+                @Test
+                public void testLoop() {
+                    Calc calc = new Calc();
+                    for (int i = 0; i < calc.total(); i++) {
+                    }
+                }
+                """);
+
+        assertEquals(List.of("Calc calc = new Calc();", "for (int i = 0; i < calc.total(); i++) {\n}"),
+                datapoints.stream().map(OracleDatapoint::target).toList());
+    }
+
     @Test
     void testPrefixListsTheMethodsOfTheFocalClassInvokedBeforeTheTarget() throws IOException {
         TestClazzDatapoints<OracleDatapoint> testClassDatapoints = testClassDatapoints(FixtureRepo.CONFIG, TEST_ADD);
@@ -211,6 +233,43 @@ class TestUtilsDatapointsTest {
                 "NumberFormatException e = assertThrows(NumberFormatException.class, () -> Integer.parseInt(\"x\"), \"should throw\");",
                 "assertNotNull(e.getMessage());"
         ), datapoints.stream().map(OracleDatapoint::target).toList());
+    }
+
+    @Test
+    void failIsTheTargetAsItIsWritten() throws IOException {
+        List<OracleDatapoint> datapoints = datapoints(FixtureRepo.committedConfig(), """
+                @Test
+                public void testPositive() {
+                    Calc calc = new Calc();
+                    if (calc.add(1, 1) < 0) {
+                        Assertions.fail("negative sum");
+                    }
+                    assertEquals(2, calc.add(1, 1));
+                }
+                """);
+
+        assertEquals(List.of("fail(\"negative sum\");", "assertEquals(2, calc.add(1, 1));"),
+                datapoints.stream().map(OracleDatapoint::target).toList());
+        assertEquals("{ Calc calc = new Calc(); if (calc.add(1, 1) < 0) { /*<MASK_PLACEHOLDER>*/ } }", prefixBody(datapoints.get(0)));
+    }
+
+    @Test
+    void failAndAssertionsWithinATryStatementAreTargetsWithKeepTryCatch() throws IOException {
+        OraclesDatasetConfig keepTryCatch = new ConfigBuilder().tryCatchFinally(TryCatchFinallyStrategyType.KEEP_TRY_CATCH).build();
+        List<OracleDatapoint> datapoints = datapoints(keepTryCatch, """
+                @Test
+                public void testThrows() {
+                    try {
+                        Integer.parseInt("x");
+                        fail("should throw");
+                    } catch (NumberFormatException e) {
+                        assertNotNull(e.getMessage());
+                    }
+                }
+                """);
+
+        assertEquals(List.of("fail(\"should throw\");", "assertNotNull(e.getMessage());"),
+                datapoints.stream().map(OracleDatapoint::target).toList());
     }
 
     private List<OracleDatapoint> datapoints(OraclesDatasetConfig config, String testMembers) throws IOException {

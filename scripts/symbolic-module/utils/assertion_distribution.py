@@ -10,7 +10,7 @@ assertions_types = [
     "assertInstanceOf", "assertIterableEquals", "assertLinesMatch", "assertNotEquals",
     "assertNotNull", "assertNotSame", "assertNull", "assertSame", "assertThat",
     "assertThrows", "assertThrowsExactly", "assertTimeout", "assertTimeoutPreemptively",
-    "assertTrue", "fail", "THROW EXCEPTION"
+    "assertTrue", "fail"
 ]
 
 if __name__ == "__main__":

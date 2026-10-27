@@ -88,6 +88,14 @@ class OraclesDatasetTest {
                         assertEquals(1, calc.total());
                     }
 
+                    @Test
+                    public void testPositiveSum() {
+                        Calc calc = new Calc();
+                        if (calc.add(1, 1) < 0) {
+                            fail("negative sum");
+                        }
+                    }
+
                     private void accumulateTwice(Calc calc, int value) {
                         calc.accumulate(value);
                         calc.accumulate(value);
@@ -119,7 +127,7 @@ class OraclesDatasetTest {
         assertEquals(2, statistics.get("testFilePaths").asInt());
         assertEquals(1, statistics.get("perfectMatches").asInt());
         assertEquals(1, statistics.get("testClassesProcessed").asInt());
-        assertEquals(4, statistics.get("oracleDatapoints").asInt());
+        assertEquals(5, statistics.get("oracleDatapoints").asInt());
         // The test case checking that no exception is thrown (fail() in the catch block) is discarded
         assertEquals(1, statistics.get("discardedTestCases").asInt());
         JsonNode testStats = readJson(outputPath.resolve("statistics-oracles-dataset-training/fixture/test-stats-fixture.json"));
@@ -130,13 +138,37 @@ class OraclesDatasetTest {
             }
         }
         assertEquals(List.of("testNoException: MUST_NOT_THROW"), discarded);
-        // The assertion of the auxiliary method is inlined in the test case, so it becomes a target too
+        // The assertion of the auxiliary method is inlined in the test case, so it becomes a target too; a fail(...)
+        // is a target as it is written
         assertEquals(List.of(
                 "assertEquals(3, calc.add(1, 2));",
                 "assertEquals(0, calc.add(0, 0));",
                 "assertTrue(calc.total() > 0);",
-                "assertEquals(4, calc.total());"
+                "assertEquals(4, calc.total());",
+                "fail(\"negative sum\");"
         ), targets());
+    }
+
+    @Test
+    void tokenStepsOfAFailTargetAreTheTokensOfTheCall() throws IOException {
+        OraclesDataset.generate(repoRoot, Optional.empty(), COMMITTED_CONFIG, outputPath, PROJECT, emptyClasspath.toString());
+
+        TokensDataset.generate(repoRoot, outputPath, "training", PROJECT, emptyClasspath.toString());
+
+        JsonNode testClasses = readJson(outputPath.resolve("raw-tokens-dataset-training/fixture/oracles-datapoints-fixture-0.json"));
+        JsonNode failDatapoint = null;
+        for (JsonNode testClass : testClasses) {
+            for (JsonNode datapoint : testClass.get("datapoints")) {
+                if (datapoint.get("target").asText().startsWith("fail(")) {
+                    failDatapoint = datapoint;
+                }
+            }
+        }
+        assertNotNull(failDatapoint, "Expected a datapoint with a fail(...) target in " + testClasses);
+        JsonNode firstStep = failDatapoint.get("tokenSteps").get(0);
+        assertEquals("ASSERT:fail", firstStep.get("target").asText());
+        assertEquals(0, firstStep.get("nextPossibleGenericTokens").size(), firstStep.toString());
+        assertTrue(failDatapoint.get("tokenSteps").size() > 1, "Expected one token step per token of " + failDatapoint.get("target"));
     }
 
     @Test

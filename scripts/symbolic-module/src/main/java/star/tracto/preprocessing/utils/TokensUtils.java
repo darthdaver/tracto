@@ -54,7 +54,6 @@ public class TokensUtils {
     private static final String streamClassReference = "java.util.stream.Stream";
     private static final String streamTypeParameter = "T";
     private static boolean streamFlag = false;
-    private static final String THROW_EXCEPTION_LABEL = "THROW EXCEPTION";
     private static Set<String> unsolvableTokens = new HashSet<>();
     private static boolean unsolvableWarn = false;
 
@@ -333,24 +332,22 @@ public class TokensUtils {
                             // Initialize the list of token steps
                             List<TokenStep> tokenSteps = new ArrayList<>();
                             // Split the target assertion into tokens
-                            List<String> tokens = !targetAssertion.equals(THROW_EXCEPTION_LABEL) ? Antlr4Utils.tokenizeSnippet(targetAssertion) : List.of(THROW_EXCEPTION_LABEL);
-                            if (!tokens.get(0).equals(THROW_EXCEPTION_LABEL)) {
-                                // Remove spurious tokens and check that the first token is a valid JUnit assertion method
-                                try {
-                                    tokens.removeIf(t -> t.equals(" "));
-                                    JUnitAssertionType.fromString(tokens.get(0));
-                                } catch (IllegalArgumentException e) {
-                                    String message = "Assertion do not start with JUnit api (do not implemented yet): " + targetAssertion + " - " + e.getMessage();
-                                    logger.error(message);
-                                    clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(message);
-                                    logger.error("********************************************************************");
-                                    logger.error("Stack trace:");
-                                    for (StackTraceElement ste : e.getStackTrace()) {
-                                        logger.error("\tat " + ste.toString());
-                                    }
-                                    logger.error("********************************************************************");
-                                    continue;
+                            List<String> tokens = Antlr4Utils.tokenizeSnippet(targetAssertion);
+                            // Remove spurious tokens and check that the first token is a valid JUnit assertion method
+                            try {
+                                tokens.removeIf(t -> t.equals(" "));
+                                JUnitAssertionType.fromString(tokens.get(0));
+                            } catch (IllegalArgumentException e) {
+                                String message = "Assertion do not start with JUnit api (do not implemented yet): " + targetAssertion + " - " + e.getMessage();
+                                logger.error(message);
+                                clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(message);
+                                logger.error("********************************************************************");
+                                logger.error("Stack trace:");
+                                for (StackTraceElement ste : e.getStackTrace()) {
+                                    logger.error("\tat " + ste.toString());
                                 }
+                                logger.error("********************************************************************");
+                                continue;
                             }
                             // Log target assertion
                             logger.info("Target assertion: " + targetAssertion);
@@ -370,7 +367,7 @@ public class TokensUtils {
                                 if (partialSnippet.isEmpty()) {
                                     tokenStepBuilder.setNextPossibleJavaTokens(Arrays.stream(JUnitAssertionType.values()).map(a -> a.getAssertionMethodName()).collect(Collectors.toList()));
                                     tokenStepBuilder.setNextPossibleProjectTokens(new ArrayList<>());
-                                    tokenStepBuilder.setNextPossibleGenericTokens(List.of(THROW_EXCEPTION_LABEL));
+                                    tokenStepBuilder.setNextPossibleGenericTokens(new ArrayList<>());
                                     tokenStepBuilder.setSyntaxCorrect(false);
                                     tokenStepBuilder.setTarget("ASSERT:" + tokens.get(0));
                                     tokenStepBuilder.setContextualInfos(new ArrayList<>());
@@ -672,7 +669,7 @@ public class TokensUtils {
                                 if (partialSnippet.isEmpty()) {
                                     tokenStepBuilder.setNextPossibleJavaTokens(Arrays.stream(JUnitAssertionType.values()).map(a -> a.getAssertionMethodName()).collect(Collectors.toList()));
                                     tokenStepBuilder.setNextPossibleProjectTokens(new ArrayList<>());
-                                    tokenStepBuilder.setNextPossibleGenericTokens(List.of(THROW_EXCEPTION_LABEL));
+                                    tokenStepBuilder.setNextPossibleGenericTokens(new ArrayList<>());
                                     tokenStepBuilder.setSyntaxCorrect(false);
                                     tokenStepBuilder.setTarget("");
                                     tokenStepBuilder.setContextualInfos(new ArrayList<>());
@@ -701,10 +698,6 @@ public class TokensUtils {
                                         unsolvableTokens = new HashSet<>();
                                     }
                                     partialSnippet += nextToken;
-
-                                    if (nextToken.equals(THROW_EXCEPTION_LABEL)) {
-                                        break;
-                                    }
                                     continue;
                                 }
                                 List<String> tokens = Antlr4Utils.tokenizeSnippet(partialSnippet);
@@ -825,7 +818,7 @@ public class TokensUtils {
                                 currentTokenReferences = updatedCollectors.getValue1();
                                 unsolvableTokens = updatedCollectors.getValue2();
                             }
-                            if (partialSnippet.endsWith(";") || partialSnippet.equals(THROW_EXCEPTION_LABEL)) {
+                            if (partialSnippet.endsWith(";")) {
                                 long endTime = System.currentTimeMillis();
                                 long duration = endTime - startTime;
                                 oracleInference.add(partialSnippet);

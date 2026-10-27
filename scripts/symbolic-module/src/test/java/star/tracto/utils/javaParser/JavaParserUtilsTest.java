@@ -264,7 +264,10 @@ class JavaParserUtilsTest {
             "int x = 1; assert x > 0;                                        | assert x > 0;",
             "int x = 1; IllegalStateException e = assertThrows(IllegalStateException.class, () -> use(x)); | IllegalStateException e = assertThrows(IllegalStateException.class, () -> use(x));",
             "assertThrows(IllegalStateException.class, () -> use(1));         | assertThrows(IllegalStateException.class, () -> use(1));",
-            "for (int i = 0; i < 2; i++) { use(i); assertTrue(i >= 0); }      | assertTrue(i >= 0);"
+            "for (int i = 0; i < 2; i++) { use(i); assertTrue(i >= 0); }      | assertTrue(i >= 0);",
+            // D32: the split test cases ending within a try block keep the following catch and finally blocks, empty
+            "try { use(1); fail(\"x\"); } catch (RuntimeException e) { }       | fail(\"x\");",
+            "try { use(1); assertTrue(true); } finally { }                    | assertTrue(true);"
     })
     void getLastAssertionInMethodDeclarationFindsTheLastAssertion(String body, String expectedAssertion) throws IOException {
         MethodDeclaration method = method(parse("""

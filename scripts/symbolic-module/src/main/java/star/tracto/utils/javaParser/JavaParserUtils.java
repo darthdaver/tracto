@@ -1524,14 +1524,22 @@ public class JavaParserUtils {
     }
 
     /**
-     * Retrieve the last statement in a method declaration.
+     * Retrieve the last statement in a method declaration, in the order of the source code. The empty blocks are
+     * skipped: a split test case ending within a try block keeps the following catch and finally blocks, empty, and
+     * its last statement is the one before them.
      *
      * @param callableDeclaration the method declaration to process
      * @return the last statement in the method declaration
      */
     public static Statement getLastStatementInMethodDeclaration(MethodDeclaration callableDeclaration) {
         List<Statement> statements = callableDeclaration.getBody().get().findAll(Statement.class);
-        return statements.get(statements.size() - 1);
+        for (int i = statements.size() - 1; i > 0; i--) {
+            Statement statement = statements.get(i);
+            if (!(statement.isBlockStmt() && statement.asBlockStmt().isEmpty())) {
+                return statement;
+            }
+        }
+        return statements.get(0);
     }
 
     /**

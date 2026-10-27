@@ -62,6 +62,7 @@ Found while writing the Step 8 tests (details in `docs/fixes/step-08-test-infras
 | D29 | normalizer, `if` branch | The comment of an `if` statement is dropped, while the comments of the other statements (loops included) are kept. Found and fixed in Step 11. |
 | D30 | splitter (`TestCaseSplitter`, Step 10) | When the `then` branch of an `if` is a single statement and the `else` branch is a block or an `else if`, wrapping the `then` branch in a block moves it after the `else` branch among the children of the `if`. The split points, located in the copies of the test case by their index in pre-order, then point to other statements: split test cases swapped or cut at the wrong statement. Since Step 11 the normalizer writes every branch as a block, so this happens only in code the normalizer does not rewrite (inlined auxiliary methods, D4; lambda blocks passed as arguments). Found and fixed in Step 11. |
 | D31 | normalizer, labeled statements | A labeled statement (`outer: for (...) { ... }`) is added to the normalized test case as it is: the statements within it are not normalized (a try/catch/fail is not converted into `assertThrows`, an auxiliary method is not inlined). Found and fixed in Step 12. |
+| D32 | datapoints, `keep-try-catch` | The target of a split test case is searched from its last statement in pre-order: for a split point within a try block, the empty catch (or finally) block kept by the truncation (Step 10). With `keep-try-catch` the `fail(...)` and the assertions of the try blocks produced no datapoint ("No assertion found"); with the committed configuration, the same for the try statements the normalizer does not rewrite (within a lambda block, 2 datapoints in jsoup); with `split = statement` an empty compound statement got its empty body `{}` as target. Found and fixed in Step 14. |
 
 Every confirmed defect with a simple trigger has a `@Disabled` test named after it (map in the Step 8 document).
 
@@ -169,7 +170,7 @@ These affect what the model sees, so they are choices rather than bugs:
   March drafts of `TestUtils`/`JavaParserUtils`, not referenced anywhere.
 - Dead code: `matchMethodsToTests` (empty), `hasSuper` and the loop over `integratedAuxiliaryMethods` in
   `normalizeTest`, the `isPrivate()` filter on top-level types (top-level types cannot be private; dropping the
-  secondary types is correct, because they stay in the original file of the same package), `FAKE_ELEMENT_LABEL`,
+  secondary types is correct, because they stay in the original file of the same package), `FAKE_ELEMENT_LABEL` (*removed in Step 14*),
   the lambda-statement branch of the normalizer (a lambda cannot be an expression statement), `replaceParams`,
   `renameLocalVar`, `collectVariableMapping(Expression, …)`, `addCatchClause`, and the `TRY`/`CATCH`/`FINALLY`/`SWITCH`
   cases of `addStatement` (the splitter throws on these statements first). *Step 10 removed `addCatchClause` and
@@ -220,5 +221,5 @@ java-uuid-generator, as for Steps 1–7.
 5. **Step 12 – inlining semantics** (D4–D7, D12) and the name allocator (D13). *Done on 2026-10-27, together with D31.*
 6. **Step 13 – lambda captures in nested try statements** (D8) and the `_final` policy. *Done on 2026-10-27.*
 7. **Step 14 – remove the `THROW EXCEPTION` label** (the `assertThrows` key was already removed in Step 10), including
-   `TokensUtils` and the two Python utilities; plain `assertThrows(...)` when the catch block does not use the exception.
+   `TokensUtils` and the two Python utilities; plain `assertThrows(...)` when the catch block does not use the exception. *Done on 2026-10-27, together with D32.*
 8. **Step 15 – robustness and clean-up**: D14, D16–D18, D20–D22, D25, dead code (the `temp` drafts were deleted on 2026-10-26).

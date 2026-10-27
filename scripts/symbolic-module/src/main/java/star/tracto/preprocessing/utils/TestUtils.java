@@ -57,9 +57,6 @@ public class TestUtils {
 
     /* The logger for the class. */
     private static final Logger logger = LoggerFactory.getLogger(TestUtils.class);
-    /* helper labels to identify fake elements added to avoid JavaParser parsing problems, like in try-catch statements */
-    private static final String FAKE_ELEMENT_LABEL = "<FAKE_ELEMENT>";
-    private static final String THROW_EXCEPTION_LABEL = "THROW EXCEPTION";
     /* Do not instantiate this class. */
     private TestUtils() {
         throw new UnsupportedOperationException("This class cannot be instantiated.");
@@ -1308,31 +1305,29 @@ public class TestUtils {
             statements.remove(statements.size() - 2);
             // Remove the fail() method call at the end of the try block
             statements.remove(statements.size() - 1);
-            // Create a variable to save the exception thrown by the assertThrows (the catch statement
-            // is always defined with a variable containing the exception, that can be used within the
-            // catch block - for example to check the message of the error).
             Parameter catchExceptionParam = tryStmt.getCatchClauses().get(0).getParameter();
             BlockStmt catchBlockStmt = tryStmt.getCatchClauses().get(0).getBody();
             String newExceptionParamName = catchExceptionParam.getNameAsString();
-            // If the variable of the exception would hide a field within the main block, rename it
-            if (context.fieldNames().contains(newExceptionParamName)) {
-                newExceptionParamName = context.variableNames().allocate(newExceptionParamName);
-                Map<Parameter,String>  paramMapping = new IdentityHashMap<>();
-                paramMapping.put(catchExceptionParam, newExceptionParamName);
-                JavaParserUtils.replaceParameters(catchBlockStmt, paramMapping);
+            // The exception thrown is assigned to a variable only if the catch block uses it (for example to check
+            // its message): the names of the variables are unique within the test case
+            if (catchBlockStmt.findAll(NameExpr.class, nameExpr -> nameExpr.getNameAsString().equals(catchExceptionParam.getNameAsString())).isEmpty()) {
+                statements.add(new ExpressionStmt(assertThrowsCall));
+            } else {
+                // If the variable of the exception would hide a field within the main block, rename it
+                if (context.fieldNames().contains(newExceptionParamName)) {
+                    newExceptionParamName = context.variableNames().allocate(newExceptionParamName);
+                    Map<Parameter,String>  paramMapping = new IdentityHashMap<>();
+                    paramMapping.put(catchExceptionParam, newExceptionParamName);
+                    JavaParserUtils.replaceParameters(catchBlockStmt, paramMapping);
+                }
+                // Define a variable to store the exception returned by the assertThrows
+                VariableDeclarator exceptionVarDecl = new VariableDeclarator(
+                        new ClassOrInterfaceType(null, exceptionClassExpr.getTypeAsString()),
+                        newExceptionParamName,
+                        assertThrowsCall
+                );
+                statements.add(new ExpressionStmt(new VariableDeclarationExpr(exceptionVarDecl)));
             }
-            // Define a variable declarator to store the exception returned by the assertThrow
-            // In the original catch clause, it could use it for example to check the correctness of the
-            // message associated to the thrown exception
-            VariableDeclarator exceptionVarDecl = new VariableDeclarator(
-                    new ClassOrInterfaceType(null, exceptionClassExpr.getTypeAsString()),
-                    newExceptionParamName,
-                    assertThrowsCall
-            );
-            VariableDeclarationExpr exceptionVarDeclExpr = new VariableDeclarationExpr(exceptionVarDecl);
-            // Create an expression statement for the assertThrows call
-            Statement assertStmt = new ExpressionStmt(exceptionVarDeclExpr);
-            statements.add(assertStmt);
             // Rename the local variables of the catch block that would hide a field
             renameVariablesHidingFields(catchBlockStmt, context);
             // Add the statements from the catch block to the flat main block
@@ -1548,16 +1543,6 @@ public class TestUtils {
                 }
 
                 Statement tgtStatement;
-                List<Comment> comments = testCase.getAllContainedComments();
-                for (Comment comment : comments) {
-                    if (comment.isBlockComment()) {
-                        String commentContent = comment.getContent();
-                        if (commentContent.equals(TestUtils.FAKE_ELEMENT_LABEL)) {
-                            comment.getCommentedNode().get().remove();
-                        }
-                    }
-                }
-
                 if (config.splitStrategy() == SplitStrategyType.ASSERTION) {
                     // Get the assertion statement in the test case
                     Optional<Statement> lastAssertion = JavaParserUtils.getLastAssertionInMethodDeclaration(testCase);
@@ -1567,8 +1552,7 @@ public class TestUtils {
                     }
                     tgtStatement = lastAssertion.get();
                 } else {
-                    List<Statement> statements = testCase.findAll(Statement.class);
-                    tgtStatement = statements.get(statements.size() - 1);
+                    tgtStatement = JavaParserUtils.getLastStatementInMethodDeclaration(testCase);
                 }
 
                 // Remove all comments from the target statement
@@ -1580,18 +1564,8 @@ public class TestUtils {
 
                 if (config.targetStrategy() == TargetStrategyType.ASSERTION) {
                     if (config.splitStrategy() == SplitStrategyType.ASSERTION) {
+                        // A `fail(...)` is a target like any other assertion
                         target = tgtStatement.toString().replaceAll("(?<![a-zA-Z0-9])Assert\\.", "").replaceAll("(?<![a-zA-Z0-9])Assertions\\.", "");
-                        if (tgtStatement.isAssertStmt()) {
-                            AssertStmt assertStmt = tgtStatement.asAssertStmt();
-                            if (assertStmt.getCheck().isStringLiteralExpr()) {
-                                StringLiteralExpr stringLiteralExpr = assertStmt.getCheck().asStringLiteralExpr();
-                                if (stringLiteralExpr.getValue().equals(TestUtils.FAKE_ELEMENT_LABEL)) {
-                                    target = THROW_EXCEPTION_LABEL;
-                                }
-                            }
-                        } else if (target.startsWith("fail")) {
-                            target = THROW_EXCEPTION_LABEL;
-                        }
                     } else if (config.splitStrategy() == SplitStrategyType.STATEMENT) {
                         Optional<Statement> lastAssertion = JavaParserUtils.getLastAssertionInMethodDeclaration(testCase);
                         if (lastAssertion.isPresent()) {
