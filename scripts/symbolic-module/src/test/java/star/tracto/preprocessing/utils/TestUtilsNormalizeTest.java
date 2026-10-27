@@ -968,13 +968,13 @@ class TestUtilsNormalizeTest {
                 """;
         return Stream.of(
                 Arguments.of("JUnit 5 with message", junit5Imports, "fail(\"should throw\");",
-                        "assertThrows(IllegalArgumentException.class, () -> calc_final.sqrt(x_final), \"should throw\")"),
+                        "assertThrows(IllegalArgumentException.class, () -> calc.sqrt(x), \"should throw\")"),
                 Arguments.of("JUnit 5 without message", junit5Imports, "fail();",
-                        "assertThrows(IllegalArgumentException.class, () -> calc_final.sqrt(x_final))"),
+                        "assertThrows(IllegalArgumentException.class, () -> calc.sqrt(x))"),
                 Arguments.of("JUnit 4 with message", junit4Imports, "fail(\"should throw\");",
-                        "assertThrows(\"should throw\", IllegalArgumentException.class, () -> calc_final.sqrt(x_final))"),
+                        "assertThrows(\"should throw\", IllegalArgumentException.class, () -> calc.sqrt(x))"),
                 Arguments.of("JUnit 4 without message", junit4Imports, "fail();",
-                        "assertThrows(IllegalArgumentException.class, () -> calc_final.sqrt(x_final))")
+                        "assertThrows(IllegalArgumentException.class, () -> calc.sqrt(x))")
         );
     }
 
@@ -1007,8 +1007,6 @@ class TestUtilsNormalizeTest {
                 {
                     Calc calc = new Calc();
                     int x = -1;
-                    final Calc calc_final = calc;
-                    final int x_final = x;
                     IllegalArgumentException e = %s;
                     assertEquals("negative", e.getMessage());
                 }
@@ -1021,6 +1019,7 @@ class TestUtilsNormalizeTest {
                     @Test
                     public void testThrows() {
                         String s = "abc";
+                        s = s + "d";
                         try {
                             Integer.parseInt(s);
                             fail();
@@ -1033,8 +1032,9 @@ class TestUtilsNormalizeTest {
         assertEquals(StaticJavaParser.parseBlock("""
                 {
                     String s = "abc";
-                    final String s_final = s;
-                    NumberFormatException e = assertThrows(NumberFormatException.class, () -> Integer.parseInt(s_final));
+                    s = s + "d";
+                    final String finalS = s;
+                    NumberFormatException e = assertThrows(NumberFormatException.class, () -> Integer.parseInt(finalS));
                     assertNotNull(e);
                 }
                 """), findMethod(normalized, "testThrows").getBody().orElseThrow());
@@ -1046,7 +1046,8 @@ class TestUtilsNormalizeTest {
                     @Test
                     public void testThrows() {
                         Calc calc = new Calc();
-                        int x = -1;
+                        int x = 0;
+                        x--;
                         try {
                             calc.add(x, x);
                             fail();
@@ -1059,13 +1060,103 @@ class TestUtilsNormalizeTest {
         assertEquals(StaticJavaParser.parseBlock("""
                 {
                     Calc calc = new Calc();
-                    int x = -1;
-                    final Calc calc_final = calc;
-                    final int x_final = x;
-                    IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> calc_final.add(x_final, x_final));
+                    int x = 0;
+                    x--;
+                    final int finalX = x;
+                    IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> calc.add(finalX, finalX));
                     assertNotNull(e);
                 }
                 """), findMethod(normalized, "testThrows").getBody().orElseThrow());
+    }
+
+    /**
+     * A field can be captured by a lambda expression even if it is reassigned.
+     */
+    @Test
+    void reassignedFieldUsedInTheFailingCallIsCapturedWithoutACopy() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    private int count = 0;
+
+                    @Test
+                    public void testThrows() {
+                        count++;
+                        try {
+                            Integer.parseInt("x" + count);
+                            fail();
+                        } catch (NumberFormatException e) {
+                            assertNotNull(e);
+                        }
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    count++;
+                    NumberFormatException e = assertThrows(NumberFormatException.class, () -> Integer.parseInt("x" + count));
+                    assertNotNull(e);
+                }
+                """), findMethod(normalized, "testThrows").getBody().orElseThrow());
+    }
+
+    @Test
+    void finalCopyClashingWithAVariableOfTheTestCaseGetsANumericSuffix() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    @Test
+                    public void testThrows() {
+                        int finalX = 1;
+                        int x = 0;
+                        x++;
+                        try {
+                            Integer.parseInt("x" + x + finalX);
+                            fail();
+                        } catch (NumberFormatException e) {
+                            assertNotNull(e);
+                        }
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    int finalX = 1;
+                    int x = 0;
+                    x++;
+                    final int finalX2 = x;
+                    NumberFormatException e = assertThrows(NumberFormatException.class, () -> Integer.parseInt("x" + finalX2 + finalX));
+                    assertNotNull(e);
+                }
+                """), findMethod(normalized, "testThrows").getBody().orElseThrow());
+    }
+
+    @Test
+    void reassignedVariableOfAnInlinedAuxiliaryMethodUsedInTheFailingCallGetsAFinalCopy() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    @Test
+                    public void testUsesHelper() {
+                        checkAll(2);
+                    }
+
+                    private void checkAll(int n) {
+                        for (int i = 0; i < n; i++) {
+                            try {
+                                Integer.parseInt("x" + i);
+                                fail();
+                            } catch (NumberFormatException e) {
+                                assertNotNull(e);
+                            }
+                        }
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    int n = 2;
+                    for (int i = 0; i < n; i++) {
+                        final int finalI = i;
+                        NumberFormatException e = assertThrows(NumberFormatException.class, () -> Integer.parseInt("x" + finalI));
+                        assertNotNull(e);
+                    }
+                }
+                """), findMethod(normalized, "testUsesHelper").getBody().orElseThrow());
     }
 
     @Test
@@ -1089,8 +1180,7 @@ class TestUtilsNormalizeTest {
         assertEquals(StaticJavaParser.parseBlock("""
                 {
                     Calc calc = new Calc();
-                    final Calc calc_final = calc;
-                    IllegalStateException e2 = assertThrows(IllegalStateException.class, () -> calc_final.explode());
+                    IllegalStateException e2 = assertThrows(IllegalStateException.class, () -> calc.explode());
                     assertNotNull(e2.getMessage());
                     assertEquals("field", e);
                 }
@@ -1210,8 +1300,7 @@ class TestUtilsNormalizeTest {
         assertEquals(StaticJavaParser.parseBlock("""
                 {
                     Calc calc = new Calc();
-                    final Calc calc_final = calc;
-                    IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> calc_final.sqrt(-1));
+                    IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> calc.sqrt(-1));
                     assertNotNull(e);
                     calc.reset();
                 }
@@ -1666,7 +1755,6 @@ class TestUtilsNormalizeTest {
     }
 
     @Test
-    @Disabled("D8: a reassigned variable (here a loop variable) used in the failing call is captured by the lambda without a final copy")
     void reassignedVariableUsedInTheFailingCallGetsAFinalCopy() throws IOException {
         Path normalized = normalizeHelperTest("""
                     @Test

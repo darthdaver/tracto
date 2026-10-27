@@ -198,12 +198,11 @@ public class TestUtils {
             TypeDeclaration testClass = cu.getPrimaryType().get();
             // Get the junit version used in the test class
             JUnitVersion junitVersion = TestUtils.getJunitVersion(cu.getImports());
-            // Get the set of variables defined in the test class. The set is defined from `IdentityHashMap`
-            // that performs equality check by reference (`==`) instead of values (`equals()`) and uses as
-            // hash function the `System.identityHashCode(obj)` method instead of obj.hashCode()
-            Set<VariableDeclarator> classVariables = Collections.newSetFromMap(new IdentityHashMap<>());
-            JavaParserUtils.collectExistingVariables(classVariables, testClass.getFields(), List.of(), ClassOrInterfaceDeclaration.class, 0);
-            Set<String> fieldNames = JavaParserUtils.variableDeclaratorsToNames(classVariables);
+            // Get the names of the fields defined in the test class
+            Set<String> fieldNames = ((List<FieldDeclaration>) testClass.getFields()).stream()
+                    .flatMap(field -> field.getVariables().stream())
+                    .map(VariableDeclarator::getNameAsString)
+                    .collect(Collectors.toSet());
             // Add import for all the assertion types at the beginning of the test class, depending on the JUnit version
             // used within the project. This is necessary when the LLMs approaches will generate target assertions not
             // known a priori (the generated test cases would not compile otherwise, if the corresponding assertion is
@@ -265,18 +264,11 @@ public class TestUtils {
                 MethodDeclaration normalizedTestCase = originalTestCase.clone();
                 BlockStmt normalizedTestCaseBody = new BlockStmt();
                 normalizedTestCase.setBody(normalizedTestCaseBody);
-                // Collect the list of the existing variables defined within the test case
-                // Initially copy the references to the global variables defined within the test class
-                // (accessible in all the points)
-                Set<VariableDeclarator> testCaseExistingVariables = Collections.newSetFromMap(new IdentityHashMap<>());
-                testCaseExistingVariables.addAll(classVariables);
-                // Add the local variables defined within the first block "level" in the test case
-                JavaParserUtils.collectExistingVariables(testCaseExistingVariables, originalTestCase.getBody().get(), MethodDeclaration.class,0);
                 NormalizationContext context = new NormalizationContext(
                         testClass,
                         auxiliaryMethods,
                         integratedAuxiliaryMethods,
-                        testCaseExistingVariables,
+                        new HashSet<>(JavaParserUtils.getAssignedVariableNames(originalTestCase.getBody().orElseThrow())),
                         fieldNames,
                         variableNamesOf(originalTestCase, fieldNames),
                         labelNamesOf(originalTestCase),
@@ -1052,7 +1044,8 @@ public class TestUtils {
      * @param testClass the test class where the test case is defined
      * @param auxiliaryMethods the methods of the test class that can be inlined in the test case, by signature
      * @param integratedAuxiliaryMethods the auxiliary methods inlined in the test case
-     * @param existingVariables the variables of the test class and of the test case, compared by reference
+     * @param reassignedVariables the names of the variables of the test case (and of the inlined auxiliary methods)
+     *                            assigned besides their declarations: the names are unique within the test case
      * @param fieldNames the names of the fields of the test class
      * @param variableNames the names of the variables in use within the test case
      * @param labelNames the labels in use within the test case
@@ -1064,7 +1057,7 @@ public class TestUtils {
             TypeDeclaration<?> testClass,
             HashMap<String, MethodDeclaration> auxiliaryMethods,
             List<MethodDeclaration> integratedAuxiliaryMethods,
-            Set<VariableDeclarator> existingVariables,
+            Set<String> reassignedVariables,
             Set<String> fieldNames,
             NameAllocator variableNames,
             NameAllocator labelNames,
@@ -1136,10 +1129,11 @@ public class TestUtils {
             return InliningResult.NOT_INLINED;
         }
         Optional<AuxiliaryMethodInliner.InlinedCall> inlinedCall = AuxiliaryMethodInliner.inline(
-                call, auxiliaryMethod.get(), context.testClass(), context.variableNames(), context.labelNames(), context.existingVariables());
+                call, auxiliaryMethod.get(), context.testClass(), context.variableNames(), context.labelNames());
         if (inlinedCall.isEmpty()) {
             return InliningResult.NOT_INLINED;
         }
+        context.reassignedVariables().addAll(JavaParserUtils.getAssignedVariableNames(inlinedCall.get().body()));
         // The inlined statements are normalized within a separate block, added to the current block only if the
         // normalization succeeds
         BlockStmt inlinedBlock = new BlockStmt();
@@ -1169,8 +1163,7 @@ public class TestUtils {
      * names are names of fields of the test class: within the enclosing block they would hide the fields to the
      * statements that follow. The variables of the test case have unique names
      * ({@link JavaParserUtils#normalizeVariableNames}), and the variables of the inlined auxiliary methods are named
-     * after them ({@link AuxiliaryMethodInliner}), so only the fields can be hidden. The variables are added to the
-     * existing variables.
+     * after them ({@link AuxiliaryMethodInliner}), so only the fields can be hidden.
      *
      * @param block the block to flatten
      * @param context the state of the normalization of the test case
@@ -1183,7 +1176,6 @@ public class TestUtils {
                 if (context.fieldNames().contains(variable.getNameAsString())) {
                     variablesToRename.put(variable, context.variableNames().allocate(variable.getNameAsString()));
                 }
-                context.existingVariables().add(variable);
             }
         }
         JavaParserUtils.replaceVariables(block, variablesToRename);
@@ -1276,39 +1268,37 @@ public class TestUtils {
                     .filter(Expression::isLambdaExpr)
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException("No lambda expression found in " + assertThrowsCall));
-            // The variables used within the lambda expression must be (effectively) final: for each variable
-            // used in the failing call, define a final copy before the call and use it within the lambda
-            // expression. The variables are resolved on the original failing call, still attached to the
-            // compilation unit, and renamed in its copy within the lambda expression (the two expressions have
-            // the same structure, so their name expressions are found in the same order)
+            // The variables captured by the lambda expression must be effectively final: a local variable reassigned
+            // within the test case gets a final copy, defined before the call (`final int finalI = i;`) and used
+            // within the lambda expression; the other variables and the fields are captured as they are. The
+            // variables are resolved on the original failing call, still attached to the compilation unit, and
+            // renamed in its copy within the lambda expression (the two expressions have the same structure, so
+            // their name expressions are found in the same order)
             List<NameExpr> originalNameExprs = TryStatementClassifier.getFailingExpression(tryStmt).orElseThrow().findAll(NameExpr.class);
             List<NameExpr> lambdaNameExprs = failingExpr.findAll(NameExpr.class);
             int finalVarDeclIdx = tryStmtsSize - 2;
-            // The final copies already defined, for the variables used more than once in the failing call
-            Map<VariableDeclarator, SimpleName> finalCopies = new IdentityHashMap<>();
+            // The final copies already defined, for the variables used more than once in the failing call (the names
+            // of the variables are unique within the test case)
+            Map<String, String> finalCopies = new HashMap<>();
             for (int i = 0; i < originalNameExprs.size(); i++) {
                 NameExpr nameExpr = originalNameExprs.get(i);
-                Optional<VariableDeclarator> targetVar = JavaParserUtils.getVarFromNameExpr(nameExpr, context.existingVariables());
-                if  (targetVar.isEmpty()) {
-                    logger.error("Variable from name expression " + nameExpr + " not found among the existing variables.");
+                String name = nameExpr.getNameAsString();
+                if (!context.reassignedVariables().contains(name)) {
                     continue;
                 }
-                if (finalCopies.containsKey(targetVar.get())) {
-                    lambdaNameExprs.get(i).setName(finalCopies.get(targetVar.get()).clone());
-                    continue;
+                if (!finalCopies.containsKey(name)) {
+                    Optional<com.github.javaparser.ast.type.Type> type = declaredTypeOfLocalVariable(nameExpr);
+                    if (type.isEmpty()) {
+                        // A field, or a name that is not a variable
+                        continue;
+                    }
+                    String finalName = context.variableNames().allocate("final" + Character.toUpperCase(name.charAt(0)) + name.substring(1));
+                    VariableDeclarationExpr finalVarDeclExpr = new VariableDeclarationExpr(new VariableDeclarator(type.get(), finalName, new NameExpr(name)));
+                    finalVarDeclExpr.addModifier(Modifier.Keyword.FINAL);
+                    tryStmt.getTryBlock().getStatements().add(finalVarDeclIdx++, new ExpressionStmt(finalVarDeclExpr));
+                    finalCopies.put(name, finalName);
                 }
-                VariableDeclarator exceptionVarDecl = new VariableDeclarator(
-                        new ClassOrInterfaceType(null, targetVar.get().getType().asString()),
-                        context.variableNames().allocate(nameExpr.getNameAsString() + "_final"),
-                        nameExpr.clone()
-                );
-                VariableDeclarationExpr finalVarDeclExpr = new VariableDeclarationExpr(exceptionVarDecl);
-                finalVarDeclExpr.addModifier(Modifier.Keyword.FINAL);
-                context.existingVariables().add(exceptionVarDecl);
-                Statement finalVarDeclStmt = new ExpressionStmt(finalVarDeclExpr);
-                tryStmt.getTryBlock().getStatements().add(finalVarDeclIdx++, finalVarDeclStmt);
-                lambdaNameExprs.get(i).setName(exceptionVarDecl.getName().clone());
-                finalCopies.put(targetVar.get(), exceptionVarDecl.getName());
+                lambdaNameExprs.get(i).setName(finalCopies.get(name));
             }
             // Rename the local variables of the try block that would hide a field
             renameVariablesHidingFields(tryStmt.getTryBlock(), context);
@@ -1343,8 +1333,6 @@ public class TestUtils {
             // Create an expression statement for the assertThrows call
             Statement assertStmt = new ExpressionStmt(exceptionVarDeclExpr);
             statements.add(assertStmt);
-            // Add the generated variable to the collection of existing variables
-            context.existingVariables().add(exceptionVarDecl);
             // Rename the local variables of the catch block that would hide a field
             renameVariablesHidingFields(catchBlockStmt, context);
             // Add the statements from the catch block to the flat main block
@@ -1376,6 +1364,42 @@ public class TestUtils {
     }
 
     /**
+     * Returns the declared type of the local variable (or parameter) a name refers to: {@code var} if the type is not
+     * written (the parameter of a lambda expression). Returns an empty optional if the name refers to a field, or is
+     * not resolved.
+     *
+     * @param nameExpr the name of the variable
+     * @return the declared type of the variable
+     */
+    private static Optional<com.github.javaparser.ast.type.Type> declaredTypeOfLocalVariable(NameExpr nameExpr) {
+        ResolvedValueDeclaration declaration;
+        try {
+            declaration = nameExpr.resolve();
+        } catch (RuntimeException e) {
+            logger.warn("Variable {} not resolved: it gets no final copy.", nameExpr);
+            return Optional.empty();
+        }
+        if (declaration.isField()) {
+            return Optional.empty();
+        }
+        return declaration.toAst()
+                .flatMap(node -> {
+                    if (node instanceof Parameter parameter) {
+                        return Optional.of(parameter.isVarArgs() ? new ArrayType(parameter.getType().clone()) : parameter.getType().clone());
+                    } else if (node instanceof VariableDeclarator variable) {
+                        return Optional.of(variable.getType().clone());
+                    } else if (node instanceof VariableDeclarationExpr declarationExpr) {
+                        return declarationExpr.getVariables().stream()
+                                .filter(variable -> variable.getNameAsString().equals(nameExpr.getNameAsString()))
+                                .findFirst()
+                                .map(variable -> variable.getType().clone());
+                    }
+                    return Optional.<com.github.javaparser.ast.type.Type>empty();
+                })
+                .map(type -> type.isUnknownType() ? new VarType() : type);
+    }
+
+    /**
      * Collects the resources of a try statement as statements of the flat version of the block. The variables declared
      * as resources are renamed if they would hide a field within the main block (together with their usages within
      * the try block). A resource that refers to a variable already declared (for example {@code try (in) {...}})
@@ -1394,7 +1418,6 @@ public class TestUtils {
                     if (context.fieldNames().contains(var.getNameAsString())) {
                         resourcesVarMapping.put(var, context.variableNames().allocate(var.getNameAsString()));
                     }
-                    context.existingVariables().add(var);
                 }
                 // Replace any occurrence of the old name with the new one within the old try block
                 JavaParserUtils.replaceVariables(tryStmt.getTryBlock(), resourcesVarMapping);

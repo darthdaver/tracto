@@ -208,56 +208,6 @@ class JavaParserUtilsTest {
                 """), method.getBody().orElseThrow());
     }
 
-    @Test
-    void getVarFromNameExprReturnsTheDeclaratorOfTheVariable() throws IOException {
-        MethodDeclaration method = method(parse("""
-                class C {
-                    void use(int x, int y) {}
-                    void m() {
-                        int a = 1, b = 2;
-                        use(a, b);
-                    }
-                }
-                """), "m");
-        Set<VariableDeclarator> existingVariables = identitySet(localVariable(method, "a"), localVariable(method, "b"));
-
-        Optional<VariableDeclarator> resolved = JavaParserUtils.getVarFromNameExpr(nameExpr(method, "b"), existingVariables);
-
-        assertSame(localVariable(method, "b"), resolved.orElseThrow());
-    }
-
-    @Test
-    void getVarFromNameExprIsEmptyForAVariableOutsideTheExistingVariables() throws IOException {
-        MethodDeclaration method = method(parse("""
-                class C {
-                    void use(int x, int y) {}
-                    void m() {
-                        int a = 1, b = 2;
-                        use(a, b);
-                    }
-                }
-                """), "m");
-
-        Optional<VariableDeclarator> resolved = JavaParserUtils.getVarFromNameExpr(nameExpr(method, "b"), identitySet(localVariable(method, "a")));
-
-        assertTrue(resolved.isEmpty());
-    }
-
-    @Test
-    void getVarFromNameExprIsEmptyForAClassNameOrAParameter() throws IOException {
-        MethodDeclaration method = method(parse("""
-                class C {
-                    void m(String s) {
-                        Integer.parseInt(s);
-                    }
-                }
-                """), "m");
-        Set<VariableDeclarator> existingVariables = identitySet();
-
-        assertTrue(JavaParserUtils.getVarFromNameExpr(nameExpr(method, "Integer"), existingVariables).isEmpty());
-        assertTrue(JavaParserUtils.getVarFromNameExpr(nameExpr(method, "s"), existingVariables).isEmpty());
-    }
-
     /**
      * The example of the documentation of {@code checkNodeScope}: each inner block, and each variable declared in the
      * header of a {@code for} or a {@code try}, adds a hierarchical level.

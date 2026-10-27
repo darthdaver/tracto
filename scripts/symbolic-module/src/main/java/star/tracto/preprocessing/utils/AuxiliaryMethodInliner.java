@@ -105,8 +105,6 @@ final class AuxiliaryMethodInliner {
      * @param variableNames the names of the variables in use within the test case. The names of the variables
      *                      declared by the inlined statements are added
      * @param labelNames the labels in use within the test case. The labels of the inlined statements are added
-     * @param existingVariables the variables of the test case: the variables declared within the copy of the method
-     *                          are added
      * @return the statements replacing the call, or an empty optional if the call cannot be inlined
      */
     static Optional<InlinedCall> inline(
@@ -114,8 +112,7 @@ final class AuxiliaryMethodInliner {
             MethodDeclaration auxiliaryMethod,
             TypeDeclaration<?> testClass,
             NameAllocator variableNames,
-            NameAllocator labelNames,
-            Set<VariableDeclarator> existingVariables
+            NameAllocator labelNames
     ) {
         String methodName = auxiliaryMethod.getNameAsString();
         if (auxiliaryMethod.getBody().isEmpty()) {
@@ -155,7 +152,7 @@ final class AuxiliaryMethodInliner {
         BlockStmt body = copy.getBody().orElseThrow();
         reserveNamesUsedButNotDeclared(copy, variableNames);
         qualifyFieldsHiddenByTheTestCase(copy, variableNames);
-        renameVariables(body, variableNames, existingVariables);
+        renameVariables(body, variableNames);
         renameLabels(body, labelNames);
         List<Statement> bindings = bindParameters(copy, arguments, collectVarArgs, variableNames);
         Optional<String> label = replaceReturns(copy, variableNames, labelNames);
@@ -204,9 +201,9 @@ final class AuxiliaryMethodInliner {
 
     /**
      * Renames the variables declared within the body of a method (and the parameters of its lambda expressions and
-     * catch clauses) whose names are in use within the test case. The variables are added to the existing variables.
+     * catch clauses) whose names are in use within the test case.
      */
-    private static void renameVariables(BlockStmt body, NameAllocator variableNames, Set<VariableDeclarator> existingVariables) {
+    private static void renameVariables(BlockStmt body, NameAllocator variableNames) {
         // The keys are compared by reference: distinct declarations with the same content are equal for JavaParser
         Map<VariableDeclarator, String> variablesToRename = new IdentityHashMap<>();
         for (VariableDeclarationExpr declaration : body.findAll(VariableDeclarationExpr.class)) {
@@ -215,7 +212,6 @@ final class AuxiliaryMethodInliner {
                 if (!name.equals(variable.getNameAsString())) {
                     variablesToRename.put(variable, name);
                 }
-                existingVariables.add(variable);
             }
         }
         Map<Parameter, String> parametersToRename = new IdentityHashMap<>();
@@ -347,12 +343,7 @@ final class AuxiliaryMethodInliner {
      * Checks if a variable is assigned (or incremented, or decremented) within a node.
      */
     private static boolean isAssigned(String name, Node node) {
-        return node.findFirst(AssignExpr.class, assignExpr -> isNameExpr(assignExpr.getTarget(), name)).isPresent()
-                || node.findFirst(UnaryExpr.class, unaryExpr -> isIncrementOrDecrement(unaryExpr) && isNameExpr(unaryExpr.getExpression(), name)).isPresent();
-    }
-
-    private static boolean isNameExpr(Expression expr, String name) {
-        return expr.isNameExpr() && expr.asNameExpr().getNameAsString().equals(name);
+        return JavaParserUtils.getAssignedVariableNames(node).contains(name);
     }
 
     private static boolean isIncrementOrDecrement(UnaryExpr unaryExpr) {

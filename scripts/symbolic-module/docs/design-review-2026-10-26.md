@@ -28,7 +28,7 @@ regression tests.
 | D5 | normalize | **Parameter aliasing.** A parameter passed a variable is renamed to that variable (`TestUtils.java:2099`). If the helper assigns the parameter (`v = v + 1;`), the inlined code modifies the caller's variable. | Changed semantics: a later assertion of the test case now reads the modified value. | refactoring *Fixed in Step 12.* |
 | D6 | normalize | **Field shadowing.** A helper reading a field `base` is inlined into a test case that declares a local `base`; the inlined code reads the local. | Changed semantics. | refactoring *Fixed in Step 12.* |
 | D7 | normalize | **Name clash with nested test variables.** Only top-level locals of the test case are in the set of existing variables (`TestUtils.java:314`), so a helper's `for (int i …)` inlined inside the test's `for (int i …)` is not renamed. | Output does not compile (`variable i is already defined`). | refactoring (known since Step 3) *Fixed in Step 12.* |
-| D8 | normalize | **`try` inside a loop.** The final copies are made only for variables in the set of existing variables, so a loop variable used in the failing call is captured directly: `() -> Integer.parseInt("x" + i)`. | Output does not compile (`must be final or effectively final`). | Step 6 |
+| D8 | normalize | **`try` inside a loop.** The final copies are made only for variables in the set of existing variables, so a loop variable used in the failing call is captured directly: `() -> Integer.parseInt("x" + i)`. | Output does not compile (`must be final or effectively final`). | Step 6 *Fixed in Step 13.* |
 | D9 | split | **`flat` `assertThrows` on the generated declaration.** With the committed config (`assertThrows` missing → `flat`), `X e = assertThrows(...)` crashes the splitter (`TestUtils.java:957`). | Every test case whose try/catch/fail was converted is dropped. | known since Step 6 *Fixed in Step 10.* |
 | D10 | normalize | **`fail()` not last in the try block.** `findFailMethodCall` accepts `fail()` anywhere; the conversion then assumes it is last. `try { parse(s); fail(); assertEquals(..); } catch (E e) {..}` becomes `parse(s); E e = assertThrows(E.class, () -> fail("..."), "never");` with no error logged. | Silently corrupted test case (it would throw at runtime). | refactoring *Fixed in Step 9.* |
 | D11 | normalize | **Try with ≥2 catch clauses and no `fail()`.** No branch of `flatTryStmt` applies, and the try block is silently dropped. | Missing statements in prefixes. | known since Step 7 *Fixed in Step 9.* |
@@ -218,7 +218,7 @@ java-uuid-generator, as for Steps 1–7.
    2026-10-26, together with the removal of the `assertThrows` key and of its `flat` mode (D9), D15, D27 and D28.*
 4. **Step 11 – normalizer `if` chains** (D2). *Done on 2026-10-27, together with D29 and D30.*
 5. **Step 12 – inlining semantics** (D4–D7, D12) and the name allocator (D13). *Done on 2026-10-27, together with D31.*
-6. **Step 13 – lambda captures in nested try statements** (D8) and the `_final` policy.
+6. **Step 13 – lambda captures in nested try statements** (D8) and the `_final` policy. *Done on 2026-10-27.*
 7. **Step 14 – remove the `THROW EXCEPTION` label** (the `assertThrows` key was already removed in Step 10), including
    `TokensUtils` and the two Python utilities; plain `assertThrows(...)` when the catch block does not use the exception.
 8. **Step 15 – robustness and clean-up**: D14, D16–D18, D20–D22, D25, dead code (the `temp` drafts were deleted on 2026-10-26).

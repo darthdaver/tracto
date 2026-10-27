@@ -89,6 +89,42 @@ class TestUtilsNormalizeBehaviourTest {
     }
 
     @Test
+    void expectedExceptionWithinALoopIsCheckedForEachIteration() throws Exception {
+        Path testFile = repo.writeTestClass("com/acme/LoopThrowsTest.java", """
+                package com.acme;
+
+                import java.util.ArrayList;
+                import java.util.List;
+                import org.junit.jupiter.api.Test;
+                import static org.junit.jupiter.api.Assertions.fail;
+
+                public class LoopThrowsTest {
+                    public static final List<String> TRACE = new ArrayList<>();
+
+                    @Test
+                    public void testThrows() {
+                        for (int i = 0; i < 2; i++) {
+                            try {
+                                Integer.parseInt("x" + i);
+                                fail();
+                            } catch (NumberFormatException e) {
+                                TRACE.add("caught " + e.getMessage());
+                            }
+                        }
+                    }
+                }
+                """);
+        List<String> expectedTrace = List.of("caught For input string: \"x0\"", "caught For input string: \"x1\"");
+
+        Path normalizedFile = assertDoesNotThrow(
+                () -> TestUtils.normalizeTest(FixtureRepo.CONFIG, repo.root, testFile, repo.output, Optional.empty())).getValue0();
+
+        assertEquals(expectedTrace, runTrace(testFile, "com.acme.LoopThrowsTest", "testThrows"), "Original test case");
+        assertEquals(expectedTrace, runTrace(normalizedFile, "com.acme.LoopThrowsTestSTARNormalizedTest", "testThrows"), "Normalized test case");
+        assertTrue(Files.readString(normalizedFile).contains("assertThrows("), "Expected the try statement to be converted");
+    }
+
+    @Test
     void inlinedAuxiliaryMethodsSeeTheValuesOfTheOriginalCalls() throws Exception {
         Path testFile = repo.writeTestClass("com/acme/InlineTest.java", """
                 package com.acme;

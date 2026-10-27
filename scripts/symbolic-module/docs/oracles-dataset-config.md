@@ -141,6 +141,8 @@ Every try statement reached by the normalization is first classified (`TryStatem
 supported; a test case containing a try statement of any other shape is **discarded**: it is removed from the
 normalized test class (so it produces no datapoints), saved in `discarded/normalized/...`, and the reason is recorded in
 its statistics (`discardReason` in `test-stats-<project>.json`, total `discardedTestCases` in `statistics-<project>.json`).
+A try statement of an unsupported shape within an auxiliary method does not discard the test case: the auxiliary
+method is not inlined (since Step 12).
 
 | Shape | Example | Supported |
 |-------|---------|-----------|
@@ -159,8 +161,8 @@ The two values decide what happens to the supported shapes:
 
 | Value | Meaning |
 |-------|---------|
-| `to-assert-throws` (committed config) | The try statement is flattened: the resources, then the statements of the try block, then those of the finally block. An expected exception becomes `E e = assertThrows(E.class, () -> call(), ...)` followed by the statements of the catch block. |
-| `keep-try-catch` | The structure is kept (resources, catch parameters), and the statements of the try, catch and finally blocks are normalized. **The splitter does not support try statements yet** (Step 10): with this value the test cases containing a try statement produce no datapoints for now. |
+| `to-assert-throws` (committed config) | The try statement is flattened: the resources, then the statements of the try block, then those of the finally block. An expected exception becomes `E e = assertThrows(E.class, () -> call(), ...)` followed by the statements of the catch block. A local variable used in the call and reassigned within the test case (a loop variable, for example) is captured through a final copy, `final int finalI = i;`, defined before the `assertThrows` (since Step 13); the other variables and the fields are captured as they are. |
+| `keep-try-catch` | The structure is kept (resources, catch parameters), and the statements of the try, catch and finally blocks are normalized. Since Step 10 the splitter splits within the try statements: the `fail(...)` call and the assertions of the try, catch and finally blocks are split points. |
 
 History: until commit `6db6ac15` (2026-03-09) the key had the values `standard`, `flat` and `assert_throws`, read by
 the splitter; that commit moved the handling of try statements into the normalization and left the key unused until

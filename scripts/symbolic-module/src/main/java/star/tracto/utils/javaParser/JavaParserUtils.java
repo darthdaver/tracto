@@ -2142,38 +2142,27 @@ public class JavaParserUtils {
     }
 
     /**
-     * Retrieves the variable declarator {@link VariableDeclarator} of a variable, from a name expression {@link NameExpr}.
-     * If the variable declarator is found returns it, otherwise returns an empty optional {@link Optional}.
+     * Collects the names of the variables assigned (or incremented, or decremented) within a node, besides their
+     * declarations. A variable never assigned after its declaration is effectively final.
      *
-     * @param nameExpr the name expression to process
-     * @param existingVariables the list of variables already defined, among to which look for the name expression
-     * @return An optional containing the retrieved variable declarator or an empty optional, otherwise.
+     * @param node the node to visit
+     * @return the names of the variables assigned within the node
      */
-    public static Optional<VariableDeclarator> getVarFromNameExpr(NameExpr nameExpr, Set<VariableDeclarator> existingVariables) {
-        Optional<Node> declaration;
-        try {
-            declaration = nameExpr.resolve().toAst();
-        } catch (UnsolvedSymbolException | UnsupportedOperationException e) {
-            // The name expression does not refer to a resolvable variable (for example it is the name of a class,
-            // like `Integer` in `Integer.parseInt(s)`)
-            return Optional.empty();
-        }
-        return declaration
-                .flatMap(node -> {
-                    // toAst() may return either the VariableDeclarator directly,
-                    // or the parent VariableDeclarationExpr — handle both.
-                    if (node instanceof VariableDeclarator vd) {
-                        return Optional.of(vd);
-                    } else if (node instanceof VariableDeclarationExpr vde) {
-                        // A VariableDeclarationExpr can declare multiple variables (e.g. int x=1, y=2),
-                        // so we find the one matching this specific NameExpr's name.
-                        return vde.getVariables().stream()
-                                .filter(vd -> vd.getNameAsString().equals(nameExpr.getNameAsString()))
-                                .findFirst();
-                    }
-                    return Optional.empty();
-                })
-                .filter(existingVariables::contains);
+    public static Set<String> getAssignedVariableNames(Node node) {
+        Set<String> names = new HashSet<>();
+        node.findAll(AssignExpr.class).stream()
+                .map(AssignExpr::getTarget)
+                .filter(Expression::isNameExpr)
+                .forEach(target -> names.add(target.asNameExpr().getNameAsString()));
+        node.findAll(UnaryExpr.class).stream()
+                .filter(unaryExpr -> unaryExpr.getOperator() == UnaryExpr.Operator.PREFIX_INCREMENT
+                        || unaryExpr.getOperator() == UnaryExpr.Operator.PREFIX_DECREMENT
+                        || unaryExpr.getOperator() == UnaryExpr.Operator.POSTFIX_INCREMENT
+                        || unaryExpr.getOperator() == UnaryExpr.Operator.POSTFIX_DECREMENT)
+                .map(UnaryExpr::getExpression)
+                .filter(Expression::isNameExpr)
+                .forEach(expr -> names.add(expr.asNameExpr().getNameAsString()));
+        return names;
     }
 
     /**
