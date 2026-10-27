@@ -2318,52 +2318,54 @@ public class JavaParserUtils {
     }
 
     /**
-     * Retrieve the last assertion, assuming it is in the last statement of a method declaration.
+     * Checks if a statement is an assertion: an {@code assert} statement, or an expression statement whose expression
+     * (or the initializer of the variable it declares, as in {@code E e = assertThrows(...)}) is a call to a JUnit
+     * assertion.
+     *
+     * @param statement the statement to check
+     * @return {@code true} if the statement is an assertion, {@code false} otherwise
+     */
+    public static boolean isAssertionStatement(Statement statement) {
+        if (statement.isAssertStmt()) {
+            return true;
+        }
+        if (!statement.isExpressionStmt()) {
+            return false;
+        }
+        Expression expr = statement.asExpressionStmt().getExpression();
+        // Check if the expression is a variable declaration expression and extract the initializer, if present
+        if (expr.isVariableDeclarationExpr()) {
+            Optional<Expression> initializer = expr.asVariableDeclarationExpr().getVariable(0).getInitializer();
+            if (initializer.isPresent()) {
+                expr = initializer.get();
+            }
+        }
+        return expr.isMethodCallExpr() && JUnitAssertionType.isJUnitAssertion(expr.asMethodCallExpr().getNameAsString());
+    }
+
+    /**
+     * Retrieve the last assertion, assuming it is in the last statement of a method declaration. The assertion is the
+     * outermost assertion statement containing the last statement of the method (so for
+     * {@code assertAll(() -> assertEquals(..))} the assertion is the {@code assertAll} statement, not the assertion
+     * within its lambda expression). An assertion that is the body of a lambda expression passed to another call (for
+     * example {@code values.forEach(v -> assertTrue(v > 0))}) is not considered.
      *
      * @param callableDeclaration the method declaration to process
      * @return the last assertion in the last statement of the method declaration (if any), otherwise return an empty optional
      */
     public static Optional<Statement> getLastAssertionInMethodDeclaration(MethodDeclaration callableDeclaration) throws IllegalStateException {
-        // TODO: Check if assert stmt and expression stmt inteleave in the same nested block
         Statement lastStmt = getLastStatementInMethodDeclaration(callableDeclaration);
-        if (lastStmt.isAssertStmt()) {
-            return Optional.of(lastStmt);
-        }
-        Optional<Statement> exprStmt = getLastStatementTypeOccurrence(lastStmt,ExpressionStmt.class);
-        if (exprStmt.isPresent()) {
-            // Get the expression from the statement
-            Expression currentExpr = exprStmt.get().asExpressionStmt().getExpression();
-            // Check if the expression is a variable declaration expression and extract the initializer, if present
-            if (currentExpr.isVariableDeclarationExpr()) {
-                Optional<Expression> initializer = currentExpr.asVariableDeclarationExpr().getVariable(0).getInitializer();
-                if (initializer.isPresent()) {
-                    currentExpr = initializer.get();
-                }
+        Optional<Statement> lastAssertion = Optional.empty();
+        // Walk up from the last statement to the method, keeping the outermost assertion found
+        Node node = lastStmt;
+        while (node != null && node != callableDeclaration) {
+            if (node instanceof Statement statement && isAssertionStatement(statement)
+                    && !(statement.getParentNode().orElse(null) instanceof LambdaExpr)) {
+                lastAssertion = Optional.of(statement);
             }
-            // Check if the expression is an assertion
-            if (currentExpr.isMethodCallExpr() && JUnitAssertionType.isJUnitAssertion(currentExpr.asMethodCallExpr().getNameAsString())) {
-                return exprStmt;
-            } else {
-                Optional<Node> parentNode = exprStmt.get().getParentNode();
-                while (parentNode.isPresent() && !parentNode.get().equals(callableDeclaration)) {
-                    if (parentNode.get() instanceof MethodCallExpr) {
-                        MethodCallExpr methodCallExpr = (MethodCallExpr) parentNode.get();
-                        if (JUnitAssertionType.isJUnitAssertion(methodCallExpr.getNameAsString())) {
-                            while (parentNode.isPresent() && !(parentNode.get() instanceof ExpressionStmt)) {
-                                parentNode = parentNode.get().getParentNode();
-                            }
-                            if (parentNode.isPresent()) {
-                                return Optional.of((Statement) parentNode.get());
-                            }
-                            return Optional.empty();
-                        }
-                    }
-                    parentNode = parentNode.get().getParentNode();
-                }
-                return Optional.empty();
-            }
+            node = node.getParentNode().orElse(null);
         }
-        return Optional.empty();
+        return lastAssertion;
     }
 
     /**

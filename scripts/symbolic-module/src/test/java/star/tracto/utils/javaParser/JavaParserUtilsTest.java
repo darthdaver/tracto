@@ -9,7 +9,6 @@ import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.stmt.Statement;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -375,7 +374,6 @@ class JavaParserUtilsTest {
     }
 
     @Test
-    @Disabled("D23: the assertion within the last lambda of assertAll is returned instead of the assertAll statement")
     void getLastAssertionInMethodDeclarationReturnsAssertAllRatherThanTheAssertionsInItsLambdas() throws IOException {
         MethodDeclaration method = method(parse("""
                 class C {
@@ -388,6 +386,19 @@ class JavaParserUtilsTest {
         Statement lastAssertion = JavaParserUtils.getLastAssertionInMethodDeclaration(method).orElseThrow();
 
         assertEquals(StaticJavaParser.parseStatement("assertAll(() -> assertEquals(1, 1), () -> assertTrue(true));"), lastAssertion);
+    }
+
+    @Test
+    void getLastAssertionInMethodDeclarationIsEmptyForAnAssertionInTheExpressionLambdaOfAnotherCall() throws IOException {
+        MethodDeclaration method = method(parse("""
+                class C {
+                    void m(java.util.List<Integer> values) {
+                        values.forEach(v -> assertTrue(v > 0));
+                    }
+                }
+                """), "m");
+
+        assertTrue(JavaParserUtils.getLastAssertionInMethodDeclaration(method).isEmpty());
     }
 
     @Test

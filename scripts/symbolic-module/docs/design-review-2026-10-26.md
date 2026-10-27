@@ -21,15 +21,15 @@ regression tests.
 
 | ID | Phase | Defect | Effect on the dataset | Since |
 |----|-------|--------|------------------------|-------|
-| D1 | split | **Nested loops.** A statement after an inner loop is placed *inside* the inner loop (`addStatement` appends to the last `for` found in the whole body, `TestUtils.java:2428`). | Wrong prefixes for every assertion that follows a nested loop. | baseline |
-| D2 | normalize + split | **`if/else` with a nested `if`.** The `else` branch is attached to the nested `if` (`getLastStatementTypeOccurrence(..., IfStmt.class)`, `TestUtils.java:1808` and `:1293`). `if (a) { if (b) {..} } else {X}` becomes `if (a) { if (b) {..} else {X} }`. | Changed test semantics, wrong prefixes. | baseline (split); normalization since it runs |
+| D1 | split | **Nested loops.** A statement after an inner loop is placed *inside* the inner loop (`addStatement` appends to the last `for` found in the whole body, `TestUtils.java:2428`). | Wrong prefixes for every assertion that follows a nested loop. | baseline *Fixed in Step 10.* |
+| D2 | normalize + split | **`if/else` with a nested `if`.** The `else` branch is attached to the nested `if` (`getLastStatementTypeOccurrence(..., IfStmt.class)`, `TestUtils.java:1808` and `:1293`). `if (a) { if (b) {..} } else {X}` becomes `if (a) { if (b) {..} else {X} }`. | Changed test semantics, wrong prefixes. | baseline (split); normalization since it runs *Splitter part fixed in Step 10; normalizer part open (Step 11).* |
 | D3 | normalize | **Error flag lost.** `thrownedException = parseNormalizeTestStatementsBlock(...)` overwrites the flag, so an error followed by a block statement (loop, `if`, …) is not reported. | Missing entries in the error report; the kept `try` is dropped later with a generic message. | refactoring *Fixed in Step 9.* |
 | D4 | normalize | **Inlined helpers are not normalized.** The helper body is appended as is (`TestUtils.java:2135`): a `try/catch/fail` inside a helper stays a `try`, so the splitter drops the whole test case; a helper called by a helper is not inlined. | Inlining a helper that contains a `try` *loses* the test case (it was kept before inlining worked). | Steps 3–5 |
 | D5 | normalize | **Parameter aliasing.** A parameter passed a variable is renamed to that variable (`TestUtils.java:2099`). If the helper assigns the parameter (`v = v + 1;`), the inlined code modifies the caller's variable. | Changed semantics: a later assertion of the test case now reads the modified value. | refactoring |
 | D6 | normalize | **Field shadowing.** A helper reading a field `base` is inlined into a test case that declares a local `base`; the inlined code reads the local. | Changed semantics. | refactoring |
 | D7 | normalize | **Name clash with nested test variables.** Only top-level locals of the test case are in the set of existing variables (`TestUtils.java:314`), so a helper's `for (int i …)` inlined inside the test's `for (int i …)` is not renamed. | Output does not compile (`variable i is already defined`). | refactoring (known since Step 3) |
 | D8 | normalize | **`try` inside a loop.** The final copies are made only for variables in the set of existing variables, so a loop variable used in the failing call is captured directly: `() -> Integer.parseInt("x" + i)`. | Output does not compile (`must be final or effectively final`). | Step 6 |
-| D9 | split | **`flat` `assertThrows` on the generated declaration.** With the committed config (`assertThrows` missing → `flat`), `X e = assertThrows(...)` crashes the splitter (`TestUtils.java:957`). | Every test case whose try/catch/fail was converted is dropped. | known since Step 6 |
+| D9 | split | **`flat` `assertThrows` on the generated declaration.** With the committed config (`assertThrows` missing → `flat`), `X e = assertThrows(...)` crashes the splitter (`TestUtils.java:957`). | Every test case whose try/catch/fail was converted is dropped. | known since Step 6 *Fixed in Step 10.* |
 | D10 | normalize | **`fail()` not last in the try block.** `findFailMethodCall` accepts `fail()` anywhere; the conversion then assumes it is last. `try { parse(s); fail(); assertEquals(..); } catch (E e) {..}` becomes `parse(s); E e = assertThrows(E.class, () -> fail("..."), "never");` with no error logged. | Silently corrupted test case (it would throw at runtime). | refactoring *Fixed in Step 9.* |
 | D11 | normalize | **Try with ≥2 catch clauses and no `fail()`.** No branch of `flatTryStmt` applies, and the try block is silently dropped. | Missing statements in prefixes. | known since Step 7 *Fixed in Step 9.* |
 | D12 | normalize | **Varargs with one non-array variable.** `checkAll(x)` for `checkAll(int... vs)` declares `int vs = x;` and keeps `vs.length`. | Output does not compile. | baseline code, reached since Step 3 |
@@ -40,23 +40,25 @@ From reading the code (not reproduced, but each one is a single, unambiguous cod
 | ID | Where | Defect |
 |----|-------|--------|
 | D14 | `processSplitTestClass` (`TestUtils.java:3125`) | The `try` encloses the loop over the test cases: an `IllegalStateException` in one split test case skips **all following** split test cases of the class. |
-| D15 | `splitTest` (`TestUtils.java:741`) | An inner `catch (Exception e)` swallows every error, so the outer error-report branch (writing `error/split/...`) is unreachable. That branch also adds the original node instead of a copy (the Step 2 bug). |
+| D15 | `splitTest` (`TestUtils.java:741`) | An inner `catch (Exception e)` swallows every error, so the outer error-report branch (writing `error/split/...`) is unreachable. That branch also adds the original node instead of a copy (the Step 2 bug). *Fixed in Step 10.* |
 | D16 | `splitTest` (`TestUtils.java:664`) | The `@Override` handling looks for a call named `super`, which never exists (`super.setUp()` is named `setUp`), so `foundSuper` is always false. |
 | D17 | `getJunitVersion` (`TestUtils.java:134`) | The first import containing `junit` decides the version: `import org.junit.Assert;` before `import org.junit.jupiter.api.Test;` gives JUnit 4. |
 | D18 | `getAssertionsDistribution` (`TestUtils.java:2566`) | `put("assert", n)` overwrites the count for each statement instead of adding to it. Statistics only. |
 | D19 | `FixtureRepo.CONFIG` | The tests use `assertThrows = STANDARD`, while the committed config gives `flat`: no test covers the production path, which is why D9 was not caught by the suite. *(Step 8: `FixtureRepo.committedConfig()` added; used by the D9 test and the end-to-end test.)* |
 
-Found while writing the Step 8 tests (details in `docs/fixes/step-08-test-infrastructure-and-characterization.md`) and in the Step 9 A/B run:
+Found while writing the Step 8 tests (details in `docs/fixes/step-08-test-infrastructure-and-characterization.md`), in the Step 9 A/B run and in Step 10:
 
 | ID | Where | Defect |
 |----|-------|--------|
 | D20 | `JavaFileCollector.cleanRepository` | Generated `*STARSplitTestPrefix.java` files are not deleted and are collected as test classes on the next run. |
 | D21 | `OraclesDataset.testClassPathToSourceClassNormPath` | Every `test` is removed from the test file name, so focal classes whose name contains `test` (`Latest`, `Contest`, …) are never matched. |
 | D22 | `JavaParserUtils.checkModifiersRules` | Always returns `true`: the modifier rules used by `TokensUtils` are never applied (from reading). |
-| D23 | `JavaParserUtils.getLastAssertionInMethodDeclaration` | For `assertAll(() -> ..., () -> assertTrue(..))` the target is the assertion inside the last lambda, not the `assertAll`. |
-| D24 | splitter, `synchronized` branch | The body of a `synchronized` statement is added after the statement instead of within it. |
+| D23 | `JavaParserUtils.getLastAssertionInMethodDeclaration` | For `assertAll(() -> ..., () -> assertTrue(..))` the target is the assertion inside the last lambda, not the `assertAll`. *Fixed in Step 10.* |
+| D24 | splitter, `synchronized` branch | The body of a `synchronized` statement is added after the statement instead of within it. *Fixed in Step 10.* |
 | D25 | `splitTest`, `processSplitTestClass`, `distributeMethods` | Fully qualified annotations (`@org.junit.Test`, `@org.junit.jupiter.api.Disabled`) are not recognized. |
-| D26 | splitter, expression statements | A statement containing an anonymous class with methods (`new Clock() { public long now() { ... } }`) throws "Unexpected block statement parent node ...", and the test case is dropped (3 test cases in the two A/B projects; found in Step 9). |
+| D26 | splitter, expression statements | A statement containing an anonymous class with methods (`new Clock() { public long now() { ... } }`) throws "Unexpected block statement parent node ...", and the test case is dropped (3 test cases in the two A/B projects; found in Step 9). *Fixed in Step 10.* |
+| D27 | splitter, labeled statements | A labeled loop is rewritten as a labeled block (`outer: { for (...) { ... continue outer; } }`), which does not compile. Found and fixed in Step 10. |
+| D28 | splitter, lambda block assigned to a variable | `Runnable r = () -> { ... };` is rewritten as a lambda without its declaration, and the split test class does not parse: all the datapoints of the class are lost. Found and fixed in Step 10. |
 
 Every confirmed defect with a simple trigger has a `@Disabled` test named after it (map in the Step 8 document).
 
@@ -206,10 +208,11 @@ java-uuid-generator, as for Steps 1–7.
 2. **Step 9 – try classification and discarding** (planned in Step 7): D10, D11, D3 and the per-test-case result;
    the `try-catch-finally` values `to-assert-throws` and `keep-try-catch` (the splitting within try statements for
    `keep-try-catch` is completed with the new splitter in Step 10). *Done on 2026-10-26.*
-3. **Step 10 – splitter rewrite by truncation** (D1, D2, D23, D24, D26, splitting within try statements).
+3. **Step 10 – splitter rewrite by truncation** (D1, D2, D23, D24, D26, splitting within try statements). *Done on
+   2026-10-26, together with the removal of the `assertThrows` key and of its `flat` mode (D9), D15, D27 and D28.*
 4. **Step 11 – normalizer `if` chains** (D2).
 5. **Step 12 – inlining semantics** (D4–D7, D12) and the name allocator (D13).
 6. **Step 13 – lambda captures in nested try statements** (D8) and the `_final` policy.
-7. **Step 14 – remove the `assertThrows` key and the `THROW EXCEPTION` label** (D9), including `TokensUtils` and the
-   two Python utilities; plain `assertThrows(...)` when the catch block does not use the exception.
-8. **Step 15 – robustness and clean-up**: D14–D18, D20–D22, D25, dead code, `temp` files.
+7. **Step 14 – remove the `THROW EXCEPTION` label** (the `assertThrows` key was already removed in Step 10), including
+   `TokensUtils` and the two Python utilities; plain `assertThrows(...)` when the catch block does not use the exception.
+8. **Step 15 – robustness and clean-up**: D14, D16–D18, D20–D22, D25, dead code (the `temp` drafts were deleted on 2026-10-26).

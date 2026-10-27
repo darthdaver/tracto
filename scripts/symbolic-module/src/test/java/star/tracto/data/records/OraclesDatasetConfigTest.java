@@ -55,6 +55,15 @@ class OraclesDatasetConfigTest {
         assertTrue(rootCauseMessage(error).contains("Unknown value: standard"), rootCauseMessage(error));
     }
 
+    @Test
+    void removedAssertThrowsKeyIsRejected() throws IOException {
+        Path configFile = writeConfig("\"try-catch-finally\": \"to-assert-throws\", \"assertThrows\": \"flat\"");
+
+        Error error = assertThrows(Error.class, () -> FilesUtils.readJSON(configFile, OraclesDatasetConfig.class));
+
+        assertTrue(rootCauseMessage(error).contains("Unrecognized field \"assertThrows\""), rootCauseMessage(error));
+    }
+
     private Path writeConfig(String keys) throws IOException {
         return Files.writeString(tempDir.resolve("config.json"), "{" + keys + "}");
     }

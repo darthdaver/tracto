@@ -2,7 +2,6 @@ package star.tracto.preprocessing.utils;
 
 import org.javatuples.Pair;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import star.tracto.data.enums.AssertionStrategyType;
@@ -161,7 +160,6 @@ class TestUtilsDatapointsTest {
     }
 
     @Test
-    @Disabled("D23: the target of a split test case ending with assertAll is the last assertion within its lambdas")
     void assertAllIsTheTargetAsAWhole() throws IOException {
         List<OracleDatapoint> datapoints = datapoints(FixtureRepo.CONFIG, """
                 @Test
@@ -174,6 +172,45 @@ class TestUtilsDatapointsTest {
         assertEquals(1, datapoints.size());
         assertEquals("assertAll(() -> assertEquals(3, calc.add(1, 2)), () -> assertEquals(0, calc.total()));", datapoints.get(0).target());
         assertEquals("{ Calc calc = new Calc(); /*<MASK_PLACEHOLDER>*/ }", prefixBody(datapoints.get(0)));
+    }
+
+    @Test
+    void assertThrowsIsTheTargetWithTheCommittedConfiguration() throws IOException {
+        List<OracleDatapoint> datapoints = datapoints(FixtureRepo.committedConfig(), """
+                @Test
+                public void testThrows() {
+                    Calc calc = new Calc();
+                    assertThrows(NumberFormatException.class, () -> Integer.parseInt("x"));
+                    assertEquals(0, calc.total());
+                }
+                """);
+
+        assertEquals(List.of("assertThrows(NumberFormatException.class, () -> Integer.parseInt(\"x\"));", "assertEquals(0, calc.total());"),
+                datapoints.stream().map(OracleDatapoint::target).toList());
+        assertEquals("{ Calc calc = new Calc(); /*<MASK_PLACEHOLDER>*/ }", prefixBody(datapoints.get(0)));
+        assertEquals("{ Calc calc = new Calc(); assertThrows(NumberFormatException.class, () -> Integer.parseInt(\"x\")); /*<MASK_PLACEHOLDER>*/ }",
+                prefixBody(datapoints.get(1)));
+    }
+
+    @Test
+    void assertThrowsGeneratedFromATryStatementIsTheTargetWithTheCommittedConfiguration() throws IOException {
+        List<OracleDatapoint> datapoints = datapoints(FixtureRepo.committedConfig(), """
+                @Test
+                public void testThrows() {
+                    Calc calc = new Calc();
+                    try {
+                        Integer.parseInt("x");
+                        fail("should throw");
+                    } catch (NumberFormatException e) {
+                        assertNotNull(e.getMessage());
+                    }
+                }
+                """);
+
+        assertEquals(List.of(
+                "NumberFormatException e = assertThrows(NumberFormatException.class, () -> Integer.parseInt(\"x\"), \"should throw\");",
+                "assertNotNull(e.getMessage());"
+        ), datapoints.stream().map(OracleDatapoint::target).toList());
     }
 
     private List<OracleDatapoint> datapoints(OraclesDatasetConfig config, String testMembers) throws IOException {
