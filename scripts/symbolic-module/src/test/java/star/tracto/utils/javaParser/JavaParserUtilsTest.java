@@ -64,8 +64,8 @@ class JavaParserUtilsTest {
                         use(a);
                     }
                     {
-                        int a1 = 2;
-                        use(a1);
+                        int a2 = 2;
+                        use(a2);
                     }
                 }
                 """), method.getBody().orElseThrow());
@@ -102,8 +102,8 @@ class JavaParserUtilsTest {
                     }
                     try {
                         use(2);
-                    } catch (RuntimeException e1) {
-                        e1.printStackTrace();
+                    } catch (RuntimeException e2) {
+                        e2.printStackTrace();
                     }
                 }
                 """), method.getBody().orElseThrow());
@@ -256,48 +256,6 @@ class JavaParserUtilsTest {
 
         assertTrue(JavaParserUtils.getVarFromNameExpr(nameExpr(method, "Integer"), existingVariables).isEmpty());
         assertTrue(JavaParserUtils.getVarFromNameExpr(nameExpr(method, "s"), existingVariables).isEmpty());
-    }
-
-    @Test
-    void renameLocalParamIsEmptyWithoutClash() throws IOException {
-        MethodDeclaration method = method(parse("""
-                class C {
-                    void m() {
-                        int a = 1;
-                        try {
-                            a++;
-                        } catch (RuntimeException e) {
-                            a--;
-                        }
-                    }
-                }
-                """), "m");
-        Parameter catchParameter = method.findFirst(Parameter.class).orElseThrow();
-
-        assertTrue(JavaParserUtils.renameLocalParam(catchParameter, identitySet(localVariable(method, "a"))).isEmpty());
-    }
-
-    @Test
-    void renameLocalParamReturnsAnUnusedNameOnClash() throws IOException {
-        MethodDeclaration method = method(parse("""
-                class C {
-                    void m() {
-                        int e = 1;
-                        try {
-                            e++;
-                        } catch (RuntimeException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
-                """), "m");
-        Parameter catchParameter = method.findFirst(Parameter.class).orElseThrow();
-        Set<VariableDeclarator> existingVariables = identitySet(localVariable(method, "e"));
-
-        String newName = JavaParserUtils.renameLocalParam(catchParameter, existingVariables).orElseThrow();
-
-        assertNotEquals("e", newName);
-        assertFalse(JavaParserUtils.variableDeclaratorsToNames(existingVariables).contains(newName));
     }
 
     /**

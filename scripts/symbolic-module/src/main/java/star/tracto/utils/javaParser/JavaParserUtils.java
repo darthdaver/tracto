@@ -2031,46 +2031,6 @@ public class JavaParserUtils {
         return Optional.of(new Pair<>(varName, newVarName));
     }
 
-    public static Pair<VariableDeclarator, VariableDeclarationExpr> generateNewVariable(String originalName, Set<VariableDeclarator> existingVariables, com.github.javaparser.ast.type.Type varType, Expression expr, Optional<String> suffix) {
-        String newVarName = originalName + suffix.orElse("");
-        int idx = 0;
-        Set<String> existingVariableNames = variableDeclaratorsToNames(existingVariables);
-        while (existingVariableNames.contains(newVarName)) {
-            newVarName = newVarName + ++idx;
-        }
-        VariableDeclarator newVarDecl = new VariableDeclarator(
-                new ClassOrInterfaceType(null, varType.asString()),
-                newVarName,
-                expr
-        );
-        VariableDeclarationExpr executableVarDeclExpr = new VariableDeclarationExpr(newVarDecl);
-        return new Pair<>(newVarDecl, executableVarDeclExpr);
-    }
-
-    /**
-     * Checks if the parameter name of the parameter {@link Parameter} passed to the function is already defined
-     * in the collection of the existing variable names. In this case the method renames the variable using a simple incremental
-     * logic (adding an index at the end of the variable)
-     *
-     * @param param the parameter to check
-     * @param existingVariables the collection of existing variables
-     * @return If the parameter name already exists in the collection, an optional {@link Optional} the new parameter name.
-     * Otherwise, an empty optional {@link Optional}
-     */
-    public static Optional<String> renameLocalParam(Parameter param, Set<VariableDeclarator> existingVariables) {
-        Set<String> existingVariableNames = JavaParserUtils.variableDeclaratorsToNames(existingVariables);
-        String paramName = param.getNameAsString();
-        if (!existingVariableNames.contains(paramName)) {
-            return Optional.empty();
-        }
-        int i = 0;
-        while (existingVariableNames.contains(paramName + "_" + i)) {
-            i++;
-        }
-        String newParamName = paramName + "_" + i;
-        return Optional.of(newParamName);
-    }
-
     /**
      * Given a BlockStmt representing the body of a method, and the mapping of the parameters to replace in the block of
      * statements, replace the parameters with the actual arguments in the block of statements.
@@ -2148,53 +2108,37 @@ public class JavaParserUtils {
 
 
 
+    /**
+     * Gives a unique name to each local variable and parameter (of lambda expressions and catch clauses, for example)
+     * declared within a block of statements, at any depth: the first declaration of a name keeps it, the following
+     * ones get a numeric suffix ({@link NameAllocator}), and their usages are renamed accordingly.
+     *
+     * @param blockStmt the block of statements to process, attached to a compilation unit (the usages are resolved)
+     */
     public static void normalizeVariableNames(
             BlockStmt blockStmt
     ) {
-        Set<VariableDeclarator> existingVariables = Collections.newSetFromMap(new IdentityHashMap<>());
-        Set<String> existingIdentifiers = new HashSet<>();
-        HashMap<VariableDeclarator, String> newVariablesToChange = new HashMap<>();
+        NameAllocator names = new NameAllocator();
+        // The keys are compared by reference: distinct declarations with the same content are equal for JavaParser
+        Map<VariableDeclarator, String> variablesToRename = new IdentityHashMap<>();
         VariableDeclarationExprVisitor varDeclarationExprCollector = new VariableDeclarationExprVisitor();
-        List<VariableDeclarationExpr> varDeclarationExprs = varDeclarationExprCollector.visit(blockStmt);
-        Set<Parameter> existingParams = Collections.newSetFromMap(new IdentityHashMap<>());
-        List<Parameter> parameters = blockStmt.findAll(Parameter.class);
-        HashMap<Parameter, String> newParametersToChange = new HashMap<>();
-
-        varDeclarationExprs.forEach(varDecl -> {
-            varDecl.getVariables().forEach(var -> {
-                String varName = var.getNameAsString();
-                if (!existingIdentifiers.contains(varName)) {
-                    existingVariables.add(var);
-                    existingIdentifiers.add(varName);
-                } else {
-                    String newVarName = varName;
-                    int idx = 0;
-                    while (existingIdentifiers.contains(newVarName)) {
-                        newVarName = varName + ++idx;
-                    }
-                    existingIdentifiers.add(newVarName);
-                    newVariablesToChange.put(var, newVarName);
+        for (VariableDeclarationExpr varDecl : varDeclarationExprCollector.visit(blockStmt)) {
+            for (VariableDeclarator var : varDecl.getVariables()) {
+                String name = names.allocate(var.getNameAsString());
+                if (!name.equals(var.getNameAsString())) {
+                    variablesToRename.put(var, name);
                 }
-            });
-        });
-
-        parameters.forEach(parameter -> {
-            String paramName = parameter.getNameAsString();
-            if (!existingIdentifiers.contains(paramName)) {
-                existingParams.add(parameter);
-                existingIdentifiers.add(paramName);
-            } else {
-                String newParamName = paramName;
-                int idx = 0;
-                while (existingIdentifiers.contains(newParamName)) {
-                    newParamName = paramName + ++idx;
-                }
-                existingIdentifiers.add(newParamName);
-                newParametersToChange.put(parameter, newParamName);
             }
-        });
-        JavaParserUtils.replaceVariables(blockStmt, newVariablesToChange);
-        JavaParserUtils.replaceParameters(blockStmt, newParametersToChange);
+        }
+        Map<Parameter, String> parametersToRename = new IdentityHashMap<>();
+        for (Parameter parameter : blockStmt.findAll(Parameter.class)) {
+            String name = names.allocate(parameter.getNameAsString());
+            if (!name.equals(parameter.getNameAsString())) {
+                parametersToRename.put(parameter, name);
+            }
+        }
+        JavaParserUtils.replaceVariables(blockStmt, variablesToRename);
+        JavaParserUtils.replaceParameters(blockStmt, parametersToRename);
     }
 
     /**

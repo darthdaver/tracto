@@ -89,6 +89,64 @@ class TestUtilsNormalizeBehaviourTest {
     }
 
     @Test
+    void inlinedAuxiliaryMethodsSeeTheValuesOfTheOriginalCalls() throws Exception {
+        Path testFile = repo.writeTestClass("com/acme/InlineTest.java", """
+                package com.acme;
+
+                import java.util.ArrayList;
+                import java.util.List;
+                import org.junit.jupiter.api.Test;
+
+                public class InlineTest {
+                    public static final List<String> TRACE = new ArrayList<>();
+                    private int base = 10;
+
+                    @Test
+                    public void testInline() {
+                        int base = 1;
+                        int x = 2;
+                        bump(x);
+                        TRACE.add("test:x=" + x);
+                        readBase();
+                        TRACE.add("test:base=" + base);
+                        sum(x);
+                        sum(x, base);
+                    }
+
+                    private void bump(int v) {
+                        v = v + 1;
+                        TRACE.add("bump:v=" + v);
+                    }
+
+                    private void readBase() {
+                        TRACE.add("readBase:base=" + base);
+                    }
+
+                    private void sum(int... values) {
+                        int total = 0;
+                        for (int value : values) {
+                            total += value;
+                        }
+                        TRACE.add("sum:" + values.length + ":" + total);
+                    }
+                }
+                """);
+        List<String> expectedTrace = List.of(
+                "bump:v=3", "test:x=2",
+                "readBase:base=10", "test:base=1",
+                "sum:1:2", "sum:2:3"
+        );
+
+        Path normalizedFile = assertDoesNotThrow(
+                () -> TestUtils.normalizeTest(FixtureRepo.CONFIG, repo.root, testFile, repo.output, Optional.empty())).getValue0();
+
+        assertEquals(expectedTrace, runTrace(testFile, "com.acme.InlineTest", "testInline"), "Original test case");
+        assertEquals(expectedTrace, runTrace(normalizedFile, "com.acme.InlineTestSTARNormalizedTest", "testInline"), "Normalized test case");
+        // Without inlining the traces would trivially be equal: check the auxiliary methods were actually inlined
+        assertFalse(Files.readString(normalizedFile).contains("bump(x);"), "Expected the auxiliary methods to be inlined");
+    }
+
+    @Test
     void elseBranchesOfNestedIfStatementsRunAsInTheOriginalTestCase() throws Exception {
         Path testFile = repo.writeTestClass("com/acme/BranchesTest.java", """
                 package com.acme;

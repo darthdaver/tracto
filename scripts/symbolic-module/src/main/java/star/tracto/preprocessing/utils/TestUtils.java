@@ -28,6 +28,7 @@ import star.tracto.preprocessing.components.*;
 import star.tracto.preprocessing.components.Type;
 import star.tracto.utils.FilesUtils;
 import star.tracto.utils.javaParser.JavaParserUtils;
+import star.tracto.utils.javaParser.NameAllocator;
 import star.tracto.utils.javaParser.visitors.declarations.FieldDeclarationVisitor;
 import star.tracto.utils.javaParser.visitors.expressions.MethodCallExprVisitor;
 import star.tracto.utils.javaParser.visitors.expressions.NameExprVisitor;
@@ -202,6 +203,7 @@ public class TestUtils {
             // hash function the `System.identityHashCode(obj)` method instead of obj.hashCode()
             Set<VariableDeclarator> classVariables = Collections.newSetFromMap(new IdentityHashMap<>());
             JavaParserUtils.collectExistingVariables(classVariables, testClass.getFields(), List.of(), ClassOrInterfaceDeclaration.class, 0);
+            Set<String> fieldNames = JavaParserUtils.variableDeclaratorsToNames(classVariables);
             // Add import for all the assertion types at the beginning of the test class, depending on the JUnit version
             // used within the project. This is necessary when the LLMs approaches will generate target assertions not
             // known a priori (the generated test cases would not compile otherwise, if the corresponding assertion is
@@ -270,21 +272,27 @@ public class TestUtils {
                 testCaseExistingVariables.addAll(classVariables);
                 // Add the local variables defined within the first block "level" in the test case
                 JavaParserUtils.collectExistingVariables(testCaseExistingVariables, originalTestCase.getBody().get(), MethodDeclaration.class,0);
+                NormalizationContext context = new NormalizationContext(
+                        testClass,
+                        auxiliaryMethods,
+                        integratedAuxiliaryMethods,
+                        testCaseExistingVariables,
+                        fieldNames,
+                        variableNamesOf(originalTestCase, fieldNames),
+                        labelNamesOf(originalTestCase),
+                        new ArrayDeque<>(),
+                        junitVersion,
+                        config
+                );
 
                 // Parse the statements block and normalize the test case
                 boolean thrownedException;
                 try {
                     thrownedException = parseNormalizeTestStatementsBlock(
-                            testClass,
-                            originalTestCase,
                             originalTestCaseStatements,
                             // The reference block is the body of the normalized test case (initially empty)
                             normalizedTestCaseBody,
-                            auxiliaryMethods,
-                            integratedAuxiliaryMethods,
-                            testCaseExistingVariables,
-                            junitVersion,
-                            config
+                            context
                     );
                 } catch (DiscardedTestCaseException e) {
                     // The test case contains a pattern the dataset does not support: it is not added to the normalized
@@ -739,12 +747,11 @@ public class TestUtils {
      *     appended to the body of the cloned `do` wrapper.</li>
      *     <li>If the statement is an expression statement {@link ExpressionStmt}, it is analyzed and added to the reference
      *     block of statements, according to their type: (i) if the expression refers to a method call to an auxiliary method,
-     *     the body of the method is integrated in the reference block of statements (if possible); (ii) if the expression
-     *     is a lambda expression, the signature and the parameters of the lambda are cloned and the body of the lambda
-     *     expression is processed recursively to be normalized as well; (iii) if the expression refers to a variable
-     *     declaration, the statement is added to the reference block as it is; (iv) any other type of expression could
-     *     contain method calls that cannot be integrated within the reference block of statements. Therefore they are
-     *     added to the reference block as they are</li>
+     *     the body of the method is inlined in the reference block of statements, if possible, and normalized as well
+     *     ({@link #inlineAuxiliaryMethod}); (ii) if the expression refers to a variable declaration, the statement is
+     *     added to the reference block as it is; (iii) any other type of expression could contain method calls that
+     *     cannot be integrated within the reference block of statements. Therefore they are added to the reference
+     *     block as they are</li>
      *     <li>If the statement is a `forEach` statement {@link ForEachStmt} the `foreach` wrapper with the condition
      *     is cloned and the body is processed as a block statement calling the function recursively. The result of the
      *     recursion is appended to the body of the cloned `do` wrapper.</li>
@@ -753,6 +760,9 @@ public class TestUtils {
      *     appended to the body of the cloned `do` wrapper.</li>
      *     <li>If the statement is an `if-then-else` statement {@link IfStmt} each block of `if`, `if-else`, `else` is
      *     processed: the conditions are cloned and each block processed recursively to be normalized.</li>
+     *     <li>If the statement is a labeled statement {@link LabeledStmt}, the labeled statement is processed calling
+     *     the function recursively, and labeled with the original label: a loop stays a single labeled statement,
+     *     any other statement becomes a labeled block.</li>
      *     <li>If the statement is a synchronized statement {@link SynchronizedStmt} the `synchronized` wrapper is cloned
      *     and the body is processed as a block statement calling the function recursively. The result of the recursion is
      *     appended to the body of the cloned `synchronized` wrapper.</li>
@@ -771,34 +781,18 @@ public class TestUtils {
      *     <li>For any other statement type, they are added to the normalized reference block as they are.</li>
      * </ul>
      *
-     * @param testClass the test class where the original test case to normalize has been defined
-     * @param originalTestCase the method declaration of the original test case that must be normalized
      * @param statements the list of statements to process
      * @param currentBlockStmt the reference block of statements representing the normalized body of the test case
-     * @param auxiliaryMethods the list of methods defined within the test class that are not test cases and can contain
-     *                         assertions. The bodies of auxiliary methods containing assertions are integrated within
-     *                         the normalized version of the test case
-     * @param integratedAuxiliaryMethods a list of auxiliary methods already integrated within the normalized version of
-     *                                   the test case
-     * @param existingVariables the collection of global variables already defined within the test class and local variables
-     *                          already defined within the normalized version of the test case
-     * @param junitVersion the version of JUnit imported and used within the test class
-     * @param config the configuration options for the dataset to generate
+     * @param context the state of the normalization of the test case
      * @return A boolean. True if an exception has been thrown during the normalization of the block of statements, false
      * otherwise.
      * @throws IllegalStateException In case of error when processing an `if` statement
      * @throws DiscardedTestCaseException If the test case contains a pattern the dataset does not support
      */
     private static boolean parseNormalizeTestStatementsBlock(
-            TypeDeclaration testClass,
-            MethodDeclaration originalTestCase,
             List<Statement> statements,
             BlockStmt currentBlockStmt,
-            HashMap<String, MethodDeclaration> auxiliaryMethods,
-            List<MethodDeclaration> integratedAuxiliaryMethods,
-            Set<VariableDeclarator> existingVariables,
-            JUnitVersion junitVersion,
-            OraclesDatasetConfig config
+            NormalizationContext context
     ) throws IllegalStateException {
         boolean thrownedException = false;
         // Iterate over the statements of the original test case
@@ -810,15 +804,9 @@ public class TestUtils {
                 } else if (statement.isBlockStmt()) {
                     // Parse the statements of the block and add them to the current block
                     thrownedException |= parseNormalizeTestStatementsBlock(
-                            testClass,
-                            originalTestCase,
                             statement.asBlockStmt().getStatements(),
                             currentBlockStmt,
-                            auxiliaryMethods,
-                            integratedAuxiliaryMethods,
-                            existingVariables,
-                            junitVersion,
-                            config
+                            context
                     );
                 } else if (statement.isDoStmt()) {
                     // Parse the do statement
@@ -831,31 +819,23 @@ public class TestUtils {
                     currentBlockStmt.addStatement(doStmtClone);
                     // Parse the statements of the do body and add them to the cloned do statement
                     thrownedException |= parseNormalizeTestStatementsBlock(
-                            testClass,
-                            originalTestCase,
                             new ArrayList<>(Arrays.asList(doStmtBody)),
                             // The reference block is now the body of the cloned `do` wrapper
                             doStmtCloneBody,
-                            auxiliaryMethods,
-                            integratedAuxiliaryMethods,
-                            existingVariables,
-                            junitVersion,
-                            config
+                            context
                     );
                 } else if (statement.isExpressionStmt()) {
                     Expression exprStmt = statement.asExpressionStmt().getExpression();
                     // Check if the expression is a method call to an auxiliary method (not an assertion)
                     if (exprStmt.isMethodCallExpr() && !(JUnitAssertionType.isJUnitAssertion(exprStmt.asMethodCallExpr().getNameAsString()))) {
                         try {
-                            // Try to integrate the body of the auxiliary method within the current block of statements
-                            // Auxiliary methods can contain additional assertions
-                            Optional<MethodDeclaration> auxiliaryMethodDeclaration = Optional.empty();
-                            if (config.integrateAuxiliaryMethods()) {
-                                auxiliaryMethodDeclaration = exprStmt.asMethodCallExpr().getScope().isEmpty() ? integrateAuxiliaryMethodIntoBlockStmt(testClass, currentBlockStmt, exprStmt.asMethodCallExpr(), auxiliaryMethods, existingVariables) : Optional.empty();
-                            }
-                            if (auxiliaryMethodDeclaration.isPresent()) {
-                                // Add the method to the list of auxiliary methods integrated within the test case
-                                integratedAuxiliaryMethods.add(auxiliaryMethodDeclaration.get());
+                            // Try to inline the auxiliary method within the current block of statements (auxiliary
+                            // methods can contain additional assertions)
+                            InliningResult inlining = context.config().integrateAuxiliaryMethods() && exprStmt.asMethodCallExpr().getScope().isEmpty()
+                                    ? inlineAuxiliaryMethod(exprStmt.asMethodCallExpr(), currentBlockStmt, context)
+                                    : InliningResult.NOT_INLINED;
+                            if (inlining.inlined()) {
+                                thrownedException |= inlining.thrownedException();
                             } else {
                                 // If the body of the invoked method cannot be integrated within the test case,
                                 // simply add the expression statement to the current body of the normalized test
@@ -870,59 +850,6 @@ public class TestUtils {
                             // statement to the body
                             currentBlockStmt.addStatement(statement);
                             thrownedException = true;
-                        }
-                    } else if (exprStmt.isLambdaExpr()) {
-                        // Clone the lambda statement and the lambda parameters
-                        // The body of the clone lambda statement is set to an empty body
-                        LambdaExpr lambdaExpr = exprStmt.asLambdaExpr();
-                        Statement lambdaBody = lambdaExpr.getBody();
-                        LambdaExpr lambdaExprClone = lambdaExpr.clone();
-                        BlockStmt lambdaBodyClone = new BlockStmt();
-                        lambdaExprClone.setParameters(new NodeList<>(lambdaExpr.getParameters()));
-                        lambdaExprClone.setBody(lambdaBodyClone);
-                        // The cloned lambda statement is added to the reference block of statements
-                        // It's body is still empty, but it is referenced and passed recursively to the
-                        // function to be fulfilled after processing each statement within the original
-                        // lambda body
-                        ExpressionStmt lambdaExprStmt = new ExpressionStmt(lambdaExprClone);
-                        currentBlockStmt.addStatement(lambdaExprStmt);
-                        // Check if the lambda contains a single statement or if it is composed of a block of statements
-                        if (lambdaBody.isExpressionStmt()) {
-                            try {
-                                // If the original lambda only contains a single statement (a method call), try to
-                                // integrate the body of the auxiliary method within the cloned lambda body
-                                Optional<MethodDeclaration> auxiliaryMethodDeclaration = Optional.empty();
-                                if (config.integrateAuxiliaryMethods()) {
-                                    auxiliaryMethodDeclaration = integrateAuxiliaryMethodIntoBlockStmt(testClass, lambdaBodyClone, lambdaBody.asExpressionStmt().getExpression().asMethodCallExpr(), auxiliaryMethods, existingVariables);
-                                }
-                                if (auxiliaryMethodDeclaration.isPresent()) {
-                                    integratedAuxiliaryMethods.add(auxiliaryMethodDeclaration.get());
-                                } else {
-                                    // If the integration fails, clone the original body and set it as the new body
-                                    lambdaExprClone.setBody(lambdaBody.clone());
-                                }
-                            } catch (Exception e) {
-                                // Log the error occurred while parsing the statements of the test case
-                                logger.error(e.getMessage());
-                                thrownedException = true;
-                                // If the integration fails because of an exception, clone the original body and set
-                                // it as the new body
-                                lambdaExprClone.setBody(lambdaBody.clone());
-                            }
-                        } else {
-                            // Parse the statements of the lambda body and add them to the cloned lambda expression
-                            thrownedException |= parseNormalizeTestStatementsBlock(
-                                    testClass,
-                                    originalTestCase,
-                                    new ArrayList<>(Arrays.asList(lambdaBody)),
-                                    // The reference block is now the body of the cloned lambda
-                                    lambdaBodyClone,
-                                    auxiliaryMethods,
-                                    integratedAuxiliaryMethods,
-                                    existingVariables,
-                                    junitVersion,
-                                    config
-                            );
                         }
                     } else if (exprStmt.isVariableDeclarationExpr()) {
                         // Variable declarations are added to the reference block of statements as they were in the
@@ -944,16 +871,10 @@ public class TestUtils {
                     currentBlockStmt.addStatement(forEachStmtClone);
                     // Parse the statements of the for each body and add them to the cloned for each statement
                     thrownedException |= parseNormalizeTestStatementsBlock(
-                            testClass,
-                            originalTestCase,
                             new ArrayList<>(Arrays.asList(forEachStmtBody)),
                             // The reference block is now the body of the cloned foreach
                             forEachCloneBody,
-                            auxiliaryMethods,
-                            integratedAuxiliaryMethods,
-                            existingVariables,
-                            junitVersion,
-                            config
+                            context
                     );
                 } else if (statement.isForStmt()) {
                     // Parse the for statement and split the test case into multiple test cases
@@ -966,16 +887,10 @@ public class TestUtils {
                     currentBlockStmt.addStatement(forStmtClone);
                     // Parse the statements of the for current body and add them to the cloned `for` statement
                     thrownedException |= parseNormalizeTestStatementsBlock(
-                            testClass,
-                            originalTestCase,
                             new ArrayList<>(Arrays.asList(forStmtBody)),
                             // The reference block is now the body of the cloned `for`
                             forStmtCloneBody,
-                            auxiliaryMethods,
-                            integratedAuxiliaryMethods,
-                            existingVariables,
-                            junitVersion,
-                            config
+                            context
                     );
                 } else if (statement.isIfStmt()) {
                     // Clone the `if` statement (with its `else if` chain) and add it to the current block. Each
@@ -990,16 +905,10 @@ public class TestUtils {
                         BlockStmt thenStmtClone = new BlockStmt();
                         ifStmtClone.setThenStmt(thenStmtClone);
                         thrownedException |= parseNormalizeTestStatementsBlock(
-                                testClass,
-                                originalTestCase,
                                 new ArrayList<>(Arrays.asList(ifStmt.getThenStmt())),
                                 // The reference block is now the `then` branch of the cloned `if`
                                 thenStmtClone,
-                                auxiliaryMethods,
-                                integratedAuxiliaryMethods,
-                                existingVariables,
-                                junitVersion,
-                                config
+                                context
                         );
                         if (ifStmt.getElseStmt().isEmpty()) {
                             break;
@@ -1013,16 +922,10 @@ public class TestUtils {
                             BlockStmt elseStmtClone = new BlockStmt();
                             ifStmtClone.setElseStmt(elseStmtClone);
                             thrownedException |= parseNormalizeTestStatementsBlock(
-                                    testClass,
-                                    originalTestCase,
                                     new ArrayList<>(Arrays.asList(elseStmt)),
                                     // The reference block is now the `else` branch of the cloned `if`
                                     elseStmtClone,
-                                    auxiliaryMethods,
-                                    integratedAuxiliaryMethods,
-                                    existingVariables,
-                                    junitVersion,
-                                    config
+                                    context
                             );
                             break;
                         }
@@ -1038,16 +941,26 @@ public class TestUtils {
                     currentBlockStmt.addStatement(synchronizedStmtClone);
                     // Parse the statements of the synchronized body and split it into multiple test cases
                     thrownedException |= parseNormalizeTestStatementsBlock(
-                            testClass,
-                            originalTestCase,
                             new ArrayList<>(Arrays.asList(synchronizedStmtBody)),
                             synchronizedStmtBodyClone,
-                            auxiliaryMethods,
-                            integratedAuxiliaryMethods,
-                            existingVariables,
-                            junitVersion,
-                            config
+                            context
                     );
+                } else if (statement.isLabeledStmt()) {
+                    // Normalize the labeled statement within a separate block: a loop stays a single statement, and
+                    // keeps its label (a `continue <label>` requires it), while a block or a flattened try statement
+                    // become a labeled block
+                    LabeledStmt labeledStmt = statement.asLabeledStmt();
+                    LabeledStmt labeledStmtClone = labeledStmt.clone();
+                    currentBlockStmt.addStatement(labeledStmtClone);
+                    BlockStmt labeledStmtBody = new BlockStmt();
+                    thrownedException |= parseNormalizeTestStatementsBlock(
+                            new ArrayList<>(Arrays.asList(labeledStmt.getStatement())),
+                            labeledStmtBody,
+                            context
+                    );
+                    labeledStmtClone.setStatement(labeledStmtBody.getStatements().size() == 1 && !labeledStmt.getStatement().isBlockStmt()
+                            ? labeledStmtBody.getStatement(0)
+                            : labeledStmtBody);
                 } else if (statement.isSwitchStmt()) {
                     throw new UnsupportedOperationException("Switch statement not supported yet.");
                 } else if (statement.isTryStmt()) {
@@ -1057,7 +970,7 @@ public class TestUtils {
                     if (!tryStatementShape.isSupported()) {
                         throw new DiscardedTestCaseException(tryStatementShape.name(), tryStatementShape.getDescription());
                     }
-                    if (config.tryCatchFinallyStrategy() == TryCatchFinallyStrategyType.KEEP_TRY_CATCH) {
+                    if (context.config().tryCatchFinallyStrategy() == TryCatchFinallyStrategyType.KEEP_TRY_CATCH) {
                         // Keep the structure of the try statement (resources, catch parameters): clone it with empty
                         // blocks, and fill them with the normalized statements of the original blocks
                         TryStmt tryStmtClone = tryStmt.clone();
@@ -1065,61 +978,37 @@ public class TestUtils {
                         tryStmtClone.setTryBlock(tryBlockClone);
                         currentBlockStmt.addStatement(tryStmtClone);
                         thrownedException |= parseNormalizeTestStatementsBlock(
-                                testClass,
-                                originalTestCase,
                                 tryStmt.getTryBlock().getStatements(),
                                 tryBlockClone,
-                                auxiliaryMethods,
-                                integratedAuxiliaryMethods,
-                                existingVariables,
-                                junitVersion,
-                                config
+                                context
                         );
                         for (int i = 0; i < tryStmt.getCatchClauses().size(); i++) {
                             BlockStmt catchBodyClone = new BlockStmt();
                             tryStmtClone.getCatchClauses().get(i).setBody(catchBodyClone);
                             thrownedException |= parseNormalizeTestStatementsBlock(
-                                    testClass,
-                                    originalTestCase,
                                     tryStmt.getCatchClauses().get(i).getBody().getStatements(),
                                     catchBodyClone,
-                                    auxiliaryMethods,
-                                    integratedAuxiliaryMethods,
-                                    existingVariables,
-                                    junitVersion,
-                                    config
+                                    context
                             );
                         }
                         if (tryStmt.getFinallyBlock().isPresent()) {
                             BlockStmt finallyBlockClone = new BlockStmt();
                             tryStmtClone.setFinallyBlock(finallyBlockClone);
                             thrownedException |= parseNormalizeTestStatementsBlock(
-                                    testClass,
-                                    originalTestCase,
                                     tryStmt.getFinallyBlock().get().getStatements(),
                                     finallyBlockClone,
-                                    auxiliaryMethods,
-                                    integratedAuxiliaryMethods,
-                                    existingVariables,
-                                    junitVersion,
-                                    config
+                                    context
                             );
                         }
                     } else {
                         // Flatten the try statement into a block statement, converting an expected exception into
                         // an assertThrows
-                        BlockStmt flatTryStmtBlock = flatTryStmt(junitVersion, tryStmt, existingVariables);
+                        BlockStmt flatTryStmtBlock = flatTryStmt(tryStmt, context);
                         // Parse the statements of the flat block and add them to the current block
                         thrownedException |= parseNormalizeTestStatementsBlock(
-                                testClass,
-                                originalTestCase,
                                 new ArrayList<>(Arrays.asList(flatTryStmtBlock)),
                                 currentBlockStmt,
-                                auxiliaryMethods,
-                                integratedAuxiliaryMethods,
-                                existingVariables,
-                                junitVersion,
-                                config
+                                context
                         );
                     }
                 } else if (statement.isWhileStmt()) {
@@ -1133,15 +1022,9 @@ public class TestUtils {
                     currentBlockStmt.addStatement(whileStmtClone);
                     // Parse the statements of the while body and split it into multiple test cases
                     thrownedException |= parseNormalizeTestStatementsBlock(
-                            testClass,
-                            originalTestCase,
                             new ArrayList<>(Arrays.asList(whileStmtBody)),
                             whileStmtBodyClone,
-                            auxiliaryMethods,
-                            integratedAuxiliaryMethods,
-                            existingVariables,
-                            junitVersion,
-                            config
+                            context
                     );
                 } else {
                     // Add the statement to the current split test case body
@@ -1163,485 +1046,147 @@ public class TestUtils {
     }
 
     /**
-     * Integrates the statements of a method called within the original test case within the normalized version of
-     * the test case. The method invoked within the original test case is defined as the <strong>auxiliary method</strong>.
-     * The normalized version of the test case, where the statements of the {@code auxiliaryMethodInvoked} are integrated
-     * into its body is referenced by the {@code currentBlockStmt} parameter.
+     * The state of the normalization of a test case, shared by the recursive calls of
+     * {@link #parseNormalizeTestStatementsBlock}.
      *
-     * @param testClass The test class where the original test case and the auxiliary method are defined.
-     * @param currentBlockStmt The statements block of the normalized version of the original test case
-     * @param auxiliaryMethodInvoked The method call expression referring to the auxiliary method to integrate within the
-     *                               normalized version.
-     * @param auxiliaryMethods The collection of auxiliary methods defined within the test class
-     * @param existingVariables The collection of global variables already defined within the test class and local variables
-     *                          already defined within the normalized version of the original test case
-     * @return The method declaration of the auxiliary method to integrate within the normalized test case
+     * @param testClass the test class where the test case is defined
+     * @param auxiliaryMethods the methods of the test class that can be inlined in the test case, by signature
+     * @param integratedAuxiliaryMethods the auxiliary methods inlined in the test case
+     * @param existingVariables the variables of the test class and of the test case, compared by reference
+     * @param fieldNames the names of the fields of the test class
+     * @param variableNames the names of the variables in use within the test case
+     * @param labelNames the labels in use within the test case
+     * @param inliningStack the signatures of the auxiliary methods being inlined (a recursive call is not inlined)
+     * @param junitVersion the version of JUnit used in the test class
+     * @param config the configuration options for the dataset to generate
      */
-    private static Optional<MethodDeclaration> integrateAuxiliaryMethodIntoBlockStmt(TypeDeclaration testClass, BlockStmt currentBlockStmt, MethodCallExpr auxiliaryMethodInvoked, HashMap<String, MethodDeclaration> auxiliaryMethods, Set<VariableDeclarator> existingVariables) {
-        // Get the signature of the target auxiliary method
-        String methodSignature = "";
+    private record NormalizationContext(
+            TypeDeclaration<?> testClass,
+            HashMap<String, MethodDeclaration> auxiliaryMethods,
+            List<MethodDeclaration> integratedAuxiliaryMethods,
+            Set<VariableDeclarator> existingVariables,
+            Set<String> fieldNames,
+            NameAllocator variableNames,
+            NameAllocator labelNames,
+            Deque<String> inliningStack,
+            JUnitVersion junitVersion,
+            OraclesDatasetConfig config
+    ) {}
+
+    /**
+     * The result of the inlining of a call to an auxiliary method.
+     *
+     * @param inlined whether the call was inlined
+     * @param thrownedException whether an error occurred while normalizing the inlined statements
+     */
+    private record InliningResult(boolean inlined, boolean thrownedException) {
+        static final InliningResult NOT_INLINED = new InliningResult(false, false);
+    }
+
+    /**
+     * Returns the names in use within a test case: the parameters and the variables declared within it (at any
+     * depth) are declared, the fields of the test class and the other names it references are reserved.
+     *
+     * @param testCase the test case
+     * @param fieldNames the names of the fields of the test class
+     * @return the names in use within the test case
+     */
+    private static NameAllocator variableNamesOf(MethodDeclaration testCase, Set<String> fieldNames) {
+        NameAllocator variableNames = new NameAllocator();
+        fieldNames.forEach(variableNames::reserve);
+        testCase.findAll(Parameter.class).forEach(parameter -> variableNames.declare(parameter.getNameAsString()));
+        testCase.findAll(VariableDeclarator.class).forEach(variable -> variableNames.declare(variable.getNameAsString()));
+        testCase.findAll(NameExpr.class).forEach(nameExpr -> variableNames.reserve(nameExpr.getNameAsString()));
+        return variableNames;
+    }
+
+    /**
+     * Returns the labels in use within a test case.
+     *
+     * @param testCase the test case
+     * @return the labels declared within the test case
+     */
+    private static NameAllocator labelNamesOf(MethodDeclaration testCase) {
+        NameAllocator labelNames = new NameAllocator();
+        testCase.findAll(LabeledStmt.class).forEach(labeledStmt -> labelNames.declare(labeledStmt.getLabel().asString()));
+        return labelNames;
+    }
+
+    /**
+     * Inlines a call to an auxiliary method, invoked as a statement of the test case, within the current block of
+     * statements ({@link AuxiliaryMethodInliner}). The inlined statements are normalized like the statements of the
+     * test case: the calls to other auxiliary methods are inlined as well (a recursive call is kept as it is), and the
+     * try statements are converted according to the configuration. If the auxiliary method contains a pattern the
+     * dataset does not support (an unsupported try statement), the call is not inlined: the test case is not discarded
+     * for a pattern that is not written within it.
+     *
+     * @param call the call to the auxiliary method
+     * @param currentBlockStmt the reference block of statements where the call is normalized
+     * @param context the state of the normalization of the test case
+     * @return the result of the inlining
+     */
+    private static InliningResult inlineAuxiliaryMethod(MethodCallExpr call, BlockStmt currentBlockStmt, NormalizationContext context) {
+        Optional<MethodDeclaration> auxiliaryMethod = AuxiliaryMethodInliner.findAuxiliaryMethod(call, context.testClass(), context.auxiliaryMethods());
+        if (auxiliaryMethod.isEmpty()) {
+            return InliningResult.NOT_INLINED;
+        }
+        String signature = auxiliaryMethod.get().getSignature().asString();
+        if (context.inliningStack().contains(signature)) {
+            logger.info("Recursive call to the auxiliary method {} not inlined.", signature);
+            return InliningResult.NOT_INLINED;
+        }
+        Optional<AuxiliaryMethodInliner.InlinedCall> inlinedCall = AuxiliaryMethodInliner.inline(
+                call, auxiliaryMethod.get(), context.testClass(), context.variableNames(), context.labelNames(), context.existingVariables());
+        if (inlinedCall.isEmpty()) {
+            return InliningResult.NOT_INLINED;
+        }
+        // The inlined statements are normalized within a separate block, added to the current block only if the
+        // normalization succeeds
+        BlockStmt inlinedBlock = new BlockStmt();
+        inlinedCall.get().bindings().forEach(inlinedBlock::addStatement);
+        BlockStmt inlinedBody = inlinedBlock;
+        if (inlinedCall.get().label().isPresent()) {
+            inlinedBody = new BlockStmt();
+            inlinedBlock.addStatement(new LabeledStmt(inlinedCall.get().label().get(), inlinedBody));
+        }
+        boolean thrownedException;
+        context.inliningStack().push(signature);
         try {
-            Optional<Node> resolvedMethod = auxiliaryMethodInvoked.resolve().toAst();
-            if (resolvedMethod.isPresent()) {
-                methodSignature = ((MethodDeclaration) resolvedMethod.get()).getSignature().asString();
-            }
-        } catch (UnsolvedSymbolException e) {
-            CallableDeclaration callableDeclaration = JavaParserUtils.searchCandidateCallableDeclaration(testClass, auxiliaryMethodInvoked, CallableExprType.METHOD);
-            if (callableDeclaration != null) {
-                methodSignature = callableDeclaration.getSignature().asString();
-            }
+            thrownedException = parseNormalizeTestStatementsBlock(inlinedCall.get().body().getStatements(), inlinedBody, context);
+        } catch (DiscardedTestCaseException e) {
+            logger.warn("Auxiliary method {} not inlined: {}", signature, e.getMessage());
+            return InliningResult.NOT_INLINED;
+        } finally {
+            context.inliningStack().pop();
         }
-        // Check if the signature of the auxiliary method matches one in the dictionary
-        if (auxiliaryMethods.containsKey(methodSignature)) {
-            // Get the method declaration of the auxiliary method
-            MethodDeclaration auxiliaryMethodDeclaration = auxiliaryMethods.get(methodSignature);
-            // Check that the method does not define generics
-            if (auxiliaryMethodDeclaration.getTypeParameters().size() > 0) {
-                logger.error("Auxiliary method with type parameters is not supported.");
-                return Optional.empty();
-            }
-            // Copy the auxiliary method within a copy of the compilation unit. The copy is still attached to a
-            // compilation unit, so its parameters and local variables can be renamed resolving their symbols, without
-            // modifying the auxiliary method declared in the test class
-            MethodDeclaration auxiliaryMethodCopy = copyMethodWithinCompilationUnit(testClass, methodSignature);
-            BlockStmt clonedAuxBody = auxiliaryMethodCopy.getBody().get();
-            // Collect the return statements of the auxiliary method (the return statements within lambda expressions
-            // or nested classes defined in the auxiliary method belong to them)
-            List<ReturnStmt> returnStmts = clonedAuxBody.findAll(ReturnStmt.class).stream()
-                    .filter(returnStmt -> isReturnOfMethod(returnStmt, auxiliaryMethodCopy))
-                    .toList();
-            // The value returned is discarded (only the auxiliary methods invoked as statements are integrated), so
-            // each return statement is replaced with the evaluation of the value, if needed.
-            // A return statement that is not the last statement of the auxiliary method (an early return) would
-            // interrupt the test case where the method is integrated. In that case, the body of the auxiliary method
-            // is integrated as a labeled block, and the early return statements leave the block (`break <label>;`),
-            // continuing with the statements of the test case that follow the call to the auxiliary method
-            Optional<String> earlyReturnLabel = Optional.empty();
-            for (ReturnStmt returnStmt : returnStmts) {
-                Optional<Statement> returnedValueEvaluation = returnStmt.getExpression()
-                        .flatMap(returnExpr -> evaluateDiscardedValue(returnExpr, auxiliaryMethodCopy));
-                boolean trailingReturn = clonedAuxBody.getStatements().getLast().orElse(null) == returnStmt;
-                if (trailingReturn) {
-                    if (returnedValueEvaluation.isPresent()) {
-                        returnStmt.replace(returnedValueEvaluation.get());
-                    } else {
-                        clonedAuxBody.remove(returnStmt);
-                    }
-                } else {
-                    if (earlyReturnLabel.isEmpty()) {
-                        earlyReturnLabel = Optional.of(generateLabelName(auxiliaryMethodCopy.getNameAsString(), clonedAuxBody));
-                    }
-                    replaceWithBreak(returnStmt, returnedValueEvaluation, earlyReturnLabel.get());
+        new ArrayList<>(inlinedBlock.getStatements()).forEach(currentBlockStmt::addStatement);
+        context.integratedAuxiliaryMethods().add(auxiliaryMethod.get());
+        return new InliningResult(true, thrownedException);
+    }
+
+    /**
+     * Renames the variables declared within a block of a try statement flattened into the enclosing block, if their
+     * names are names of fields of the test class: within the enclosing block they would hide the fields to the
+     * statements that follow. The variables of the test case have unique names
+     * ({@link JavaParserUtils#normalizeVariableNames}), and the variables of the inlined auxiliary methods are named
+     * after them ({@link AuxiliaryMethodInliner}), so only the fields can be hidden. The variables are added to the
+     * existing variables.
+     *
+     * @param block the block to flatten
+     * @param context the state of the normalization of the test case
+     */
+    private static void renameVariablesHidingFields(BlockStmt block, NormalizationContext context) {
+        // The keys are compared by reference: distinct declarations with the same content are equal for JavaParser
+        Map<VariableDeclarator, String> variablesToRename = new IdentityHashMap<>();
+        for (VariableDeclarationExpr declaration : new VariableDeclarationExprVisitor().visit(block)) {
+            for (VariableDeclarator variable : declaration.getVariables()) {
+                if (context.fieldNames().contains(variable.getNameAsString())) {
+                    variablesToRename.put(variable, context.variableNames().allocate(variable.getNameAsString()));
                 }
-            }
-            // Map parameters from the method call to actual arguments
-            Map<Parameter, String> paramMapping = new HashMap<>();
-            // Map variables defined both in the auxiliary method and in the main method
-            Map<VariableDeclarator, String> varMapping = new HashMap<>();
-            // Get the list of concrete arguments passed to the auxiliary method from the main method
-            List<Expression> arguments = auxiliaryMethodInvoked.getArguments();
-            // Get the list of parameters defined in the signature of the auxiliary method, that receives the arguments
-            // from the main method
-            List<Parameter> parameters = auxiliaryMethodCopy.getParameters();
-
-            if (!parameters.isEmpty() && arguments.isEmpty()) {
-                logger.error("The method signature has parameters but the method call does not pass arguments.");
-                return Optional.empty();
-            }
-
-            if (parameters.isEmpty() && !arguments.isEmpty()) {
-                logger.error("The method signature does not have parameters but the method call pass arguments to it.");
-                return Optional.empty();
-            }
-
-            if (!parameters.isEmpty() && !arguments.isEmpty()) {
-                // Check that the number of arguments passed from the main method and the parameters
-                // declared in the signature of the auxiliary method coincide. The analysis also checks
-                // if the last parameter is a varargs (...), allowing multiple arguments to be grouped
-                // into a single array, as last parameter of the function. In this case the number of
-                // arguments and parameters can be different.
-                boolean lastParamVarArgs = parameters.getLast().isVarArgs();
-                // Check if the last parameter of the auxiliary method is a varargs
-                if (lastParamVarArgs) {
-                    // Create and initialize a varargs expression
-                    ArrayCreationExpr varArgsArray = new ArrayCreationExpr();
-                    varArgsArray.setElementType(((Parameter) ((NodeList) parameters).getLast().get()).getType());
-                    ArrayInitializerExpr varArgsInititalizer = new ArrayInitializerExpr();
-                    NodeList<Expression> varArgs = new NodeList<>();
-                    // Create a custom varargs
-                    Optional<VariableDeclarator> varArgsDeclarator = Optional.empty();
-                    String varArgsName = parameters.get(parameters.size() - 1).getNameAsString();
-                    Set<String> existingVariablesNames = JavaParserUtils.variableDeclaratorsToNames(existingVariables);
-                    if (existingVariablesNames.contains(varArgsName)) {
-                        int i = 0;
-                        while (existingVariablesNames.contains(varArgsName + "_" + i)) {
-                            i++;
-                        }
-                        varArgsName = varArgsName + "_" + i;
-                    }
-                    // Find the mapping between the varargs and single argument (array) or the set of values (passed to the
-                    // auxiliary method and grouped into the last varargs parameter as an array
-                    boolean found = false;
-                    if (arguments.size() == parameters.size()) {
-                        // If the number of arguments is equal to the number of parameters, the last argument must be an array
-                        // or a single value that would be passed and inserted in the varargs as a list with a single value
-                        // Within this block, only the first case is managed. The second case is managed in the following for
-                        // loop (within the `if (!found)` statement)
-                        Expression lastArgument = arguments.getLast();
-                        // TODO: Check all the possible types of the last argument (for example methodCallExpr)
-                        if (lastArgument.isNameExpr() && existingVariablesNames.contains(lastArgument.toString())) {
-                            found = true;
-                            Optional<VariableDeclarator> resolvedVar = JavaParserUtils.getVarFromNameExpr(lastArgument.asNameExpr(), existingVariables);
-                            // Initialize the custom varargs accordingly
-                            varArgsDeclarator = resolvedVar.isPresent() ? Optional.of(new VariableDeclarator(resolvedVar.get().getType(), varArgsName, lastArgument.asNameExpr())) : Optional.empty();
-                        }
-                    }
-                    // If the last argument passed to the auxiliary function is not a variable of type array previously defined
-                    // within the main method, the arguments passed to the auxiliary methods must be a set of primitive values or
-                    // object instantiated within the auxiliary method call
-                    if (!found) {
-                        // Iterate over the arguments to collect the last ones collected by the varargs
-                        for (int i = 0; i < arguments.size(); i++) {
-                            // The argument corresponding to the last parameter idx and any additional argument
-                            // passed to the method call is considered an element collected by the param varargs
-                            if (i >= (parameters.size() - 1)) {
-                                varArgs.add(arguments.get(i));
-                            }
-                        }
-                        // Initialize the custom varargs accordingly
-                        varArgsInititalizer.setValues(varArgs);
-                        varArgsArray.setInitializer(varArgsInititalizer);
-                        varArgsDeclarator = Optional.of(new VariableDeclarator(new ArrayType(varArgsArray.getElementType()), varArgsName, varArgsArray));
-                    }
-                    // Create an assign expression to define a variable that store the varargs collection, and add it as a
-                    // statement to the normalized test case where the auxiliary method is integrated
-                    AssignExpr assignExpr = new AssignExpr();
-                    assignExpr.setTarget(new VariableDeclarationExpr(varArgsDeclarator.get().getType(),varArgsDeclarator.get().getNameAsString()));
-                    assignExpr.setValue(varArgsDeclarator.get().getInitializer().get());
-                    currentBlockStmt.addStatement(assignExpr);
-                    // Create a reference between the original parameter name representing the varargs in the auxiliary method
-                    // and the new variable name defined within the normalized version of the original test case
-                    paramMapping.put(parameters.get(parameters.size() - 1), varArgsName);
-                } else {
-                    if (arguments.size() != parameters.size() && !lastParamVarArgs) {
-                        logger.error("Parameter mismatch between method call and auxiliary method.");
-                        return Optional.empty();
-                    }
-                }
-                // Map all the parameter names defined in the signature of the auxiliary method with the corresponding variable
-                // names of the arguments passed to the auxiliary method
-                //
-                // For example:
-                //      method call --> auxiliaryMethodName(arg1Name, arg2Name)
-                //      signature   --> public void auxiliaryMethodName(Type1 param1, Type2 param2);
-                //
-                // Mapping:
-                //      {
-                //          param1 --> arg1
-                //          param2 --> arg2
-                //      }
-                //
-                for (int i = 0; i < parameters.size(); i++) {
-                    Set<String> existingVariablesNames = JavaParserUtils.variableDeclaratorsToNames(existingVariables);
-                    // Check if the argument passed to a function is an executable, like a lambda function
-                    if (parameters.get(i).getType().toString().equals("Executable")) {
-                        String executableVarName = parameters.get(i).getNameAsString() + "_executable";
-                        int idx = 0;
-                        while (existingVariablesNames.contains(executableVarName)) {
-                            executableVarName = executableVarName + ++idx;
-                        }
-                        VariableDeclarator exceptionVarDecl = new VariableDeclarator(
-                                new ClassOrInterfaceType(null, parameters.get(i).getType().asString()),
-                                executableVarName,
-                                arguments.get(i)
-                        );
-                        VariableDeclarationExpr executableVarDeclExpr = new VariableDeclarationExpr(exceptionVarDecl);
-                        // VariableDeclarationExpr executableVarDeclExpr = new VariableDeclarationExpr(parameters.get(i).getType(), executableVarName);
-                        // AssignExpr executableVarDeclExprAssign = new AssignExpr();
-                        // executableVarDeclExprAssign.setTarget(executableVarDeclExpr);
-                        // executableVarDeclExprAssign.setValue(arguments.get(i));
-                        // currentBlockStmt.addStatement(executableVarDeclExprAssign);
-                        currentBlockStmt.addStatement(executableVarDeclExpr);
-                        existingVariablesNames.add(executableVarName);
-                        existingVariables.add(exceptionVarDecl);
-                        paramMapping.put(parameters.get(i), executableVarName);
-                    } else {
-                        if (!parameters.get(i).isVarArgs()) {
-                            if (arguments.get(i).isNameExpr()) {
-                                paramMapping.put(parameters.get(i), arguments.get(i).asNameExpr().getNameAsString());
-                            } else {
-                                String supportVarName = parameters.get(i).getNameAsString() + "_arg";
-                                int idx = 0;
-                                while (existingVariablesNames.contains(supportVarName)) {
-                                    supportVarName =  supportVarName + ++idx;
-                                }
-                                VariableDeclarator supportVarDecl = new VariableDeclarator(
-                                        new ClassOrInterfaceType(null, parameters.get(i).getTypeAsString()),
-                                        supportVarName,
-                                        arguments.get(i)
-                                );
-                                VariableDeclarationExpr supportVarDeclExpr = new VariableDeclarationExpr(supportVarDecl);
-                                // Create an expression statement for the assertThrows call
-                                Statement supportVarStmt = new ExpressionStmt(supportVarDeclExpr);
-                                currentBlockStmt.getStatements().add(supportVarStmt);
-                                existingVariablesNames.add(supportVarName);
-                                existingVariables.add(supportVarDecl);
-                                paramMapping.put(parameters.get(i), supportVarName);
-                            }
-                        }
-                    }
-                }
-                // Collect the local variable names defined wihtin the auxiliary method that must be renamed whe integrated
-                // within the test case
-                varMapping = collectVariableMapping(clonedAuxBody, existingVariables);
-                // Replace any occurrence of the old names with the new ones within the auxiliary block of statements
-                JavaParserUtils.replaceParameters(clonedAuxBody, paramMapping);
-                JavaParserUtils.replaceVariables(clonedAuxBody, varMapping);
-            }
-            // Add the cloned auxiliary method body to the main method body (as a labeled block, if the auxiliary method
-            // contains early return statements)
-            if (earlyReturnLabel.isPresent()) {
-                currentBlockStmt.addStatement(new LabeledStmt(earlyReturnLabel.get(), new BlockStmt(new NodeList<>(clonedAuxBody.getStatements()))));
-            } else {
-                currentBlockStmt.getStatements().addAll(clonedAuxBody.getStatements());
-            }
-            return Optional.of(auxiliaryMethodDeclaration);
-        }
-        return Optional.empty();
-    }
-
-    /**
-     * Generates a label name for a block of statements, starting from a base name and adding an incremental index if
-     * the name is already used by a label defined within the block.
-     *
-     * @param baseName the base name of the label
-     * @param blockStmt the block of statements to label
-     * @return a label name not used within the block of statements
-     */
-    private static String generateLabelName(String baseName, BlockStmt blockStmt) {
-        Set<String> existingLabels = blockStmt.findAll(LabeledStmt.class).stream()
-                .map(labeledStmt -> labeledStmt.getLabel().asString())
-                .collect(Collectors.toSet());
-        String labelName = baseName;
-        int i = 0;
-        while (existingLabels.contains(labelName)) {
-            labelName = baseName + "_" + i++;
-        }
-        return labelName;
-    }
-
-    /**
-     * Replaces an early return statement of an auxiliary method, integrated as a labeled block, with a {@code break}
-     * statement that leaves the labeled block. If the returned value must be evaluated, the evaluation is placed before
-     * the {@code break} statement.
-     *
-     * @param returnStmt the return statement to replace
-     * @param returnedValueEvaluation the statement evaluating the returned value, if needed
-     * @param label the label of the block where the auxiliary method is integrated
-     */
-    private static void replaceWithBreak(ReturnStmt returnStmt, Optional<Statement> returnedValueEvaluation, String label) {
-        BreakStmt breakStmt = new BreakStmt(label);
-        if (returnedValueEvaluation.isEmpty()) {
-            returnStmt.replace(breakStmt);
-        } else if (returnStmt.getParentNode().orElse(null) instanceof BlockStmt parentBlock) {
-            // Keep the evaluation and the break statement in the block where the return statement was defined
-            NodeList<Statement> statements = parentBlock.getStatements();
-            for (int i = 0; i < statements.size(); i++) {
-                if (statements.get(i) == returnStmt) {
-                    statements.set(i, breakStmt);
-                    statements.add(i, returnedValueEvaluation.get());
-                    break;
-                }
-            }
-        } else {
-            // The return statement is the body of another statement (for example `if (...) return ...;`)
-            returnStmt.replace(new BlockStmt(new NodeList<>(returnedValueEvaluation.get(), breakStmt)));
-        }
-    }
-
-    /**
-     * Checks if a return statement belongs to the given method. A return statement defined within a lambda expression,
-     * or within a method of a nested or anonymous class, belongs to the lambda expression or to the nested method.
-     *
-     * @param returnStmt the return statement to check
-     * @param method the method declaration
-     * @return {@code true} if the return statement terminates the given method, {@code false} otherwise
-     */
-    private static boolean isReturnOfMethod(ReturnStmt returnStmt, MethodDeclaration method) {
-        Optional<Node> node = returnStmt.getParentNode();
-        while (node.isPresent() && !(node.get() instanceof LambdaExpr || node.get() instanceof CallableDeclaration || node.get() instanceof InitializerDeclaration)) {
-            node = node.get().getParentNode();
-        }
-        return node.isPresent() && node.get() == method;
-    }
-
-    /**
-     * Generates the statement that evaluates the value returned by a method, when the value is discarded (the method
-     * is invoked as a statement). The value is evaluated only if it can have side effects:
-     * <ul>
-     *     <li>a statement expression (a method call, an object creation, an assignment, an increment or a decrement)
-     *     is kept as an expression statement;</li>
-     *     <li>any other expression containing a method call, an object creation, an assignment, an increment or a
-     *     decrement is stored in a new local variable (named after the method, with suffix {@code Result}), since it
-     *     is not a valid statement by itself;</li>
-     *     <li>an expression without side effects (for example a literal, a variable or a comparison between
-     *     variables) is not evaluated.</li>
-     * </ul>
-     *
-     * @param returnedValue the expression of the value returned by the method
-     * @param method the method returning the value
-     * @return the statement evaluating the value, or an empty optional if the value does not need to be evaluated
-     */
-    private static Optional<Statement> evaluateDiscardedValue(Expression returnedValue, MethodDeclaration method) {
-        if (isStatementExpression(returnedValue)) {
-            return Optional.of(new ExpressionStmt(returnedValue.clone()));
-        }
-        boolean hasSideEffects = returnedValue.findFirst(Expression.class, TestUtils::isStatementExpression).isPresent();
-        if (hasSideEffects) {
-            VariableDeclarator resultVarDecl = new VariableDeclarator(
-                    method.getType().clone(),
-                    method.getNameAsString() + "Result",
-                    returnedValue.clone()
-            );
-            return Optional.of(new ExpressionStmt(new VariableDeclarationExpr(resultVarDecl)));
-        }
-        return Optional.empty();
-    }
-
-    /**
-     * Checks if an expression can be used as a statement by itself (a method call, an object creation, an assignment,
-     * an increment or a decrement).
-     *
-     * @param expr the expression to check
-     * @return {@code true} if the expression is a statement expression, {@code false} otherwise
-     */
-    private static boolean isStatementExpression(Expression expr) {
-        if (expr.isUnaryExpr()) {
-            UnaryExpr.Operator operator = expr.asUnaryExpr().getOperator();
-            return operator == UnaryExpr.Operator.PREFIX_INCREMENT || operator == UnaryExpr.Operator.PREFIX_DECREMENT
-                    || operator == UnaryExpr.Operator.POSTFIX_INCREMENT || operator == UnaryExpr.Operator.POSTFIX_DECREMENT;
-        }
-        return expr.isMethodCallExpr() || expr.isObjectCreationExpr() || expr.isAssignExpr();
-    }
-
-    /**
-     * Returns a copy of a method declared in the test class, located within a copy of the compilation unit of the test
-     * class. Unlike a plain clone of the method, the copy is attached to a compilation unit, so the symbols used within
-     * it can be resolved. Changes applied to the copy do not affect the original method.
-     *
-     * @param testClass the test class where the method is declared
-     * @param methodSignature the signature of the method to copy
-     * @return the copy of the method declaration
-     * @throws IllegalStateException if the method is not found within the copy of the compilation unit
-     */
-    private static MethodDeclaration copyMethodWithinCompilationUnit(TypeDeclaration<?> testClass, String methodSignature) {
-        CompilationUnit cuCopy = testClass.findCompilationUnit()
-                .orElseThrow(() -> new IllegalStateException("The test class " + testClass.getNameAsString() + " is not inserted in a compilation unit."))
-                .clone();
-        String testClassName = testClass.getFullyQualifiedName().orElse(testClass.getNameAsString());
-        return cuCopy.findAll(TypeDeclaration.class).stream()
-                .filter(t -> t.getFullyQualifiedName().orElse(t.getNameAsString()).equals(testClassName))
-                .flatMap(t -> ((TypeDeclaration<?>) t).getMethods().stream())
-                .filter(m -> m.getSignature().asString().equals(methodSignature))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("Method " + methodSignature + " not found in the copy of the test class " + testClassName));
-    }
-
-    /**
-     * Collects all the local variable definitions within a pending block of statements and checks if exist variables
-     * with the same name in the collection of already defined variables. If so, define a new name for the local variable
-     * and create a map between the old name and the new one. This method is useful when integrating a block of statements,
-     * like a method body, within another main block of statements (for example the block from where the body of the method
-     * to integrate is called) or in case of flat operations, like when try/catch/finally blocks are substituted with an
-     * {@code assertThrows} and flattened to be part of the main block.
-     *
-     * @param integratingBody the block of statements containing the definitions of local variables to check
-     * @param existingVariables the collection of variables already defined in the reference block
-     * @return a map of the local variables to be redefined when integrated within the main corpus of statements. The key
-     * is the declaration of the local variable (compared by reference). The value represents the updated name of the
-     * local variable
-     */
-    private static Map<VariableDeclarator, String> collectVariableMapping(BlockStmt integratingBody, Set<VariableDeclarator> existingVariables) {
-        // The keys are compared by reference: JavaParser nodes implement a structural equals/hashCode, so distinct
-        // declarations with the same content would collide, and a declaration modified while used as a key (for
-        // example when a parameter used in its initializer is renamed) could not be found anymore
-        Map<VariableDeclarator, String> varMapping = new IdentityHashMap<>();
-        // Iterate over the list of variable defined and used within the auxiliary method to check if the integration
-        // within the normalized test case could create conflicts with variable with the same name already defined
-        // in the normalized statements block
-        VariableDeclarationExprVisitor varDeclarationExprCollector = new VariableDeclarationExprVisitor();
-        List<VariableDeclarationExpr> localVarDeclarationExprs = varDeclarationExprCollector.visit(integratingBody);
-        Set<String> existingVariablesNames = JavaParserUtils.variableDeclaratorsToNames(existingVariables);
-        localVarDeclarationExprs.forEach(localVarDecl -> {
-            localVarDecl.getVariables().forEach(localVar -> {
-                // If the name of a variable defined within an auxiliary method is also defined within the
-                // normalized version, rename it
-                if (!existingVariables.contains(localVar) && existingVariablesNames.contains(localVar.getNameAsString())) {
-                    int i = 0;
-                    while (existingVariablesNames.contains(localVar.getNameAsString() + "_" + i)) {
-                        i++;
-                    }
-                    varMapping.put(localVar, localVar.getNameAsString() + "_" + i);
-                    existingVariablesNames.add(localVar.getNameAsString() + "_" + i);
-                    existingVariables.add(localVar);
-                } else {
-                    existingVariablesNames.add(localVar.getNameAsString());
-                    existingVariables.add(localVar);
-                }
-            });
-        });
-        return varMapping;
-    }
-
-    /**
-     * Collects the parameters defined within a method declaration {@link MethodDeclaration} and checks if exist variables
-     * with the same name in the collection of already defined variables. If so, define a new name for the local variable
-     * and create a map between the parameter wit the old name and the new one. This method is useful when integrating a
-     * block of statements, like a method body, within another main block of statements (for example the block from where
-     * the body of the method to integrate is called) or in case of flat operations, like when try/catch/finally blocks
-     * are substituted with an {@code assertThrows} and flattened to be part of the main block.
-     *
-     * @param mainBody the block of statements containing the main body where to integrate the parameters
-     * @param existingVariables the collection of variables already defined in the reference block
-     * @return a {@link HashMap} that maps the list of local variable to be redefined when integrated within the main
-     * corpus of statements. The key represents the original name of the local variable. The value represents the updated
-     * name of the local variable
-     */
-    //private static Map<VariableDeclarator, String> collectParameterMapping(BlockStmt mainBody, List<Parameter> parameters, Set<VariableDeclarator> existingVariables) {}
-
-    /**
-     * Collects the local variable definition within a single expression (if present) and checks if exist variables with
-     * the same name in the collection of already defined variables. If so, define a new name for the local variable
-     * and create a map between the old name and the new one. This method is useful when integrating an expression statement
-     * that defines a variable, within another main block of statements.
-     *
-     * @param expr the expression statement containing the definition of local variable, if any
-     * @param existingVariables the collection of variables already defined in the reference block
-     * @return a {@link HashMap} that maps the list of local variables to be redefined. The key represents the original name
-     * of the local variable. The value represents the updated name of the local variable
-     */
-    private static Map<String,String> collectVariableMapping(Expression expr, Set<VariableDeclarator> existingVariables) {
-        Map<String,String> varMapping = new HashMap<>();
-        Set<String> existingVariablesNames = JavaParserUtils.variableDeclaratorsToNames(existingVariables);
-        if (expr.isVariableDeclarationExpr()) {
-            VariableDeclarationExpr varDecl = expr.asVariableDeclarationExpr();
-            for (VariableDeclarator var : varDecl.getVariables()) {
-                String varName = var.getNameAsString();
-                if (!existingVariablesNames.contains(varName)) {
-                    existingVariables.add(var);
-                } else {
-                    int i = 0;
-                    while (existingVariablesNames.contains(varName + "_" + i)) {
-                        i++;
-                    }
-                    var.setName(varName + "_" + i);
-                    existingVariablesNames.add(varName + "_" + i);
-                    existingVariables.add(var);
-                    varMapping.put(varName, varName + "_" + i);
-                }
+                context.existingVariables().add(variable);
             }
         }
-        return varMapping;
+        JavaParserUtils.replaceVariables(block, variablesToRename);
     }
 
     /**
@@ -1703,13 +1248,11 @@ public class TestUtils {
      * clauses, or it is an expected exception (a single catch clause, and a call followed by {@code fail()} at the end
      * of the try block).
      *
-     * @param junitVersion the version of JUnit used in the test class
      * @param tryStmt the try statement to flatten
-     * @param existingVariables the collection of variables already defined within the statements block that represent the
-     *                          corpus of the normalized test case where the flat try block will be integrated
+     * @param context the state of the normalization of the test case
      * @return try/catch/finally blocks as a flat block of statements
      */
-    private static BlockStmt flatTryStmt(JUnitVersion junitVersion, TryStmt tryStmt, Set<VariableDeclarator> existingVariables) throws IllegalStateException {
+    private static BlockStmt flatTryStmt(TryStmt tryStmt, NormalizationContext context) throws IllegalStateException {
         // Define the flat block of statements (initially empty)
         BlockStmt flatTryStmtBlock = new BlockStmt();
         // Collect all the statements to insert within the final flat block
@@ -1718,9 +1261,9 @@ public class TestUtils {
         if (tryStmt.getCatchClauses().size() == 1) {
             int tryStmtsSize = tryStmt.getTryBlock().getStatements().size();
             // Convert catch clause into an assertThrows statement
-            MethodCallExpr assertThrowsCall = generateAssertThrowsFromTryStmt(junitVersion, tryStmt);
+            MethodCallExpr assertThrowsCall = generateAssertThrowsFromTryStmt(context.junitVersion(), tryStmt);
             // Add the resources of the try statement (if any) to the flat version of the block
-            statements.addAll(flatResources(tryStmt, existingVariables));
+            statements.addAll(flatResources(tryStmt, context));
             // Get the exception class expression and the lambda expression with the failing call from the
             // assertThrows (their position depends on the JUnit version and on the presence of a message)
             NodeList<Expression> assertThrowsArguments = assertThrowsCall.getArguments();
@@ -1745,7 +1288,7 @@ public class TestUtils {
             Map<VariableDeclarator, SimpleName> finalCopies = new IdentityHashMap<>();
             for (int i = 0; i < originalNameExprs.size(); i++) {
                 NameExpr nameExpr = originalNameExprs.get(i);
-                Optional<VariableDeclarator> targetVar = JavaParserUtils.getVarFromNameExpr(nameExpr, existingVariables);
+                Optional<VariableDeclarator> targetVar = JavaParserUtils.getVarFromNameExpr(nameExpr, context.existingVariables());
                 if  (targetVar.isEmpty()) {
                     logger.error("Variable from name expression " + nameExpr + " not found among the existing variables.");
                     continue;
@@ -1754,25 +1297,21 @@ public class TestUtils {
                     lambdaNameExprs.get(i).setName(finalCopies.get(targetVar.get()).clone());
                     continue;
                 }
-                Pair<VariableDeclarator,VariableDeclarationExpr> exceptionVar = JavaParserUtils.generateNewVariable(
-                        nameExpr.getNameAsString(),
-                        existingVariables,
-                        targetVar.get().getType(),
-                        nameExpr.clone(),
-                        Optional.of("_final")
+                VariableDeclarator exceptionVarDecl = new VariableDeclarator(
+                        new ClassOrInterfaceType(null, targetVar.get().getType().asString()),
+                        context.variableNames().allocate(nameExpr.getNameAsString() + "_final"),
+                        nameExpr.clone()
                 );
-                VariableDeclarator exceptionVarDecl = exceptionVar.getValue0();
-                VariableDeclarationExpr finalVarDeclExpr = exceptionVar.getValue1();
+                VariableDeclarationExpr finalVarDeclExpr = new VariableDeclarationExpr(exceptionVarDecl);
                 finalVarDeclExpr.addModifier(Modifier.Keyword.FINAL);
-                existingVariables.add(exceptionVarDecl);
+                context.existingVariables().add(exceptionVarDecl);
                 Statement finalVarDeclStmt = new ExpressionStmt(finalVarDeclExpr);
                 tryStmt.getTryBlock().getStatements().add(finalVarDeclIdx++, finalVarDeclStmt);
                 lambdaNameExprs.get(i).setName(exceptionVarDecl.getName().clone());
                 finalCopies.put(targetVar.get(), exceptionVarDecl.getName());
             }
-            // Replace local variables in the catch block, if already defined within the main block
-            Map<VariableDeclarator,String> tryVarMapping = collectVariableMapping(tryStmt.getTryBlock(), existingVariables);
-            JavaParserUtils.replaceVariables(tryStmt.getTryBlock(), tryVarMapping);
+            // Rename the local variables of the try block that would hide a field
+            renameVariablesHidingFields(tryStmt.getTryBlock(), context);
             // Add the list of statements from the try block
             statements.addAll(tryStmt.getTryBlock().getStatements());
             // Remove the method now called in the assertThrows assertion
@@ -1783,13 +1322,11 @@ public class TestUtils {
             // is always defined with a variable containing the exception, that can be used within the
             // catch block - for example to check the message of the error).
             Parameter catchExceptionParam = tryStmt.getCatchClauses().get(0).getParameter();
-            // Check if the original name of the catch parameter is already defined within the main block
-            Optional<String> catchExceptionParamName = JavaParserUtils.renameLocalParam(catchExceptionParam, existingVariables);
             BlockStmt catchBlockStmt = tryStmt.getCatchClauses().get(0).getBody();
-            String newExceptionParamName = catchExceptionParamName.orElse(catchExceptionParam.getNameAsString());
-            // If the original name of the exception defined within the catch clause is already defined within the
-            // main block, redefine it
-            if (catchExceptionParamName.isPresent()) {
+            String newExceptionParamName = catchExceptionParam.getNameAsString();
+            // If the variable of the exception would hide a field within the main block, rename it
+            if (context.fieldNames().contains(newExceptionParamName)) {
+                newExceptionParamName = context.variableNames().allocate(newExceptionParamName);
                 Map<Parameter,String>  paramMapping = new IdentityHashMap<>();
                 paramMapping.put(catchExceptionParam, newExceptionParamName);
                 JavaParserUtils.replaceParameters(catchBlockStmt, paramMapping);
@@ -1807,27 +1344,24 @@ public class TestUtils {
             Statement assertStmt = new ExpressionStmt(exceptionVarDeclExpr);
             statements.add(assertStmt);
             // Add the generated variable to the collection of existing variables
-            existingVariables.add(exceptionVarDecl);
-            // Replace local variables in the catch block, if already defined within the main block
-            Map<VariableDeclarator,String> catchVarMapping = collectVariableMapping(catchBlockStmt, existingVariables);
-            JavaParserUtils.replaceVariables(catchBlockStmt, catchVarMapping);
+            context.existingVariables().add(exceptionVarDecl);
+            // Rename the local variables of the catch block that would hide a field
+            renameVariablesHidingFields(catchBlockStmt, context);
             // Add the statements from the catch block to the flat main block
             statements.addAll(catchBlockStmt.getStatements());
         } else if (tryStmt.getCatchClauses().isEmpty()) {
             // A try statement without catch clauses (try-with-resources or try/finally) is flattened as it is: the
             // resources, then the statements of the try block
-            statements.addAll(flatResources(tryStmt, existingVariables));
-            // Replace local variables in the try block, if already defined within the main block
-            Map<VariableDeclarator,String> tryVarMapping = collectVariableMapping(tryStmt.getTryBlock(), existingVariables);
-            JavaParserUtils.replaceVariables(tryStmt.getTryBlock(), tryVarMapping);
+            statements.addAll(flatResources(tryStmt, context));
+            // Rename the local variables of the try block that would hide a field
+            renameVariablesHidingFields(tryStmt.getTryBlock(), context);
             statements.addAll(tryStmt.getTryBlock().getStatements());
         }
         // Check if the try statement contains a finally block, in which case collect the statements within it
         Optional<BlockStmt> finallyBlockStmt = tryStmt.getFinallyBlock();
         if (finallyBlockStmt.isPresent()) {
-            // Replace local variables in the finally block, if already defined within the main block
-            Map<VariableDeclarator,String> finallyVarMapping = collectVariableMapping(finallyBlockStmt.get(), existingVariables);
-            JavaParserUtils.replaceVariables(finallyBlockStmt.get(), finallyVarMapping);
+            // Rename the local variables of the finally block that would hide a field
+            renameVariablesHidingFields(finallyBlockStmt.get(), context);
             // Add the statements from the finally block to the main block
             statements.addAll(finallyBlockStmt.get().getStatements());
         }
@@ -1843,40 +1377,24 @@ public class TestUtils {
 
     /**
      * Collects the resources of a try statement as statements of the flat version of the block. The variables declared
-     * as resources are renamed if their names are already defined within the main block (together with their usages
-     * within the try block). A resource that refers to a variable already declared (for example {@code try (in) {...}})
+     * as resources are renamed if they would hide a field within the main block (together with their usages within
+     * the try block). A resource that refers to a variable already declared (for example {@code try (in) {...}})
      * does not declare anything and is not collected.
      *
      * @param tryStmt the try statement to flatten
-     * @param existingVariables the collection of variables already defined within the main block
+     * @param context the state of the normalization of the test case
      * @return the list of statements declaring the resources
      */
-    private static List<Statement> flatResources(TryStmt tryStmt, Set<VariableDeclarator> existingVariables) {
+    private static List<Statement> flatResources(TryStmt tryStmt, NormalizationContext context) {
         List<Statement> statements = new ArrayList<>();
-        Map<VariableDeclarator,String> resourcesVarMapping = new HashMap<>();
-        // Check the variable names of the resources and change their names if already defined within the
-        // main block
         for (Expression expr: tryStmt.getResources()) {
             if (expr.isVariableDeclarationExpr()) {
-                VariableDeclarationExpr varDecl = expr.asVariableDeclarationExpr();
-                Set<String> existingVariablesNames = JavaParserUtils.variableDeclaratorsToNames(existingVariables);
-
-                for (VariableDeclarator var : varDecl.getVariables()) {
-                    String varName = var.getNameAsString();
-
-                    if (!existingVariablesNames.contains(varName)) {
-                        existingVariables.add(var);
-                    } else {
-                        if (!(existingVariables.contains(var))) {
-                            int i = 0;
-                            while (existingVariablesNames.contains(varName + "_" + i)) {
-                                i++;
-                            }
-                            existingVariablesNames.add(varName + "_" + i);
-                            existingVariables.add(var);
-                            resourcesVarMapping.put(var, varName + "_" + i);
-                        }
+                Map<VariableDeclarator,String> resourcesVarMapping = new IdentityHashMap<>();
+                for (VariableDeclarator var : expr.asVariableDeclarationExpr().getVariables()) {
+                    if (context.fieldNames().contains(var.getNameAsString())) {
+                        resourcesVarMapping.put(var, context.variableNames().allocate(var.getNameAsString()));
                     }
+                    context.existingVariables().add(var);
                 }
                 // Replace any occurrence of the old name with the new one within the old try block
                 JavaParserUtils.replaceVariables(tryStmt.getTryBlock(), resourcesVarMapping);

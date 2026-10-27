@@ -80,8 +80,8 @@ class TestUtilsNormalizeTest {
                     for (int i = 0; i < 2; i++) {
                         sum += i;
                     }
-                    for (int i1 = 0; i1 < 3; i1++) {
-                        sum += i1;
+                    for (int i2 = 0; i2 < 3; i2++) {
+                        sum += i2;
                     }
                     assertEquals(4, sum);
                 }
@@ -209,9 +209,9 @@ class TestUtilsNormalizeTest {
         assertEquals(StaticJavaParser.parseBlock("""
                 {
                     int r = 5;
-                    int v_arg = 1;
-                    int r_0 = v_arg + 1;
-                    assertEquals(2, r_0);
+                    int v = 1;
+                    int r2 = v + 1;
+                    assertEquals(2, r2);
                     assertEquals(5, r);
                 }
                 """), findMethod(result.getValue0(), "testLocalClash").getBody().orElseThrow());
@@ -388,9 +388,9 @@ class TestUtilsNormalizeTest {
                 {
                     byte[] a1 = {1, 2};
                     byte[] a2 = {1, 3};
-                    int length_arg = 2;
+                    int length = 2;
                     assertArrayNotEqual: {
-                        for (int i = 0; i < length_arg; i++) {
+                        for (int i = 0; i < length; i++) {
                             if (a1[i] != a2[i]) {
                                 break assertArrayNotEqual;
                             }
@@ -475,18 +475,18 @@ class TestUtilsNormalizeTest {
         assertEquals(StaticJavaParser.parseBlock("""
                 {
                     int[] xs = {1, 2};
-                    int target_arg = 1;
-                    search_0: {
+                    int target = 1;
+                    search2: {
                         search:
                         for (int v : xs) {
-                            if (v == target_arg) {
+                            if (v == target) {
                                 break search;
                             }
                             if (v < 0) {
-                                break search_0;
+                                break search2;
                             }
                         }
-                        assertTrue(target_arg > 0);
+                        assertTrue(target > 0);
                     }
                 }
                 """), findMethod(normalized, "testUsesHelper").getBody().orElseThrow());
@@ -549,6 +549,410 @@ class TestUtilsNormalizeTest {
                         }
                         assertTrue(v > 0);
                     });
+                }
+                """), findMethod(normalized, "testUsesHelper").getBody().orElseThrow());
+    }
+
+    /**
+     * An auxiliary method can modify a field passed as argument: the parameter keeps the value of the field at the
+     * time of the call.
+     */
+    @Test
+    void argumentThatIsAFieldIsBoundToALocalVariable() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    private int counter = 0;
+
+                    @Test
+                    public void testUsesHelper() {
+                        check(counter);
+                        assertEquals(1, counter);
+                    }
+
+                    private void check(int v) {
+                        counter++;
+                        assertEquals(0, v);
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    int v = counter;
+                    counter++;
+                    assertEquals(0, v);
+                    assertEquals(1, counter);
+                }
+                """), findMethod(normalized, "testUsesHelper").getBody().orElseThrow());
+    }
+
+    /**
+     * A final field cannot be modified by the auxiliary method: it can replace the parameter, even within a lambda.
+     */
+    @Test
+    void argumentThatIsAFinalFieldReplacesTheParameter() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    private static final int LIMIT = 3;
+
+                    @Test
+                    public void testUsesHelper() {
+                        List<Integer> xs = List.of(1, 2);
+                        checkBelow(xs, LIMIT);
+                    }
+
+                    private void checkBelow(List<Integer> values, int max) {
+                        values.forEach(v -> assertTrue(v < max));
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    List<Integer> xs = List.of(1, 2);
+                    xs.forEach(v -> assertTrue(v < LIMIT));
+                }
+                """), findMethod(normalized, "testUsesHelper").getBody().orElseThrow());
+    }
+
+    /**
+     * A variable captured by a lambda expression must be effectively final: the variable passed by the test case may
+     * not be.
+     */
+    @Test
+    void parameterUsedWithinALambdaOfTheAuxiliaryMethodIsBoundToALocalVariable() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    @Test
+                    public void testUsesHelper() {
+                        int x = 1;
+                        List<Integer> xs = List.of(1, 2);
+                        checkAbove(xs, x);
+                        x = 2;
+                    }
+
+                    private void checkAbove(List<Integer> values, int min) {
+                        values.forEach(v -> assertTrue(v >= min));
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    int x = 1;
+                    List<Integer> xs = List.of(1, 2);
+                    int min = x;
+                    xs.forEach(v -> assertTrue(v >= min));
+                    x = 2;
+                }
+                """), findMethod(normalized, "testUsesHelper").getBody().orElseThrow());
+    }
+
+    /**
+     * The arguments are evaluated before the body of the method: a variable modified by another argument is bound to
+     * its value at the time of the call.
+     */
+    @Test
+    void variableModifiedByAnotherArgumentIsBoundToALocalVariable() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    @Test
+                    public void testUsesHelper() {
+                        int x = 1;
+                        checkPair(x, x++);
+                    }
+
+                    private void checkPair(int a, int b) {
+                        assertEquals(a, b);
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    int x = 1;
+                    int a = x;
+                    int b = x++;
+                    assertEquals(a, b);
+                }
+                """), findMethod(normalized, "testUsesHelper").getBody().orElseThrow());
+    }
+
+    /**
+     * A local variable of the auxiliary method named like a field would hide the field to the statements of the test
+     * case that follow the call.
+     */
+    @Test
+    void auxiliaryMethodLocalClashingWithAFieldIsRenamed() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    private int count = 0;
+
+                    @Test
+                    public void testUsesHelper() {
+                        check();
+                        assertEquals(0, count);
+                    }
+
+                    private void check() {
+                        int count = 5;
+                        assertEquals(5, count);
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    int count2 = 5;
+                    assertEquals(5, count2);
+                    assertEquals(0, count);
+                }
+                """), findMethod(normalized, "testUsesHelper").getBody().orElseThrow());
+    }
+
+    @Test
+    void lambdaParameterOfTheAuxiliaryMethodClashingWithATestVariableIsRenamed() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    @Test
+                    public void testUsesHelper() {
+                        int v = 1;
+                        List<Integer> xs = List.of(v);
+                        checkAll(xs);
+                    }
+
+                    private void checkAll(List<Integer> values) {
+                        values.forEach(v -> assertTrue(v > 0));
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    int v = 1;
+                    List<Integer> xs = List.of(v);
+                    xs.forEach(v2 -> assertTrue(v2 > 0));
+                }
+                """), findMethod(normalized, "testUsesHelper").getBody().orElseThrow());
+    }
+
+    @Test
+    void variablesGeneratedByTwoCallsToTheSameAuxiliaryMethodHaveDifferentNames() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    private final List<Integer> seen = new ArrayList<>();
+
+                    @Test
+                    public void testUsesHelper() {
+                        recordPositive(1);
+                        recordPositive(2);
+                    }
+
+                    private boolean recordPositive(int v) {
+                        assertTrue(v > 0);
+                        return seen.add(v) && v > 0;
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    int v = 1;
+                    assertTrue(v > 0);
+                    boolean recordPositiveResult = seen.add(v) && v > 0;
+                    int v2 = 2;
+                    assertTrue(v2 > 0);
+                    boolean recordPositiveResult2 = seen.add(v2) && v2 > 0;
+                }
+                """), findMethod(normalized, "testUsesHelper").getBody().orElseThrow());
+    }
+
+    @Test
+    void statementsWithinALabeledLoopAreNormalized() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    @Test
+                    public void testThrows() {
+                        outer:
+                        for (int i = 0; i < 2; i++) {
+                            try {
+                                Integer.parseInt("x");
+                                fail();
+                            } catch (NumberFormatException e) {
+                                assertNotNull(e);
+                                continue outer;
+                            }
+                        }
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    outer:
+                    for (int i = 0; i < 2; i++) {
+                        NumberFormatException e = assertThrows(NumberFormatException.class, () -> Integer.parseInt("x"));
+                        assertNotNull(e);
+                        continue outer;
+                    }
+                }
+                """), findMethod(normalized, "testThrows").getBody().orElseThrow());
+    }
+
+    @Test
+    void labelOfInlinedAuxiliaryMethodDoesNotClashWithALabelOfTheTestCase() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    @Test
+                    public void testUsesHelper() {
+                        int[] xs = {1, 2};
+                        check:
+                        for (int x : xs) {
+                            check(x);
+                        }
+                    }
+
+                    private void check(int v) {
+                        if (v < 0) {
+                            return;
+                        }
+                        assertTrue(v > 0);
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    int[] xs = {1, 2};
+                    check:
+                    for (int x : xs) {
+                        check2: {
+                            if (x < 0) {
+                                break check2;
+                            }
+                            assertTrue(x > 0);
+                        }
+                    }
+                }
+                """), findMethod(normalized, "testUsesHelper").getBody().orElseThrow());
+    }
+
+    @Test
+    void recursiveCallOfAnInlinedAuxiliaryMethodIsKept() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    @Test
+                    public void testUsesHelper() {
+                        countDown(2);
+                    }
+
+                    private void countDown(int n) {
+                        assertTrue(n >= 0);
+                        if (n > 0) {
+                            countDown(n - 1);
+                        }
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    int n = 2;
+                    assertTrue(n >= 0);
+                    if (n > 0) {
+                        countDown(n - 1);
+                    }
+                }
+                """), findMethod(normalized, "testUsesHelper").getBody().orElseThrow());
+    }
+
+    /**
+     * The test case is discarded only for the try statements it contains: an auxiliary method containing a try
+     * statement the dataset does not support is not inlined.
+     */
+    @Test
+    void auxiliaryMethodWithAnUnsupportedTryStatementIsNotInlined() throws IOException {
+        Path testFile = writeTestClass("com/acme/HelperTest.java", """
+                package com.acme;
+
+                import org.junit.jupiter.api.Test;
+                import static org.junit.jupiter.api.Assertions.*;
+
+                public class HelperTest {
+                    @Test
+                    public void testUsesHelper() {
+                        check();
+                        assertTrue(true);
+                    }
+
+                    private void check() {
+                        try {
+                            Integer.parseInt("1");
+                        } catch (NumberFormatException e) {
+                        }
+                    }
+                }
+                """);
+
+        Pair<Path, List<TestStats>> result = assertDoesNotThrow(
+                () -> TestUtils.normalizeTest(CONFIG, repoRoot, testFile, outputPath, Optional.empty()));
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    check();
+                    assertTrue(true);
+                }
+                """), findMethod(result.getValue0(), "testUsesHelper").getBody().orElseThrow());
+        assertEquals(Map.of(), discardReasons(result.getValue1()));
+        Path errorFile = outputPath.resolve("error/normalized/repo/src/test/java/com/acme/HelperTestSTARNormalizedTest.java");
+        assertFalse(Files.exists(errorFile), "Unexpected error file " + errorFile);
+    }
+
+    @Test
+    void severalArgumentsOfAVarargsParameterAreCollectedInAnArray() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    @Test
+                    public void testUsesHelper() {
+                        checkAll(1, 2);
+                    }
+
+                    private void checkAll(int... values) {
+                        assertTrue(values.length > 0);
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    int[] values = new int[] {1, 2};
+                    assertTrue(values.length > 0);
+                }
+                """), findMethod(normalized, "testUsesHelper").getBody().orElseThrow());
+    }
+
+    @Test
+    void arrayPassedToAVarargsParameterIsPassedAsItIs() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    @Test
+                    public void testUsesHelper() {
+                        int[] xs = {1, 2};
+                        checkAll(xs);
+                    }
+
+                    private void checkAll(int... values) {
+                        assertTrue(values.length > 0);
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    int[] xs = {1, 2};
+                    assertTrue(xs.length > 0);
+                }
+                """), findMethod(normalized, "testUsesHelper").getBody().orElseThrow());
+    }
+
+    /**
+     * The declaration of the array is already moved to the normalized test case, out of the compilation unit, when the
+     * call is inlined: the type of a reference array cannot be resolved there.
+     */
+    @Test
+    void referenceArrayPassedToAVarargsParameterIsPassedAsItIs() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    @Test
+                    public void testUsesHelper() {
+                        String[] names = {"a", "b"};
+                        checkAll(names);
+                    }
+
+                    private void checkAll(String... values) {
+                        assertTrue(values.length > 0);
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    String[] names = {"a", "b"};
+                    assertTrue(names.length > 0);
                 }
                 """), findMethod(normalized, "testUsesHelper").getBody().orElseThrow());
     }
@@ -686,8 +1090,8 @@ class TestUtilsNormalizeTest {
                 {
                     Calc calc = new Calc();
                     final Calc calc_final = calc;
-                    IllegalStateException e_0 = assertThrows(IllegalStateException.class, () -> calc_final.explode());
-                    assertNotNull(e_0.getMessage());
+                    IllegalStateException e2 = assertThrows(IllegalStateException.class, () -> calc_final.explode());
+                    assertNotNull(e2.getMessage());
                     assertEquals("field", e);
                 }
                 """), findMethod(normalized, "testThrows").getBody().orElseThrow());
@@ -778,8 +1182,8 @@ class TestUtilsNormalizeTest {
 
         assertEquals(StaticJavaParser.parseBlock("""
                 {
-                    int count_0 = 1;
-                    assertEquals(1, count_0);
+                    int count2 = 1;
+                    assertEquals(1, count2);
                     count = 0;
                     assertEquals(0, count);
                 }
@@ -1125,7 +1529,6 @@ class TestUtilsNormalizeTest {
     // generated variables only when needed, with Java-style names.
 
     @Test
-    @Disabled("D4: the statements of an inlined auxiliary method are not normalized (its try statement is kept)")
     void tryCatchFailWithinAuxiliaryMethodIsFlattenedOnceInlined() throws IOException {
         Path normalized = normalizeHelperTest("""
                     @Test
@@ -1154,7 +1557,6 @@ class TestUtilsNormalizeTest {
     }
 
     @Test
-    @Disabled("D4: an auxiliary method called by an inlined auxiliary method is not inlined")
     void auxiliaryMethodCalledByAnInlinedAuxiliaryMethodIsInlined() throws IOException {
         Path normalized = normalizeHelperTest("""
                     @Test
@@ -1183,7 +1585,6 @@ class TestUtilsNormalizeTest {
     }
 
     @Test
-    @Disabled("D5: an auxiliary method assigning its parameter modifies the variable passed by the test case")
     void parameterAssignedByTheAuxiliaryMethodIsBoundToALocalVariable() throws IOException {
         Path normalized = normalizeHelperTest("""
                     @Test
@@ -1211,7 +1612,6 @@ class TestUtilsNormalizeTest {
     }
 
     @Test
-    @Disabled("D6: a field read by an inlined auxiliary method is shadowed by a local variable of the test case")
     void fieldReadByTheAuxiliaryMethodIsNotShadowedByALocalOfTheTestCase() throws IOException {
         Path normalized = normalizeHelperTest("""
                     private int base = 1;
@@ -1238,7 +1638,6 @@ class TestUtilsNormalizeTest {
     }
 
     @Test
-    @Disabled("D7: a local of the auxiliary method clashing with a variable declared in a nested block of the test case is not renamed")
     void auxiliaryMethodLocalClashingWithALoopVariableOfTheTestCaseIsRenamed() throws IOException {
         Path normalized = normalizeHelperTest("""
                     @Test
@@ -1295,7 +1694,6 @@ class TestUtilsNormalizeTest {
     }
 
     @Test
-    @Disabled("D12: a single non-array argument passed to a varargs parameter is bound to a variable of the element type")
     void singleArgumentOfAVarargsParameterIsWrappedInAnArray() throws IOException {
         Path normalized = normalizeHelperTest("""
                     @Test
@@ -1319,7 +1717,6 @@ class TestUtilsNormalizeTest {
     }
 
     @Test
-    @Disabled("D13: three sibling declarations with the same content are not all given a unique name")
     void normalizeTestGivesAUniqueNameToEachLoopVariable() throws IOException {
         Path normalized = normalizeHelperTest("""
                     @Test
