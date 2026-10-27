@@ -22,7 +22,7 @@ regression tests.
 | ID | Phase | Defect | Effect on the dataset | Since |
 |----|-------|--------|------------------------|-------|
 | D1 | split | **Nested loops.** A statement after an inner loop is placed *inside* the inner loop (`addStatement` appends to the last `for` found in the whole body, `TestUtils.java:2428`). | Wrong prefixes for every assertion that follows a nested loop. | baseline *Fixed in Step 10.* |
-| D2 | normalize + split | **`if/else` with a nested `if`.** The `else` branch is attached to the nested `if` (`getLastStatementTypeOccurrence(..., IfStmt.class)`, `TestUtils.java:1808` and `:1293`). `if (a) { if (b) {..} } else {X}` becomes `if (a) { if (b) {..} else {X} }`. | Changed test semantics, wrong prefixes. | baseline (split); normalization since it runs *Splitter part fixed in Step 10; normalizer part open (Step 11).* |
+| D2 | normalize + split | **`if/else` with a nested `if`.** The `else` branch is attached to the nested `if` (`getLastStatementTypeOccurrence(..., IfStmt.class)`, `TestUtils.java:1808` and `:1293`). `if (a) { if (b) {..} } else {X}` becomes `if (a) { if (b) {..} else {X} }`. | Changed test semantics, wrong prefixes. | baseline (split); normalization since it runs *Splitter part fixed in Step 10; normalizer part fixed in Step 11.* |
 | D3 | normalize | **Error flag lost.** `thrownedException = parseNormalizeTestStatementsBlock(...)` overwrites the flag, so an error followed by a block statement (loop, `if`, …) is not reported. | Missing entries in the error report; the kept `try` is dropped later with a generic message. | refactoring *Fixed in Step 9.* |
 | D4 | normalize | **Inlined helpers are not normalized.** The helper body is appended as is (`TestUtils.java:2135`): a `try/catch/fail` inside a helper stays a `try`, so the splitter drops the whole test case; a helper called by a helper is not inlined. | Inlining a helper that contains a `try` *loses* the test case (it was kept before inlining worked). | Steps 3–5 |
 | D5 | normalize | **Parameter aliasing.** A parameter passed a variable is renamed to that variable (`TestUtils.java:2099`). If the helper assigns the parameter (`v = v + 1;`), the inlined code modifies the caller's variable. | Changed semantics: a later assertion of the test case now reads the modified value. | refactoring |
@@ -59,6 +59,8 @@ Found while writing the Step 8 tests (details in `docs/fixes/step-08-test-infras
 | D26 | splitter, expression statements | A statement containing an anonymous class with methods (`new Clock() { public long now() { ... } }`) throws "Unexpected block statement parent node ...", and the test case is dropped (3 test cases in the two A/B projects; found in Step 9). *Fixed in Step 10.* |
 | D27 | splitter, labeled statements | A labeled loop is rewritten as a labeled block (`outer: { for (...) { ... continue outer; } }`), which does not compile. Found and fixed in Step 10. |
 | D28 | splitter, lambda block assigned to a variable | `Runnable r = () -> { ... };` is rewritten as a lambda without its declaration, and the split test class does not parse: all the datapoints of the class are lost. Found and fixed in Step 10. |
+| D29 | normalizer, `if` branch | The comment of an `if` statement is dropped, while the comments of the other statements (loops included) are kept. Found and fixed in Step 11. |
+| D30 | splitter (`TestCaseSplitter`, Step 10) | When the `then` branch of an `if` is a single statement and the `else` branch is a block or an `else if`, wrapping the `then` branch in a block moves it after the `else` branch among the children of the `if`. The split points, located in the copies of the test case by their index in pre-order, then point to other statements: split test cases swapped or cut at the wrong statement. Since Step 11 the normalizer writes every branch as a block, so this happens only in code the normalizer does not rewrite (inlined auxiliary methods, D4; lambda blocks passed as arguments). Found and fixed in Step 11. |
 
 Every confirmed defect with a simple trigger has a `@Disabled` test named after it (map in the Step 8 document).
 
@@ -169,7 +171,10 @@ These affect what the model sees, so they are choices rather than bugs:
   secondary types is correct, because they stay in the original file of the same package), `FAKE_ELEMENT_LABEL`,
   the lambda-statement branch of the normalizer (a lambda cannot be an expression statement), `replaceParams`,
   `renameLocalVar`, `collectVariableMapping(Expression, …)`, `addCatchClause`, and the `TRY`/`CATCH`/`FINALLY`/`SWITCH`
-  cases of `addStatement` (the splitter throws on these statements first).
+  cases of `addStatement` (the splitter throws on these statements first). *Step 10 removed `addCatchClause` and
+  `addStatement`.* Since Step 11: the statement visitors of `utils/javaParser/visitors/statements` other than
+  `AssertStmtVisitor` and `ExpressionStmtVisitor` (they were only used by the removed
+  `getLastStatementTypeOccurrence`), and `StmtVisitorHelper.getLastExprInStmt`.
 - Unused imports in `TestUtils`: `javax.swing.plaf.nimbus.State`, `javax.swing.text.html.Option`,
   `javassist.expr.NewArray`, `java.lang.reflect.Method`.
 - `TokensUtils` changed in `b87e674c` from a name-keyed map to an identity set of declarators; the tokens dataset was
@@ -210,7 +215,7 @@ java-uuid-generator, as for Steps 1–7.
    `keep-try-catch` is completed with the new splitter in Step 10). *Done on 2026-10-26.*
 3. **Step 10 – splitter rewrite by truncation** (D1, D2, D23, D24, D26, splitting within try statements). *Done on
    2026-10-26, together with the removal of the `assertThrows` key and of its `flat` mode (D9), D15, D27 and D28.*
-4. **Step 11 – normalizer `if` chains** (D2).
+4. **Step 11 – normalizer `if` chains** (D2). *Done on 2026-10-27, together with D29 and D30.*
 5. **Step 12 – inlining semantics** (D4–D7, D12) and the name allocator (D13).
 6. **Step 13 – lambda captures in nested try statements** (D8) and the `_final` policy.
 7. **Step 14 – remove the `THROW EXCEPTION` label** (the `assertThrows` key was already removed in Step 10), including

@@ -536,6 +536,34 @@ class TestUtilsSplitTest {
         ), methodBodies(result.getValue0()));
     }
 
+    /**
+     * Only the {@code then} branches are wrapped in blocks (the {@code else} branches are already a block and an
+     * {@code else if}): the split test cases still follow the order of the source code.
+     */
+    @Test
+    void singleStatementThenBranchFollowedByAnElseIsSplitInTheOrderOfTheSourceCode() throws IOException {
+        Pair<Path, Path> result = split(FixtureRepo.CONFIG, """
+                @Test
+                public void testNoBraces() {
+                    int x = 1;
+                    if (x > 0) assertTrue(x > 0); else { assertTrue(x <= 0); }
+                    if (x > 5) assertTrue(x > 5); else if (x > 2) assertTrue(x > 2);
+                    assertEquals(1, x);
+                }
+                """);
+
+        String first = "int x = 1; if (x > 0) { assertTrue(x > 0); } else { assertTrue(x <= 0); }";
+        assertEquals(Map.of(
+                "testNoBraces_split_0", block("int x = 1; if (x > 0) { assertTrue(x > 0); }"),
+                "testNoBraces_split_1", block(first),
+                "testNoBraces_split_2", block(first + " if (x > 5) { assertTrue(x > 5); }"),
+                "testNoBraces_split_3", block(first + " if (x > 5) { assertTrue(x > 5); } else if (x > 2) { assertTrue(x > 2); }"),
+                "testNoBraces_split_4", block(first + " if (x > 5) { assertTrue(x > 5); } else if (x > 2) { assertTrue(x > 2); } assertEquals(1, x);")
+        ), methodBodies(result.getValue0()));
+        assertEquals(block("int x = 1; if (x > 0) { assertTrue(x > 0); } else { }"),
+                methodBodies(result.getValue1()).get("testNoBraces_split_1"));
+    }
+
     @Test
     void eachStatementWithinALoopEndsASplitTestCaseWithStatementSplitStrategy() throws IOException {
         Pair<Path, Path> result = split(new ConfigBuilder().split(SplitStrategyType.STATEMENT).build(), """

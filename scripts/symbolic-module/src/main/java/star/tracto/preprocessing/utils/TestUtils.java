@@ -978,65 +978,54 @@ public class TestUtils {
                             config
                     );
                 } else if (statement.isIfStmt()) {
+                    // Clone the `if` statement (with its `else if` chain) and add it to the current block. Each
+                    // branch of the clone is then replaced with an empty block, filled with the normalized statements
+                    // of the corresponding branch of the original statement. The original and the cloned `if` of
+                    // each step of the `else if` chain are visited together, so that each branch is filled in its own
+                    // `if`
                     IfStmt ifStmt = statement.asIfStmt();
-                    List<Pair<Optional<Expression>, Statement>> ifStmts = new ArrayList<>();
-                    ifStmts.add(new Pair<>(Optional.of(ifStmt.getCondition()), ifStmt.getThenStmt()));
-                    // Check if the `if` statement is single or part of a `if-then-else` block
-                    if (ifStmt.getElseStmt().isPresent()) {
-                        Optional<Statement> elseIfStmt = ifStmt.getElseStmt();
-                        // Iterate over the list of if-else and collect their respective conditions and bodies
-                        while (elseIfStmt.isPresent()) {
-                            if (elseIfStmt.get().isIfStmt()) {
-                                // Extract the condition and the body of the `if-else`
-                                ifStmts.add(new Pair<>(Optional.of(elseIfStmt.get().asIfStmt().getCondition()), elseIfStmt.get().asIfStmt().getThenStmt()));
-                            } else {
-                                // Extract the condition and the body of the `else`
-                                ifStmts.add(new Pair<>(Optional.empty(), elseIfStmt.get()));
-                            }
-                            // Get the next `if-else` or `else`, if present
-                            elseIfStmt = elseIfStmt.get().isIfStmt() ? elseIfStmt.get().asIfStmt().getElseStmt() : Optional.empty();
-                        }
-                    }
-                    // Define `if` statement clone
-                    IfStmt ifStmtClone = null;
-                    // Process the collection of `if-then-else` conditions
-                    for (Pair<Optional<Expression>, Statement> ifStmtPair : ifStmts) {
-                        // Create a new `if-then` block. Copy the condition and create an empty body
-                        Optional<Expression> ifCondition = ifStmtPair.getValue0();
-                        Statement ifStmtBody = ifStmtPair.getValue1();
-                        BlockStmt ifStmtCloneBody = new BlockStmt();
-                        if (ifCondition.isPresent()) {
-                            if (ifStmtClone == null) {
-                                ifStmtClone = new IfStmt(ifCondition.get(), ifStmtCloneBody, null);
-                                // Add the cloned if statement to the current block
-                                currentBlockStmt.addStatement(ifStmtClone);
-                            } else {
-                                IfStmt lastIfStmt = traverseIfElseStatement(ifStmtClone);
-                                lastIfStmt.setElseStmt(new IfStmt(ifCondition.get(), ifStmtCloneBody, null));
-                            }
-                        } else {
-                            IfStmt lastIfStmt = traverseIfElseStatement(ifStmtClone);
-                            lastIfStmt.setElseStmt(ifStmtCloneBody);
-                        }
-                        // Parse the statements of the if-body and add it to the corresponding block of statements
+                    IfStmt ifStmtClone = ifStmt.clone();
+                    currentBlockStmt.addStatement(ifStmtClone);
+                    while (true) {
+                        BlockStmt thenStmtClone = new BlockStmt();
+                        ifStmtClone.setThenStmt(thenStmtClone);
                         thrownedException |= parseNormalizeTestStatementsBlock(
                                 testClass,
                                 originalTestCase,
-                                new ArrayList<>(Arrays.asList(ifStmtBody)),
-                                // The reference block is now the body of the cloned `if-then` or `else` statement
-                                ifStmtCloneBody,
+                                new ArrayList<>(Arrays.asList(ifStmt.getThenStmt())),
+                                // The reference block is now the `then` branch of the cloned `if`
+                                thenStmtClone,
                                 auxiliaryMethods,
                                 integratedAuxiliaryMethods,
                                 existingVariables,
                                 junitVersion,
                                 config
                         );
-                        // Update the `if` statement clone
-                        ifStmtClone = JavaParserUtils.getLastStatementTypeOccurrence(currentBlockStmt, IfStmt.class)
-                                .orElseThrow(() -> new IllegalStateException(
-                                        "No statement of type " + IfStmt.class + " found in the block of statements."
-                                ))
-                                .asIfStmt();
+                        if (ifStmt.getElseStmt().isEmpty()) {
+                            break;
+                        }
+                        Statement elseStmt = ifStmt.getElseStmt().get();
+                        if (elseStmt.isIfStmt()) {
+                            // Move to the next `if` of the `else if` chain
+                            ifStmt = elseStmt.asIfStmt();
+                            ifStmtClone = ifStmtClone.getElseStmt().get().asIfStmt();
+                        } else {
+                            BlockStmt elseStmtClone = new BlockStmt();
+                            ifStmtClone.setElseStmt(elseStmtClone);
+                            thrownedException |= parseNormalizeTestStatementsBlock(
+                                    testClass,
+                                    originalTestCase,
+                                    new ArrayList<>(Arrays.asList(elseStmt)),
+                                    // The reference block is now the `else` branch of the cloned `if`
+                                    elseStmtClone,
+                                    auxiliaryMethods,
+                                    integratedAuxiliaryMethods,
+                                    existingVariables,
+                                    junitVersion,
+                                    config
+                            );
+                            break;
+                        }
                     }
                 } else if (statement.isSynchronizedStmt()) {
                     // Parse the synchronized statement and split the test case into multiple test cases
@@ -1653,20 +1642,6 @@ public class TestUtils {
             }
         }
         return varMapping;
-    }
-
-    /**
-     * Traverse the if-else chain of an if-statement from the root up to the last if-else condition
-     *
-     * @param rootIfStmt the root if-statement
-     * @return the last if-statement in the if-else chain
-     */
-    private static IfStmt traverseIfElseStatement(IfStmt rootIfStmt) {
-        IfStmt lastIfStmt = rootIfStmt;
-        while (lastIfStmt.getElseStmt().isPresent()) {
-            lastIfStmt = lastIfStmt.getElseStmt().get().asIfStmt();
-        }
-        return lastIfStmt;
     }
 
     /**

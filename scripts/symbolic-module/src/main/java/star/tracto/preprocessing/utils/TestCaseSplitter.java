@@ -65,13 +65,16 @@ final class TestCaseSplitter {
      */
     static List<SplitTestCase> split(MethodDeclaration testCase, OraclesDatasetConfig config) {
         // Work on a copy, where the bodies of the compound statements are blocks: a split point can then always be
-        // removed from its block, to generate the split test prefix
-        MethodDeclaration source = testCase.clone();
+        // removed from its block, to generate the split test prefix. The bodies are wrapped while collecting the split
+        // points. The setters used to wrap them append the new block after the other children of the statement (after
+        // the `else` branch of an `if`, for example), while the copies of the test case keep the order of the source
+        // code: the split points are located in the copies by their index in pre-order, so they are collected again
+        // on a copy of the wrapped test case
+        MethodDeclaration wrapped = testCase.clone();
+        collectSplitPoints(wrapped.getBody().orElseThrow(), config.splitStrategy());
+        MethodDeclaration source = wrapped.clone();
         BlockStmt body = source.getBody().orElseThrow();
-        List<Statement> splitPoints = new ArrayList<>();
-        for (Statement statement : body.getStatements()) {
-            collectSplitPoints(statement, config.splitStrategy(), splitPoints);
-        }
+        List<Statement> splitPoints = collectSplitPoints(body, config.splitStrategy());
         if (config.splitStrategy() == SplitStrategyType.ASSERTION) {
             checkNumberOfAssertions(source, splitPoints.size(), config.numAssertionsMatchStrategy());
         }
@@ -88,6 +91,17 @@ final class TestCaseSplitter {
             }
         }
         return splitTestCases;
+    }
+
+    /**
+     * Collects the split points within the body of a test case, in the order of the source code.
+     */
+    private static List<Statement> collectSplitPoints(BlockStmt body, SplitStrategyType splitStrategy) {
+        List<Statement> splitPoints = new ArrayList<>();
+        for (Statement statement : body.getStatements()) {
+            collectSplitPoints(statement, splitStrategy, splitPoints);
+        }
+        return splitPoints;
     }
 
     /**

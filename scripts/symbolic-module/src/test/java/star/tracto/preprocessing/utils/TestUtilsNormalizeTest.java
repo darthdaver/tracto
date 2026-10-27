@@ -1031,16 +1031,29 @@ class TestUtilsNormalizeTest {
         assertEquals(List.of("testKept"), methodNames(StaticJavaParser.parse(normalized)));
     }
 
-    // Known defects (docs/design-review-2026-10-26.md). The expected results follow the decisions of 2026-10-26:
-    // generated variables only when needed, with Java-style names.
-
-    @Test
-    @Disabled("D2: the else branch is attached to the if nested in the then branch")
-    void elseBranchStaysOnItsIfWhenTheThenBranchContainsAnotherIf() throws IOException {
-        Path normalized = normalizeHelperTest("""
-                    @Test
-                    public void testIfElse() {
-                        int x = 1;
+    static Stream<Arguments> ifStatements() {
+        return Stream.of(
+                Arguments.of("single-statement branches of an else-if chain are wrapped in blocks", """
+                        if (x > 0) y = 1; else if (x < 0) y = -1; else y = 0;
+                        """, """
+                        if (x > 0) {
+                            y = 1;
+                        } else if (x < 0) {
+                            y = -1;
+                        } else {
+                            y = 0;
+                        }
+                        """),
+                Arguments.of("if within the else block stays within the block", """
+                        if (x > 0) {
+                            y = 1;
+                        } else {
+                            if (x < 0) {
+                                y = -1;
+                            }
+                        }
+                        """, null),
+                Arguments.of("D2: if within the then branch", """
                         if (x > 0) {
                             if (x > 5) {
                                 assertTrue(x > 5);
@@ -1048,24 +1061,68 @@ class TestUtilsNormalizeTest {
                         } else {
                             assertTrue(x <= 0);
                         }
+                        """, null),
+                Arguments.of("D2: if-else within the then branch", """
+                        if (x > 0) {
+                            if (x > 5) {
+                                y = 2;
+                            } else {
+                                y = 1;
+                            }
+                        } else {
+                            y = -1;
+                        }
+                        """, null),
+                Arguments.of("D2: if within a loop of an else-if branch", """
+                        if (x > 5) {
+                            y = 2;
+                        } else if (x > 0) {
+                            for (int i = 0; i < x; i++) {
+                                if (i > 0) {
+                                    y += i;
+                                }
+                            }
+                        } else {
+                            y = -1;
+                        }
+                        """, null),
+                Arguments.of("D29: comment of the if statement", """
+                        // positive values
+                        if (x > 0) {
+                            y = 1;
+                        }
+                        """, null)
+        );
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("ifStatements")
+    void ifStatementKeepsTheStructureOfItsBranches(String description, String ifStatement, String expectedIfStatement) throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    @Test
+                    public void testIf() {
+                        int x = 1;
+                        int y = 0;
+                %s
                         assertEquals(1, x);
                     }
-                """);
+                """.formatted(ifStatement));
 
         assertEquals(StaticJavaParser.parseBlock("""
                 {
                     int x = 1;
-                    if (x > 0) {
-                        if (x > 5) {
-                            assertTrue(x > 5);
-                        }
-                    } else {
-                        assertTrue(x <= 0);
-                    }
+                    int y = 0;
+                %s
                     assertEquals(1, x);
                 }
-                """), findMethod(normalized, "testIfElse").getBody().orElseThrow());
+                """.formatted(expectedIfStatement == null ? ifStatement : expectedIfStatement)),
+                findMethod(normalized, "testIf").getBody().orElseThrow());
+        Path errorFile = outputPath.resolve("error/normalized/repo/src/test/java/com/acme/HelperTestSTARNormalizedTest.java");
+        assertFalse(Files.exists(errorFile), "Unexpected error file " + errorFile);
     }
+
+    // Known defects (docs/design-review-2026-10-26.md). The expected results follow the decisions of 2026-10-26:
+    // generated variables only when needed, with Java-style names.
 
     @Test
     @Disabled("D4: the statements of an inlined auxiliary method are not normalized (its try statement is kept)")

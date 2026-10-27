@@ -88,6 +88,54 @@ class TestUtilsNormalizeBehaviourTest {
         assertTrue(Files.readString(normalizedFile).contains("break scan;"), "Expected the helper to be inlined as a labeled block");
     }
 
+    @Test
+    void elseBranchesOfNestedIfStatementsRunAsInTheOriginalTestCase() throws Exception {
+        Path testFile = repo.writeTestClass("com/acme/BranchesTest.java", """
+                package com.acme;
+
+                import java.util.ArrayList;
+                import java.util.List;
+                import org.junit.jupiter.api.Test;
+
+                public class BranchesTest {
+                    public static final List<String> TRACE = new ArrayList<>();
+
+                    @Test
+                    public void testBranches() {
+                        for (int x : new int[] {-1, 1, 7}) {
+                            if (x > 0) {
+                                if (x > 5) {
+                                    TRACE.add("a:big " + x);
+                                }
+                            } else {
+                                TRACE.add("a:non-positive " + x);
+                            }
+                            if (x > 0) {
+                                if (x > 5) {
+                                    TRACE.add("b:big " + x);
+                                } else {
+                                    TRACE.add("b:small " + x);
+                                }
+                            } else {
+                                TRACE.add("b:non-positive " + x);
+                            }
+                        }
+                    }
+                }
+                """);
+        List<String> expectedTrace = List.of(
+                "a:non-positive -1", "b:non-positive -1",
+                "b:small 1",
+                "a:big 7", "b:big 7"
+        );
+
+        Path normalizedFile = assertDoesNotThrow(
+                () -> TestUtils.normalizeTest(FixtureRepo.CONFIG, repo.root, testFile, repo.output, Optional.empty())).getValue0();
+
+        assertEquals(expectedTrace, runTrace(testFile, "com.acme.BranchesTest", "testBranches"), "Original test case");
+        assertEquals(expectedTrace, runTrace(normalizedFile, "com.acme.BranchesTestSTARNormalizedTest", "testBranches"), "Normalized test case");
+    }
+
     /**
      * Compiles a test class, executes one of its test methods and returns the content of its static {@code TRACE}
      * list.

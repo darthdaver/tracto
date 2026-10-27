@@ -42,7 +42,6 @@ import star.tracto.utils.FilesUtils;
 import star.tracto.utils.JavaUtils;
 import star.tracto.utils.javaParser.visitors.expressions.NameExprVisitor;
 import star.tracto.utils.javaParser.visitors.expressions.VariableDeclarationExprVisitor;
-import star.tracto.utils.javaParser.visitors.statements.helper.StmtVisitorHelper;
 
 import java.io.IOException;
 import java.io.StringWriter;
@@ -1533,21 +1532,6 @@ public class JavaParserUtils {
     public static Statement getLastStatementInMethodDeclaration(MethodDeclaration callableDeclaration) {
         List<Statement> statements = callableDeclaration.getBody().get().findAll(Statement.class);
         return statements.get(statements.size() - 1);
-    }
-
-    /**
-     * Visit all the statements within a statement (it could be a block of statements or an expression statement, for example)
-     * to find the last occurrence of a given statement type. The method returns the statement itself, if it is the last
-     * occurrence of the given type
-     *
-     * @param stmt the statement to visit
-     * @param type the type of statement to find
-     * @return the last occurrence of the statement type. If the statement is the last occurrence of that type, returns
-     * itself. If the statement is not found, return an empty optional.
-     */
-    public static Optional<Statement> getLastStatementTypeOccurrence(Statement stmt, Class type) {
-        Optional<Statement> lastOccurrence = StmtVisitorHelper.getLastStatementOccurrence(stmt, type);
-        return lastOccurrence;
     }
 
     /**
