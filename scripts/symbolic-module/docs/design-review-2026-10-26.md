@@ -39,23 +39,23 @@ From reading the code (not reproduced, but each one is a single, unambiguous cod
 
 | ID | Where | Defect |
 |----|-------|--------|
-| D14 | `processSplitTestClass` (`TestUtils.java:3125`) | The `try` encloses the loop over the test cases: an `IllegalStateException` in one split test case skips **all following** split test cases of the class. |
+| D14 | `processSplitTestClass` (`TestUtils.java:3125`) | The `try` encloses the loop over the test cases: an `IllegalStateException` in one split test case skips **all following** split test cases of the class. *Fixed in Step 15.* |
 | D15 | `splitTest` (`TestUtils.java:741`) | An inner `catch (Exception e)` swallows every error, so the outer error-report branch (writing `error/split/...`) is unreachable. That branch also adds the original node instead of a copy (the Step 2 bug). *Fixed in Step 10.* |
-| D16 | `splitTest` (`TestUtils.java:664`) | The `@Override` handling looks for a call named `super`, which never exists (`super.setUp()` is named `setUp`), so `foundSuper` is always false. |
-| D17 | `getJunitVersion` (`TestUtils.java:134`) | The first import containing `junit` decides the version: `import org.junit.Assert;` before `import org.junit.jupiter.api.Test;` gives JUnit 4. |
-| D18 | `getAssertionsDistribution` (`TestUtils.java:2566`) | `put("assert", n)` overwrites the count for each statement instead of adding to it. Statistics only. |
+| D16 | `splitTest` (`TestUtils.java:664`) | The `@Override` handling looks for a call named `super`, which never exists (`super.setUp()` is named `setUp`), so `foundSuper` is always false. *Fixed in Step 15.* |
+| D17 | `getJunitVersion` (`TestUtils.java:134`) | The first import containing `junit` decides the version: `import org.junit.Assert;` before `import org.junit.jupiter.api.Test;` gives JUnit 4. *Fixed in Step 15.* |
+| D18 | `getAssertionsDistribution` (`TestUtils.java:2566`) | `put("assert", n)` overwrites the count for each statement instead of adding to it. Statistics only. *Fixed in Step 15.* |
 | D19 | `FixtureRepo.CONFIG` | The tests use `assertThrows = STANDARD`, while the committed config gives `flat`: no test covers the production path, which is why D9 was not caught by the suite. *(Step 8: `FixtureRepo.committedConfig()` added; used by the D9 test and the end-to-end test.)* |
 
 Found while writing the Step 8 tests (details in `docs/fixes/step-08-test-infrastructure-and-characterization.md`), in the Step 9 A/B run and in Step 10:
 
 | ID | Where | Defect |
 |----|-------|--------|
-| D20 | `JavaFileCollector.cleanRepository` | Generated `*STARSplitTestPrefix.java` files are not deleted and are collected as test classes on the next run. |
-| D21 | `OraclesDataset.testClassPathToSourceClassNormPath` | Every `test` is removed from the test file name, so focal classes whose name contains `test` (`Latest`, `Contest`, …) are never matched. |
-| D22 | `JavaParserUtils.checkModifiersRules` | Always returns `true`: the modifier rules used by `TokensUtils` are never applied (from reading). |
+| D20 | `JavaFileCollector.cleanRepository` | Generated `*STARSplitTestPrefix.java` files are not deleted and are collected as test classes on the next run. *Fixed in Step 15.* |
+| D21 | `OraclesDataset.testClassPathToSourceClassNormPath` | Every `test` is removed from the test file name, so focal classes whose name contains `test` (`Latest`, `Contest`, …) are never matched. *Fixed in Step 15.* |
+| D22 | `JavaParserUtils.checkModifiersRules` | Always returns `true`: the modifier rules used by `TokensUtils` are never applied (from reading). *Fixed in Step 15.* |
 | D23 | `JavaParserUtils.getLastAssertionInMethodDeclaration` | For `assertAll(() -> ..., () -> assertTrue(..))` the target is the assertion inside the last lambda, not the `assertAll`. *Fixed in Step 10.* |
 | D24 | splitter, `synchronized` branch | The body of a `synchronized` statement is added after the statement instead of within it. *Fixed in Step 10.* |
-| D25 | `splitTest`, `processSplitTestClass`, `distributeMethods` | Fully qualified annotations (`@org.junit.Test`, `@org.junit.jupiter.api.Disabled`) are not recognized. |
+| D25 | `splitTest`, `processSplitTestClass`, `distributeMethods` | Fully qualified annotations (`@org.junit.Test`, `@org.junit.jupiter.api.Disabled`) are not recognized. *Fixed in Step 15.* |
 | D26 | splitter, expression statements | A statement containing an anonymous class with methods (`new Clock() { public long now() { ... } }`) throws "Unexpected block statement parent node ...", and the test case is dropped (3 test cases in the two A/B projects; found in Step 9). *Fixed in Step 10.* |
 | D27 | splitter, labeled statements | A labeled loop is rewritten as a labeled block (`outer: { for (...) { ... continue outer; } }`), which does not compile. Found and fixed in Step 10. |
 | D28 | splitter, lambda block assigned to a variable | `Runnable r = () -> { ... };` is rewritten as a lambda without its declaration, and the split test class does not parse: all the datapoints of the class are lost. Found and fixed in Step 10. |
@@ -63,6 +63,7 @@ Found while writing the Step 8 tests (details in `docs/fixes/step-08-test-infras
 | D30 | splitter (`TestCaseSplitter`, Step 10) | When the `then` branch of an `if` is a single statement and the `else` branch is a block or an `else if`, wrapping the `then` branch in a block moves it after the `else` branch among the children of the `if`. The split points, located in the copies of the test case by their index in pre-order, then point to other statements: split test cases swapped or cut at the wrong statement. Since Step 11 the normalizer writes every branch as a block, so this happens only in code the normalizer does not rewrite (inlined auxiliary methods, D4; lambda blocks passed as arguments). Found and fixed in Step 11. |
 | D31 | normalizer, labeled statements | A labeled statement (`outer: for (...) { ... }`) is added to the normalized test case as it is: the statements within it are not normalized (a try/catch/fail is not converted into `assertThrows`, an auxiliary method is not inlined). Found and fixed in Step 12. |
 | D32 | datapoints, `keep-try-catch` | The target of a split test case is searched from its last statement in pre-order: for a split point within a try block, the empty catch (or finally) block kept by the truncation (Step 10). With `keep-try-catch` the `fail(...)` and the assertions of the try blocks produced no datapoint ("No assertion found"); with the committed configuration, the same for the try statements the normalizer does not rewrite (within a lambda block, 2 datapoints in jsoup); with `split = statement` an empty compound statement got its empty body `{}` as target. Found and fixed in Step 14. |
+| D33 | splitter, `@Override` test cases | The split test cases of a test case overriding a test case of the superclass keep `@Override`, although with their new names they override nothing: the split test class does not compile, and the annotation is listed in the test prefixes. Found and fixed in Step 15 (kept by the split test cases of a test case without a test annotation, recognized as a test case by `@Override`). |
 
 Every confirmed defect with a simple trigger has a `@Disabled` test named after it (map in the Step 8 document).
 
@@ -178,9 +179,10 @@ These affect what the model sees, so they are choices rather than bugs:
   `AssertStmtVisitor` and `ExpressionStmtVisitor` (they were only used by the removed
   `getLastStatementTypeOccurrence`), and `StmtVisitorHelper.getLastExprInStmt`.
 - Unused imports in `TestUtils`: `javax.swing.plaf.nimbus.State`, `javax.swing.text.html.Option`,
-  `javassist.expr.NewArray`, `java.lang.reflect.Method`.
+  `javassist.expr.NewArray`, `java.lang.reflect.Method`. *Removed in Step 15, with the dead code above.*
 - `TokensUtils` changed in `b87e674c` from a name-keyed map to an identity set of declarators; the tokens dataset was
-  not regenerated since. It needs a before/after comparison.
+  not regenerated since. It needs a before/after comparison. *Since Step 12 the variables of a normalized test case have unique names, so a
+  map keyed by name and a set of declarators hold the same variables of the test prefixes (see Step 15).*
 
 ## Test plan
 
@@ -222,4 +224,4 @@ java-uuid-generator, as for Steps 1–7.
 6. **Step 13 – lambda captures in nested try statements** (D8) and the `_final` policy. *Done on 2026-10-27.*
 7. **Step 14 – remove the `THROW EXCEPTION` label** (the `assertThrows` key was already removed in Step 10), including
    `TokensUtils` and the two Python utilities; plain `assertThrows(...)` when the catch block does not use the exception. *Done on 2026-10-27, together with D32.*
-8. **Step 15 – robustness and clean-up**: D14, D16–D18, D20–D22, D25, dead code (the `temp` drafts were deleted on 2026-10-26).
+8. **Step 15 – robustness and clean-up**: D14, D16–D18, D20–D22, D25, dead code (the `temp` drafts were deleted on 2026-10-26). *Done on 2026-10-27, together with D33.*

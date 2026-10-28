@@ -280,8 +280,16 @@ public class OraclesDataset {
         String[] testFileNormStrSplitted = testFileNormStr.split("/");
         // Get the test class name
         String testClassName = testFileNormStrSplitted[testFileNormStrSplitted.length - 1];
-        // Generate the expected corresponding source class name
-        String sourceClassName = testClassName.replace("test", "");
+        // Generate the expected corresponding source class name, removing the `test` suffix and prefix of the test
+        // class name (`CalcTest`, `TestCalc`), not the other occurrences of `test` (`LatestTest` tests `Latest`)
+        String sourceClassName = testClassName.substring(0, testClassName.length() - ".java".length());
+        if (sourceClassName.endsWith("test") && sourceClassName.length() > "test".length()) {
+            sourceClassName = sourceClassName.substring(0, sourceClassName.length() - "test".length());
+        }
+        if (sourceClassName.startsWith("test") && sourceClassName.length() > "test".length()) {
+            sourceClassName = sourceClassName.substring("test".length());
+        }
+        sourceClassName += ".java";
         // Apply changes to the original test class path to complete the transformation
         String sourceClassPathStr = testFileNormStr
                 .replace("/src/test/", "/src/main/")

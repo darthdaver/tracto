@@ -49,6 +49,10 @@
                     <excludes>
                         <exclude>star.tracto.E2ETests</exclude>
                     </excludes>
+                    <systemPropertyVariables>
+                        <!-- The Byte Buddy version of Mockito 5.2 supports Java 20: needed to mock static methods on Java 21 -->
+                        <net.bytebuddy.experimental>true</net.bytebuddy.experimental>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
             <plugin>

@@ -172,7 +172,6 @@ class OraclesDatasetTest {
     }
 
     @Test
-    @Disabled("D20: the cleaning of the repository does not delete the generated split test prefix classes, which are collected as test classes in the next run")
     void runningTheGenerationAgainGivesTheSameResult() throws IOException {
         OraclesDataset.generate(repoRoot, Optional.empty(), COMMITTED_CONFIG, outputPath, PROJECT, emptyClasspath.toString());
         String firstStatistics = Files.readString(outputPath.resolve("statistics-oracles-dataset-training/fixture/statistics-fixture.json"));
@@ -185,7 +184,6 @@ class OraclesDatasetTest {
     }
 
     @Test
-    @Disabled("D21: the matching of a test class with its focal class removes every occurrence of \"test\" from the name, so a focal class whose name contains \"test\" is never matched")
     void focalClassWhoseNameContainsTestIsMatched() throws IOException {
         write("src/main/java/com/acme/Latest.java", """
                 package com.acme;

@@ -1859,7 +1859,6 @@ class TestUtilsNormalizeTest {
     }
 
     @Test
-    @Disabled("D17: the JUnit version is taken from the first import containing \"junit\"")
     void junitVersionIsTakenFromTheTestAnnotationImport() throws IOException {
         Path testFile = writeTestClass("com/acme/MixedImportsTest.java", """
                 package com.acme;
@@ -1883,7 +1882,6 @@ class TestUtilsNormalizeTest {
     }
 
     @Test
-    @Disabled("D18: the count of assert statements is overwritten by each statement instead of being summed")
     void statisticsCountTheAssertStatementsOfTheWholeTestCase() throws IOException {
         Path testFile = writeTestClass("com/acme/AssertStmtTest.java", """
                 package com.acme;

@@ -11,6 +11,7 @@ import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.stmt.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import star.tracto.data.enums.JUnitAnnotationType;
 import star.tracto.data.enums.NumAssertionsMatchStrategyType;
 import star.tracto.data.enums.SplitStrategyType;
 import star.tracto.data.records.OraclesDatasetConfig;
@@ -232,6 +233,13 @@ final class TestCaseSplitter {
     private static MethodDeclaration copy(MethodDeclaration source, int splitIndex) {
         MethodDeclaration copy = source.clone();
         copy.setName(source.getNameAsString() + SPLIT_DELIMITER + splitIndex);
+        // With another name, the copy overrides no method of the superclass. A test case without a test annotation
+        // (overriding a test case of the superclass) keeps the annotation: it is what marks it as a test case
+        boolean hasTestAnnotation = copy.getAnnotations().stream()
+                .anyMatch(annotation -> JUnitAnnotationType.isTestAnnotation(annotation.getName().getIdentifier()));
+        if (hasTestAnnotation) {
+            copy.getAnnotations().removeIf(annotation -> annotation.getName().getIdentifier().equals("Override"));
+        }
         return copy;
     }
 

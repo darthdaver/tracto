@@ -2009,51 +2009,8 @@ public class JavaParserUtils {
                 return true;
             }
         }
-        return true;
-    }
-
-    /**
-     * Checks if the variable name of the variable {@link VariableDeclarator} passed to the function is already defined
-     * in the collection of the existing variables. In this case the method renames the variable using a simple incremental
-     * logic (adding an index at the end of the variable)
-     *
-     * @param var the variable to check
-     * @param existingVariables the collection of existing variables
-     * @return If the variable name already exists in the collection, an optional {@link Optional} containing a pair of
-     * elements where the first element is the old variable name and the second element is the new variable name. Otherwise,
-     * an empty optional {@link Optional}
-     */
-    public static Optional<Pair<String,String>> renameLocalVar(VariableDeclarator var, HashMap<String, VariableDeclarator> existingVariables) {
-        String varName = var.getNameAsString();
-        if (!existingVariables.containsKey(varName)) {
-            existingVariables.put(varName, var);
-            return Optional.empty();
-        }
-        int i = 0;
-        while (existingVariables.containsKey(varName + "_" + i)) {
-            i++;
-        }
-        String newVarName = varName + "_" + i;
-        var.setName(newVarName);
-        existingVariables.put(newVarName, var);
-        return Optional.of(new Pair<>(varName, newVarName));
-    }
-
-    /**
-     * Given a BlockStmt representing the body of a method, and the mapping of the parameters to replace in the block of
-     * statements, replace the parameters with the actual arguments in the block of statements.
-     * @param blockStmt the body of the method to process
-     * @param paramMapping the mapping of the parameters to replace in the block of statements
-     */
-    public static void replaceParams(BlockStmt blockStmt, Map<String, Expression> paramMapping) {
-        NameExprVisitor nameExprCollector = new NameExprVisitor();
-        List<NameExpr> nameExprs = nameExprCollector.visit(blockStmt);
-        nameExprs.forEach(nameExpr -> {
-            String varName = nameExpr.getNameAsString();
-            if (paramMapping.containsKey(varName)) {
-                nameExpr.replace(paramMapping.get(varName).clone());
-            }
-        });
+        // No rule is satisfied (without rules, there is no constraint)
+        return modifiersRules.isEmpty();
     }
 
     /**

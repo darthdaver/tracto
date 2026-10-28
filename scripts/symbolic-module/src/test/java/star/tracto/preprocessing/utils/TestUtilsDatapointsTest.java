@@ -4,6 +4,8 @@ import org.javatuples.Pair;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 import star.tracto.data.enums.AssertionStrategyType;
 import star.tracto.data.enums.SplitStrategyType;
 import star.tracto.data.enums.TargetStrategyType;
@@ -12,6 +14,7 @@ import star.tracto.data.records.OraclesDatasetConfig;
 import star.tracto.preprocessing.components.Callable;
 import star.tracto.preprocessing.components.OracleDatapoint;
 import star.tracto.preprocessing.components.TestClazzDatapoints;
+import star.tracto.utils.javaParser.JavaParserUtils;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -270,6 +273,52 @@ class TestUtilsDatapointsTest {
 
         assertEquals(List.of("fail(\"should throw\");", "assertNotNull(e.getMessage());"),
                 datapoints.stream().map(OracleDatapoint::target).toList());
+    }
+
+    /**
+     * No input is known to make the processing of a split test case fail: the failure is injected, on the first split
+     * test case, in the search of its target.
+     */
+    @Test
+    void failureOfASplitTestCaseDoesNotDropTheOtherSplitTestCasesOfTheClass() throws IOException {
+        List<OracleDatapoint> datapoints;
+        try (MockedStatic<JavaParserUtils> javaParserUtils = Mockito.mockStatic(JavaParserUtils.class, Mockito.CALLS_REAL_METHODS)) {
+            javaParserUtils.when(() -> JavaParserUtils.getLastAssertionInMethodDeclaration(Mockito.argThat(method -> method != null && method.getNameAsString().equals("testAdd_split_0"))))
+                    .thenThrow(new IllegalStateException("injected failure"));
+            datapoints = datapoints(FixtureRepo.CONFIG, TEST_ADD);
+        }
+
+        assertEquals(List.of("testAdd_split_1"), datapoints.stream().map(d -> d.testPrefix().identifier()).toList());
+    }
+
+    /**
+     * A test case overriding a test case of the superclass without its own test annotation is recognized as a test case
+     * by {@code @Override} (and its name): its split test cases keep the annotation.
+     */
+    @Test
+    void overridingTestCaseWithoutTestAnnotationProducesDatapoints() throws IOException {
+        List<OracleDatapoint> datapoints = datapoints(FixtureRepo.CONFIG, """
+                @Override
+                public void testOverride() {
+                    Calc calc = new Calc();
+                    assertEquals(3, calc.add(1, 2));
+                }
+                """);
+
+        assertEquals(List.of("testOverride_split_0"), datapoints.stream().map(d -> d.testPrefix().identifier()).toList());
+    }
+
+    @Test
+    void testCaseDisabledWithAFullyQualifiedAnnotationProducesNoDatapoints() throws IOException {
+        List<OracleDatapoint> datapoints = datapoints(FixtureRepo.CONFIG, TEST_ADD + """
+                @Test
+                @org.junit.jupiter.api.Disabled
+                public void testDisabled() {
+                    assertEquals(1, 1);
+                }
+                """);
+
+        assertEquals(List.of("testAdd_split_0", "testAdd_split_1"), datapoints.stream().map(d -> d.testPrefix().identifier()).toList());
     }
 
     private List<OracleDatapoint> datapoints(OraclesDatasetConfig config, String testMembers) throws IOException {

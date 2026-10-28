@@ -390,7 +390,6 @@ class TestUtilsSplitTest {
     }
 
     @Test
-    @Disabled("D25: annotations written with their fully qualified name are not recognized")
     void disabledTestCaseWithFullyQualifiedAnnotationIsKeptUnchanged() throws IOException {
         Pair<Path, Path> result = split(FixtureRepo.CONFIG, """
                 @Test
@@ -438,6 +437,55 @@ class TestUtilsSplitTest {
                 """);
 
         assertEquals(List.of("testThrows_split_0", "testThrows_split_1"), List.copyOf(methodBodies(result.getValue0()).keySet()));
+    }
+
+    /**
+     * A test case overriding a test case of the superclass keeps a stub with its name in the split test class (the
+     * superclass test case is not run, and an abstract one is implemented); its split test cases, with other names,
+     * override nothing (D33). The call to the superclass test case stays in the split test cases (D16: the branch
+     * meant to handle it never ran).
+     */
+    @Test
+    void overridingTestCaseIsSplitAndKeepsAStubWithItsName() throws IOException {
+        Pair<Path, Path> result = split(FixtureRepo.CONFIG, """
+                @Override
+                @Test
+                public void testInherited() {
+                    int x = 1;
+                    super.testInherited();
+                    assertEquals(1, x);
+                    assertTrue(x > 0);
+                }
+                """);
+
+        assertEquals(Map.of(
+                "testInherited", block("System.out.println(\"Method Overriding!\");"),
+                "testInherited_split_0", block("int x = 1; super.testInherited(); assertEquals(1, x);"),
+                "testInherited_split_1", block("int x = 1; super.testInherited(); assertEquals(1, x); assertTrue(x > 0);")
+        ), methodBodies(result.getValue0()));
+        assertEquals(Map.of(
+                "testInherited", List.of("Override", "Test"),
+                "testInherited_split_0", List.of("Test"),
+                "testInherited_split_1", List.of("Test")
+        ), methodAnnotations(result.getValue0()));
+        assertEquals(Map.of(
+                "testInherited", List.of("Override", "Test"),
+                "testInherited_split_0", List.of("Test"),
+                "testInherited_split_1", List.of("Test")
+        ), methodAnnotations(result.getValue1()));
+    }
+
+    @Test
+    void testCaseWithFullyQualifiedTestAnnotationIsSplit() throws IOException {
+        Pair<Path, Path> result = split(FixtureRepo.CONFIG, """
+                @org.junit.jupiter.api.Test
+                public void testQualified() {
+                    assertEquals(1, 1);
+                    assertEquals(2, 2);
+                }
+                """);
+
+        assertEquals(List.of("testQualified_split_0", "testQualified_split_1"), List.copyOf(methodBodies(result.getValue0()).keySet()));
     }
 
     @Test
@@ -783,10 +831,25 @@ class TestUtilsSplitTest {
         CompilationUnit cu = StaticJavaParser.parse(javaFile);
         Map<String, BlockStmt> bodies = new LinkedHashMap<>();
         for (MethodDeclaration method : cu.findAll(MethodDeclaration.class)) {
-            if (method.getAnnotationByName("Test").isPresent()) {
+            if (isTestMethod(method)) {
                 bodies.put(method.getNameAsString(), method.getBody().orElseThrow());
             }
         }
         return bodies;
+    }
+
+    /** Returns the simple names of the annotations of the test methods of the class in the given file. */
+    private static Map<String, List<String>> methodAnnotations(Path javaFile) throws IOException {
+        Map<String, List<String>> annotations = new LinkedHashMap<>();
+        for (MethodDeclaration method : StaticJavaParser.parse(javaFile).findAll(MethodDeclaration.class)) {
+            if (isTestMethod(method)) {
+                annotations.put(method.getNameAsString(), method.getAnnotations().stream().map(a -> a.getName().getIdentifier()).toList());
+            }
+        }
+        return annotations;
+    }
+
+    private static boolean isTestMethod(MethodDeclaration method) {
+        return method.getAnnotations().stream().anyMatch(a -> a.getName().getIdentifier().equals("Test"));
     }
 }

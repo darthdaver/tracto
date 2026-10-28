@@ -14,7 +14,6 @@ import com.github.javaparser.resolution.declarations.*;
 import com.github.javaparser.resolution.types.*;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserClassDeclaration;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserInterfaceDeclaration;
-import javassist.expr.NewArray;
 import org.javatuples.Pair;
 import org.javatuples.Triplet;
 import org.slf4j.Logger;
@@ -37,10 +36,7 @@ import star.tracto.utils.javaParser.visitors.statements.AssertStmtVisitor;
 import star.tracto.utils.javaParser.visitors.statements.ExpressionStmtVisitor;
 import star.tracto.utils.javaParser.visitors.statements.helper.StmtVisitorHelper;
 
-import javax.swing.plaf.nimbus.State;
-import javax.swing.text.html.Option;
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -63,20 +59,6 @@ public class TestUtils {
     }
 
     /**
-     * Perform the matching between the focal method(s) and the test prefix.
-     * Extracts each method under test from the test prefix and generate triples of (focalMethod, testPrefix, docstring).
-     * The focal method is considered the last statement in the test method that belongs to the fullyQualifiedClassName.
-     * Saves the output file in output/toga/input.
-     *
-     * @param testFilePath the path to the test class file
-     * @param repoRootPath the path to the source code of the project under test
-     * @param outputDirPath the path to the output folder
-     * @param m2tMatchingType the type of matching to use (any occurrence or last occurrence)
-     *
-     */
-    public static void matchMethodsToTests(Path testFilePath, Path repoRootPath, Path outputDirPath, M2TMatchingType m2tMatchingType) {}
-
-    /**
      * Returns the JUnit version used within a test class, identifying it from the collection of imports defined in it and
      * passed to the function.
      *
@@ -86,6 +68,18 @@ public class TestUtils {
      * to the function
      */
     public static JUnitVersion getJunitVersion(NodeList<ImportDeclaration> imports) {
+        // The import of the test annotation decides: a test class can import the assertions of the other version
+        for (ImportDeclaration importDeclaration : imports) {
+            String name = importDeclaration.getNameAsString();
+            if (!importDeclaration.isStatic()) {
+                if (name.equals("org.junit.jupiter.api.Test") || (importDeclaration.isAsterisk() && name.equals("org.junit.jupiter.api"))) {
+                    return JUnitVersion.JUNIT5;
+                } else if (name.equals("org.junit.Test") || (importDeclaration.isAsterisk() && name.equals("org.junit"))) {
+                    return JUnitVersion.JUNIT4;
+                }
+            }
+        }
+        // Otherwise, the first import of JUnit decides
         for (ImportDeclaration importDeclaration : imports) {
             if (importDeclaration.getNameAsString().contains("junit")) {
                 if (importDeclaration.getNameAsString().contains("jupiter")) {
@@ -215,9 +209,6 @@ public class TestUtils {
             List<MethodDeclaration> originalTestCases = testClassMethodsDistribution.getValue0();
             // Get the list of all the auxiliary methods within the given test class
             HashMap<String, MethodDeclaration> auxiliaryMethods = testClassMethodsDistribution.getValue2();
-            // Define list of auxiliary methods integrated into the normalized test case body
-            // (they have to be removed from the test class since integrated and no more called)
-            List<MethodDeclaration> integratedAuxiliaryMethods = new ArrayList<>();
             // Rename all the constructors in the test class according to the name given to the normalized version of the class
             List<ConstructorDeclaration> constructors = testClass.getConstructors();
             for (ConstructorDeclaration constructor: constructors) {
@@ -236,13 +227,13 @@ public class TestUtils {
                         // Add a label to ignore the test case, if it is not in the list: in JUnit 4 the `@Ignore`
                         // annotation is used, while in Junit 5 it has been substituted by the `@Disabled` annotation
                         if (junitVersion == JUnitVersion.JUNIT4) {
-                            boolean hasIgnore = originalTestCase.getAnnotations().stream().anyMatch(a -> a.getNameAsString().equals("Ignore"));
+                            boolean hasIgnore = originalTestCase.getAnnotations().stream().anyMatch(a -> a.getName().getIdentifier().equals("Ignore"));
                             if (!hasIgnore) {
                                 originalTestCase.addAnnotation("Ignore");
                                 cu.addImport("org.junit.Ignore");
                             }
                         } else {
-                            boolean hasDisabled = originalTestCase.getAnnotations().stream().anyMatch(a -> a.getNameAsString().equals("Disabled"));
+                            boolean hasDisabled = originalTestCase.getAnnotations().stream().anyMatch(a -> a.getName().getIdentifier().equals("Disabled"));
                             if (!hasDisabled) {
                                 originalTestCase.addAnnotation("Disabled");
                                 cu.addImport("org.junit.jupiter.api.Disabled");
@@ -264,7 +255,6 @@ public class TestUtils {
                 NormalizationContext context = new NormalizationContext(
                         testClass,
                         auxiliaryMethods,
-                        integratedAuxiliaryMethods,
                         new HashSet<>(JavaParserUtils.getAssignedVariableNames(originalTestCase.getBody().orElseThrow())),
                         fieldNames,
                         variableNamesOf(originalTestCase, fieldNames),
@@ -304,46 +294,11 @@ public class TestUtils {
             for (MethodDeclaration originalTestCase : originalTestCases) {
                 testClass.remove(originalTestCase);
             }
-            for (MethodDeclaration integratedAuxiliaryMethod : integratedAuxiliaryMethods) {
-                List<AnnotationExpr> annotations = integratedAuxiliaryMethod.getAnnotations();
-                boolean isOverride = false;
-                for (AnnotationExpr annotation : annotations) {
-                    if (annotation.getNameAsString().equals("Override")) {
-                        isOverride = true;
-                        break;
-                    }
-                }
-                if (!isOverride) {
-                    //testClass.remove(integratedAuxiliaryMethod);
-                }
-            }
-
-            boolean hasSuper = false;
             for (MethodDeclaration normalizedTestCase : normalizedTestCases) {
-                for (AnnotationExpr annotation : normalizedTestCase.getAnnotations()) {
-                    if (annotation.getNameAsString().equals("Override")) {
-                        MethodCallExprVisitor methodCallExprVisitor = new MethodCallExprVisitor();
-                        List<MethodCallExpr> methodCallExprs = methodCallExprVisitor.visit(normalizedTestCase);
-                        for (MethodCallExpr methodCallExpr : methodCallExprs) {
-                            if (methodCallExpr.getNameAsString().equals("super")) {
-                                hasSuper = true;
-                                break;
-                            }
-                        }
-                    }
-                }
                 testClass.addMember(normalizedTestCase);
             }
-
-            NodeList<TypeDeclaration<?>> cuTypes = cu.getTypes();
-            NodeList<TypeDeclaration<?>> typesToPreserve = new NodeList<>();
-            typesToPreserve.add(testClass);
-            for(TypeDeclaration typeDeclaration : cuTypes) {
-                if (typeDeclaration.isPrivate()) {
-                    typesToPreserve.add(typeDeclaration);
-                }
-            }
-            cu.setTypes(typesToPreserve);
+            // The other top-level types of the file are dropped: they stay in the original file, in the same package
+            cu.setTypes(new NodeList<>(testClass));
             CompilationUnit refactoredCu = refactorCompilationUnitModified(cu, testClass, NamingConvention.NORMALIZED_TEST_CLASS);
             // Save the split test class to the output paths (regular and test repository)
             FilesUtils.writeJavaFile(regularOutputPath, refactoredCu);
@@ -602,10 +557,10 @@ public class TestUtils {
                 boolean isIgnore = false;
                 boolean isOverride = false;
                 for (AnnotationExpr annotation : annotations) {
-                    if (annotation.getNameAsString().equals("Ignore") || annotation.getNameAsString().equals("Disabled")) {
+                    if (annotation.getName().getIdentifier().equals("Ignore") || annotation.getName().getIdentifier().equals("Disabled")) {
                         isIgnore = true;
                     }
-                    if (annotation.getNameAsString().equals("Override")) {
+                    if (annotation.getName().getIdentifier().equals("Override")) {
                         isOverride = true;
                     }
                 }
@@ -623,60 +578,13 @@ public class TestUtils {
                         splitTestCasesPrefixes.add(originalTestCase);
                         continue;
                     }
+                    // The split test cases have other names: a stub with the name of the test case overrides the test
+                    // case of the superclass in the split test class (so it is not run, and an abstract one is
+                    // implemented)
                     MethodDeclaration overrideSupportTestCase = originalTestCase.clone();
-                    MethodCallExprVisitor methodCallExprVisitor = new MethodCallExprVisitor();
-                    List<MethodCallExpr> methodCallExprs = methodCallExprVisitor.visit(originalTestCase);
-                    boolean foundSuper = false;
-                    for (MethodCallExpr methodCallExpr : methodCallExprs) {
-                        if (methodCallExpr.getNameAsString().equals("super")) {
-                            foundSuper = true;
-                            break;
-                        }
-                    }
-                    overrideSupportTestCase.setBody(new BlockStmt());
-                    BlockStmt overrideTestCaseBody = overrideSupportTestCase.getBody().orElseThrow();
-                    BlockStmt originalTestCaseBody = originalTestCase.getBody().orElseThrow();
-                    BlockStmt originalTestCaseBodyClone = originalTestCase.getBody().orElseThrow();
-                    boolean removedSuper = false;
-                    if (foundSuper) {
-                        for (Statement statement : originalTestCase.getBody().orElseThrow().getStatements()) {
-                            if (statement instanceof ExpressionStmt) {
-                                ExpressionStmt expressionStmt = (ExpressionStmt) statement;
-                                if (expressionStmt.getExpression() instanceof MethodCallExpr) {
-                                    MethodCallExpr methodCallExpr = (MethodCallExpr) expressionStmt.getExpression();
-                                    if (methodCallExpr.getNameAsString().equals("super")) {
-                                        overrideTestCaseBody.addStatement(statement);
-                                        originalTestCaseBody.remove(statement);
-                                        removedSuper = true;
-                                        break;
-                                    }
-                                } else {
-                                    overrideTestCaseBody.addStatement(statement);
-                                    originalTestCaseBody.remove(statement);
-                                }
-                            } else {
-                                overrideTestCaseBody.addStatement(statement);
-                                originalTestCaseBody.remove(statement);
-                            }
-                        }
-                    }
-                    if (foundSuper && !removedSuper) {
-                        logger.warn("Super statement found in the original test case, but unable to remove it: " + originalTestCase.getNameAsString());
-                        originalTestCase.setBody(originalTestCaseBodyClone);
-                        splitTestCases.add(originalTestCase);
-                        splitTestCasesPrefixes.add(originalTestCase);
-                        continue;
-                    }
-                    if (overrideTestCaseBody.getStatements().isEmpty()) {
-                        MethodCallExpr println = new MethodCallExpr(new NameExpr("System.out"), "println");
-                        println.addArgument("\"Method Overriding!\"");
-                        ExpressionStmt stmt = new ExpressionStmt(println);
-                        overrideTestCaseBody.getStatements().add(stmt);
-                    } else {
-                        MethodCallExpr call = new MethodCallExpr(new ThisExpr(), originalTestCase.getNameAsString());
-                        ExpressionStmt stmt = new ExpressionStmt(call);
-                        overrideTestCaseBody.getStatements().add(0, stmt);
-                    }
+                    MethodCallExpr println = new MethodCallExpr(new NameExpr("System.out"), "println");
+                    println.addArgument("\"Method Overriding!\"");
+                    overrideSupportTestCase.setBody(new BlockStmt(new NodeList<>(new ExpressionStmt(println))));
                     splitTestCases.add(overrideSupportTestCase);
                     splitTestCasesPrefixes.add(overrideSupportTestCase);
                 }
@@ -1040,7 +948,6 @@ public class TestUtils {
      *
      * @param testClass the test class where the test case is defined
      * @param auxiliaryMethods the methods of the test class that can be inlined in the test case, by signature
-     * @param integratedAuxiliaryMethods the auxiliary methods inlined in the test case
      * @param reassignedVariables the names of the variables of the test case (and of the inlined auxiliary methods)
      *                            assigned besides their declarations: the names are unique within the test case
      * @param fieldNames the names of the fields of the test class
@@ -1053,7 +960,6 @@ public class TestUtils {
     private record NormalizationContext(
             TypeDeclaration<?> testClass,
             HashMap<String, MethodDeclaration> auxiliaryMethods,
-            List<MethodDeclaration> integratedAuxiliaryMethods,
             Set<String> reassignedVariables,
             Set<String> fieldNames,
             NameAllocator variableNames,
@@ -1151,7 +1057,6 @@ public class TestUtils {
             context.inliningStack().pop();
         }
         new ArrayList<>(inlinedBlock.getStatements()).forEach(currentBlockStmt::addStatement);
-        context.integratedAuxiliaryMethods().add(auxiliaryMethod.get());
         return new InliningResult(true, thrownedException);
     }
 
@@ -1223,7 +1128,7 @@ public class TestUtils {
             }
             AssertStmtVisitor assertStmtCollector = new AssertStmtVisitor();
             List<AssertStmt> assertStmts = assertStmtCollector.visit(statement);
-            assertionDistribution.put("assert", assertStmts.size());
+            assertionDistribution.merge("assert", assertStmts.size(), Integer::sum);
         }
         return assertionDistribution;
     }
@@ -1529,109 +1434,119 @@ public class TestUtils {
             testClassOracleDatapointsBuilder.setFocalClass(focalClazz);
             // Process test cases
             for (MethodDeclaration testCase : testCases) {
-                List<AnnotationExpr> annotations = testCase.getAnnotations();
-                // Check if the test case is annotated with @Ignore
-                boolean isIgnore = false;
-                for (AnnotationExpr annotation : annotations) {
-                    if (annotation.getNameAsString().equals("Ignore") || annotation.getNameAsString().equals("Disabled")) {
-                        isIgnore = true;
+                // A failure while processing a split test case drops only its datapoint
+                try {
+                    List<AnnotationExpr> annotations = testCase.getAnnotations();
+                    // Check if the test case is annotated with @Ignore
+                    boolean isIgnore = false;
+                    for (AnnotationExpr annotation : annotations) {
+                        if (annotation.getName().getIdentifier().equals("Ignore") || annotation.getName().getIdentifier().equals("Disabled")) {
+                            isIgnore = true;
+                        }
                     }
-                }
-                // If the test case is annotated with @Ignore, skip it
-                if (isIgnore) {
-                    continue;
-                }
-
-                Statement tgtStatement;
-                if (config.splitStrategy() == SplitStrategyType.ASSERTION) {
-                    // Get the assertion statement in the test case
-                    Optional<Statement> lastAssertion = JavaParserUtils.getLastAssertionInMethodDeclaration(testCase);
-                    if (lastAssertion.isEmpty()) {
-                        logger.error("No assertion found in test case: " + testCase.getNameAsString());
+                    // If the test case is annotated with @Ignore, skip it
+                    if (isIgnore) {
                         continue;
                     }
-                    tgtStatement = lastAssertion.get();
-                } else {
-                    tgtStatement = JavaParserUtils.getLastStatementInMethodDeclaration(testCase);
-                }
 
-                // Remove all comments from the target statement
-                tgtStatement.getAllContainedComments().forEach(Node::remove);
-                tgtStatement.getOrphanComments().forEach(Node::remove);
-                tgtStatement.getComment().ifPresent(Node::remove);
-
-                String target = config.noAssertionTarget();
-
-                if (config.targetStrategy() == TargetStrategyType.ASSERTION) {
+                    Statement tgtStatement;
                     if (config.splitStrategy() == SplitStrategyType.ASSERTION) {
-                        // A `fail(...)` is a target like any other assertion
-                        target = tgtStatement.toString().replaceAll("(?<![a-zA-Z0-9])Assert\\.", "").replaceAll("(?<![a-zA-Z0-9])Assertions\\.", "");
-                    } else if (config.splitStrategy() == SplitStrategyType.STATEMENT) {
+                        // Get the assertion statement in the test case
                         Optional<Statement> lastAssertion = JavaParserUtils.getLastAssertionInMethodDeclaration(testCase);
-                        if (lastAssertion.isPresent()) {
-                            if (lastAssertion.get().equals(tgtStatement)) {
-                                target = tgtStatement.toString().replaceAll("(?<![a-zA-Z0-9])Assert\\.", "").replaceAll("(?<![a-zA-Z0-9])Assertions\\.", "");
+                        if (lastAssertion.isEmpty()) {
+                            logger.error("No assertion found in test case: " + testCase.getNameAsString());
+                            continue;
+                        }
+                        tgtStatement = lastAssertion.get();
+                    } else {
+                        tgtStatement = JavaParserUtils.getLastStatementInMethodDeclaration(testCase);
+                    }
+
+                    // Remove all comments from the target statement
+                    tgtStatement.getAllContainedComments().forEach(Node::remove);
+                    tgtStatement.getOrphanComments().forEach(Node::remove);
+                    tgtStatement.getComment().ifPresent(Node::remove);
+
+                    String target = config.noAssertionTarget();
+
+                    if (config.targetStrategy() == TargetStrategyType.ASSERTION) {
+                        if (config.splitStrategy() == SplitStrategyType.ASSERTION) {
+                            // A `fail(...)` is a target like any other assertion
+                            target = tgtStatement.toString().replaceAll("(?<![a-zA-Z0-9])Assert\\.", "").replaceAll("(?<![a-zA-Z0-9])Assertions\\.", "");
+                        } else if (config.splitStrategy() == SplitStrategyType.STATEMENT) {
+                            Optional<Statement> lastAssertion = JavaParserUtils.getLastAssertionInMethodDeclaration(testCase);
+                            if (lastAssertion.isPresent()) {
+                                if (lastAssertion.get().equals(tgtStatement)) {
+                                    target = tgtStatement.toString().replaceAll("(?<![a-zA-Z0-9])Assert\\.", "").replaceAll("(?<![a-zA-Z0-9])Assertions\\.", "");
+                                }
+                            }
+                        }
+                    } else if (config.targetStrategy() == TargetStrategyType.STATEMENT) {
+                        target = tgtStatement.toString();
+                    }
+                    // Get the parent block statement of the target statement
+                    Node parentNode = tgtStatement.getParentNode().orElseThrow(() -> new IllegalStateException("Parent statement not found"));
+                    if (config.splitStrategy() == SplitStrategyType.ASSERTION && config.targetStrategy() == TargetStrategyType.ASSERTION) {
+                        if (!(config.assertionStrategy() == AssertionStrategyType.KEEP)) {
+                            // Remove target statement from the test case
+                            tgtStatement.remove();
+                        }
+                    } else if (config.splitStrategy() == SplitStrategyType.STATEMENT && config.targetStrategy() == TargetStrategyType.STATEMENT) {
+                        if (!(config.statementStrategy() == StatementStrategyType.KEEP)) {
+                            // Remove target statement from the test case
+                            tgtStatement.remove();
+                        }
+                        // TODO: MANAGE CONDITIONS
+                    } else if (config.splitStrategy() == SplitStrategyType.STATEMENT && config.targetStrategy() == TargetStrategyType.ASSERTION) {
+                        if (!(config.assertionStrategy() == AssertionStrategyType.KEEP)) {
+                            // Remove target statement from the test case
+                            tgtStatement.remove();
+                        }
+                    }
+                    Pair<Callable,List<Callable>> invokedMethodsPair = processInvokedMethods(repoSourcePath, focalClass, testClass, testCase, testsProcessingErrors, config);
+                    if (config.splitStrategy() == SplitStrategyType.ASSERTION && config.assertionStrategy() == AssertionStrategyType.MASK) {
+                        // Mask the target statement
+                        if (parentNode instanceof BlockStmt) {
+                            parentNode.addOrphanComment(new BlockComment(config.mask()));
+                        } else {
+                            if (tgtStatement instanceof BlockStmt) {
+                                tgtStatement.addOrphanComment(new BlockComment(config.mask()));
                             }
                         }
                     }
-                } else if (config.targetStrategy() == TargetStrategyType.STATEMENT) {
-                    target = tgtStatement.toString();
-                }
-                // Get the parent block statement of the target statement
-                Node parentNode = tgtStatement.getParentNode().orElseThrow(() -> new IllegalStateException("Parent statement not found"));
-                if (config.splitStrategy() == SplitStrategyType.ASSERTION && config.targetStrategy() == TargetStrategyType.ASSERTION) {
-                    if (!(config.assertionStrategy() == AssertionStrategyType.KEEP)) {
-                        // Remove target statement from the test case
-                        tgtStatement.remove();
-                    }
-                } else if (config.splitStrategy() == SplitStrategyType.STATEMENT && config.targetStrategy() == TargetStrategyType.STATEMENT) {
-                    if (!(config.statementStrategy() == StatementStrategyType.KEEP)) {
-                        // Remove target statement from the test case
-                        tgtStatement.remove();
-                    }
-                    // TODO: MANAGE CONDITIONS
-                } else if (config.splitStrategy() == SplitStrategyType.STATEMENT && config.targetStrategy() == TargetStrategyType.ASSERTION) {
-                    if (!(config.assertionStrategy() == AssertionStrategyType.KEEP)) {
-                        // Remove target statement from the test case
-                        tgtStatement.remove();
-                    }
-                }
-                Pair<Callable,List<Callable>> invokedMethodsPair = processInvokedMethods(repoSourcePath, focalClass, testClass, testCase, testsProcessingErrors, config);
-                if (config.splitStrategy() == SplitStrategyType.ASSERTION && config.assertionStrategy() == AssertionStrategyType.MASK) {
-                    // Mask the target statement
-                    if (parentNode instanceof BlockStmt) {
-                        parentNode.addOrphanComment(new BlockComment(config.mask()));
-                    } else {
-                        if (tgtStatement instanceof BlockStmt) {
-                            tgtStatement.addOrphanComment(new BlockComment(config.mask()));
+                    if (config.splitStrategy() == SplitStrategyType.STATEMENT && config.targetStrategy() == TargetStrategyType.STATEMENT && config.statementStrategy() == StatementStrategyType.MASK) {
+                        // Mask the target statement
+                        if (parentNode instanceof BlockStmt) {
+                            parentNode.addOrphanComment(new BlockComment(config.mask()));
+                        } else {
+                            if (tgtStatement instanceof BlockStmt) {
+                                tgtStatement.addOrphanComment(new BlockComment(config.mask()));
+                            }
+                        }
+                    } else if (config.splitStrategy() == SplitStrategyType.STATEMENT && config.targetStrategy() == TargetStrategyType.ASSERTION && config.assertionStrategy() == AssertionStrategyType.MASK) {
+                        if (parentNode instanceof BlockStmt) {
+                            parentNode.addOrphanComment(new BlockComment(config.mask()));
+                        } else {
+                            if (tgtStatement instanceof BlockStmt) {
+                                tgtStatement.addOrphanComment(new BlockComment(config.mask()));
+                            }
                         }
                     }
+                    // TODO: Focal method excluded from the analysis for the moment
+                    Callable focalMethodTracto = invokedMethodsPair.getValue0();
+                    List<Callable> invokedMethods = invokedMethodsPair.getValue1();
+                    Callable testPrefix = processCallable(testClass, testCase, invokedMethods);
+                    // TODO: Check id the last statement in the test case is an assertion or not
+                    // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
+                    oracleDatapoints.add(new OracleDatapoint(testPrefix, target));
+                } catch (RuntimeException e) {
+                    String message = "Error processing split test case " + testCase.getNameAsString() + ": " + e.getMessage();
+                    logger.error(message);
+                    String testClassName = testClass.getFullyQualifiedName().orElse(testClass.getNameAsString()).toString();
+                    testsProcessingErrors.computeIfAbsent(testClassName, k -> new HashMap<>())
+                            .computeIfAbsent(testCase.getNameAsString(), k -> new ArrayList<>())
+                            .add(message);
                 }
-                if (config.splitStrategy() == SplitStrategyType.STATEMENT && config.targetStrategy() == TargetStrategyType.STATEMENT && config.statementStrategy() == StatementStrategyType.MASK) {
-                    // Mask the target statement
-                    if (parentNode instanceof BlockStmt) {
-                        parentNode.addOrphanComment(new BlockComment(config.mask()));
-                    } else {
-                        if (tgtStatement instanceof BlockStmt) {
-                            tgtStatement.addOrphanComment(new BlockComment(config.mask()));
-                        }
-                    }
-                } else if (config.splitStrategy() == SplitStrategyType.STATEMENT && config.targetStrategy() == TargetStrategyType.ASSERTION && config.assertionStrategy() == AssertionStrategyType.MASK) {
-                    if (parentNode instanceof BlockStmt) {
-                        parentNode.addOrphanComment(new BlockComment(config.mask()));
-                    } else {
-                        if (tgtStatement instanceof BlockStmt) {
-                            tgtStatement.addOrphanComment(new BlockComment(config.mask()));
-                        }
-                    }
-                }
-                // TODO: Focal method excluded from the analysis for the moment
-                Callable focalMethodTracto = invokedMethodsPair.getValue0();
-                List<Callable> invokedMethods = invokedMethodsPair.getValue1();
-                Callable testPrefix = processCallable(testClass, testCase, invokedMethods);
-                // TODO: Check id the last statement in the test case is an assertion or not
-                // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
-                oracleDatapoints.add(new OracleDatapoint(testPrefix, target));
             }
         } catch (IOException e) {
             logger.error("Error reading file: " + testFilePath);
@@ -2802,7 +2717,7 @@ public class TestUtils {
         for (MethodDeclaration method : testClassMethods) {
             NodeList<AnnotationExpr> methodAnnotations = method.getAnnotations();
             if (methodAnnotations.size() > 0) {
-                if (methodAnnotations.stream().anyMatch(a -> JUnitAnnotationType.isTestAnnotation(a.getNameAsString()))) {
+                if (methodAnnotations.stream().anyMatch(a -> JUnitAnnotationType.isTestAnnotation(a.getName().getIdentifier()))) {
                     if (method.getBody().isPresent()) {
                         // TODO: Check if the method contains method calls to auxiliary methods with assertions
                         //      instead of discard the test method
@@ -2811,7 +2726,7 @@ public class TestUtils {
                         //}
                         testCases.add(method);
                     }
-                } else if (methodAnnotations.stream().anyMatch(a -> a.getNameAsString().equals("Override"))) {
+                } else if (methodAnnotations.stream().anyMatch(a -> a.getName().getIdentifier().equals("Override"))) {
                     if (method.getBody().isPresent()) {
                         if (method.getNameAsString().contains("test") || getNumberOfAssertions(method.getBody().get().getStatements()) > 0) {
                             testCases.add(method);
@@ -2821,7 +2736,7 @@ public class TestUtils {
                     } else {
                         auxiliaryMethods.put(method.getSignature().asString(), method);
                     }
-                } else if (methodAnnotations.stream().anyMatch(a -> JUnitAnnotationType.isSetUpTearDownAnnotation(a.getNameAsString()))) {
+                } else if (methodAnnotations.stream().anyMatch(a -> JUnitAnnotationType.isSetUpTearDownAnnotation(a.getName().getIdentifier()))) {
                     setUpTearDownMethods.put(method.getSignature().asString(), method);
                 } else {
                     auxiliaryMethods.put(method.getSignature().asString(), method);

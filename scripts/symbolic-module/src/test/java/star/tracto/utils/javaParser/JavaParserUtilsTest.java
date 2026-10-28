@@ -1,6 +1,7 @@
 package star.tracto.utils.javaParser;
 
 import com.github.javaparser.StaticJavaParser;
+import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
@@ -8,6 +9,7 @@ import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.stmt.Statement;
+import org.javatuples.Pair;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -256,6 +258,29 @@ class JavaParserUtilsTest {
         JavaParserUtils.collectExistingVariables(existingVariables, clazz.getFields(), List.of(), ClassOrInterfaceDeclaration.class, 0);
 
         assertEquals(Set.of("a", "b", "c"), JavaParserUtils.variableDeclaratorsToNames(existingVariables));
+    }
+
+    /**
+     * A node satisfies the rules if it satisfies at least one of them (a rule lists modifiers required or forbidden);
+     * no rules, no constraint.
+     */
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "public static int a;  | true",
+            "private static int b; | false",
+            "public int c;         | true",
+            "protected int d;      | false"
+    })
+    void checkModifiersRulesRequiresAtLeastOneRuleToBeSatisfied(String field, boolean expected) {
+        List<Modifier> modifiers = StaticJavaParser.parseBodyDeclaration(field).asFieldDeclaration().getModifiers();
+        // public and static, or neither private nor protected
+        List<List<Pair<Modifier.Keyword, Boolean>>> rules = List.of(
+                List.of(new Pair<>(Modifier.Keyword.PUBLIC, true), new Pair<>(Modifier.Keyword.STATIC, true)),
+                List.of(new Pair<>(Modifier.Keyword.PRIVATE, false), new Pair<>(Modifier.Keyword.PROTECTED, false))
+        );
+
+        assertEquals(expected, JavaParserUtils.checkModifiersRules(rules, modifiers));
+        assertTrue(JavaParserUtils.checkModifiersRules(List.of(), modifiers));
     }
 
     @ParameterizedTest
