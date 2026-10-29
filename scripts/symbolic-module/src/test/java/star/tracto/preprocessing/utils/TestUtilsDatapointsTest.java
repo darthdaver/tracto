@@ -185,6 +185,38 @@ class TestUtilsDatapointsTest {
     }
 
     @Test
+    void testPrefixListsTheMethodsOfGenericProjectClassesThatUseTheirTypeParameters() throws IOException {
+        repo.writeSourceClass("com/acme/Box.java", """
+                package com.acme;
+
+                public class Box<T> {
+                    private T content;
+
+                    public void put(T content) {
+                        this.content = content;
+                    }
+
+                    public T get() {
+                        return content;
+                    }
+                }
+                """);
+
+        List<OracleDatapoint> datapoints = datapoints(FixtureRepo.CONFIG, """
+                @Test
+                public void testBox() {
+                    Calc calc = new Calc();
+                    Box<Calc> box = new Box<>();
+                    box.put(calc);
+                    assertEquals(3, box.get().add(1, 2));
+                }
+                """);
+
+        assertEquals(List.of("Calc", "Box", "put"), invokedMethodNames(datapoints.get(0)));
+        assertEquals("T", datapoints.get(0).testPrefix().invokedMethods().get(2).parameters().get(0).type().identifier());
+    }
+
+    @Test
     void assertAllIsTheTargetAsAWhole() throws IOException {
         List<OracleDatapoint> datapoints = datapoints(FixtureRepo.CONFIG, """
                 @Test

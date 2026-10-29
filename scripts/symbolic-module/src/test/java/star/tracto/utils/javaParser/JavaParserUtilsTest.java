@@ -7,6 +7,7 @@ import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.stmt.Statement;
 import org.javatuples.Pair;
@@ -350,6 +351,34 @@ class JavaParserUtilsTest {
                 """), "m");
 
         assertTrue(JavaParserUtils.getLastAssertionInMethodDeclaration(method).isEmpty());
+    }
+
+    @Test
+    void declarationOfAProjectClassReachedByTheSymbolSolverCanBeResolved() throws IOException {
+        Path repoRoot = tempDir.resolve("repo");
+        Files.createDirectories(repoRoot.resolve("src/main/java/com/acme"));
+        Files.writeString(repoRoot.resolve("src/main/java/com/acme/Box.java"), """
+                package com.acme;
+
+                public class Box<T> {
+                    public void put(T content) {}
+                }
+                """);
+        JavaParserUtils.setRepoJavaParser(repoRoot, tempDir.resolve("no-libs").toString());
+        CompilationUnit cu = parse("""
+                package com.acme;
+
+                class C {
+                    void m(Box<C> box) {
+                        box.put(this);
+                    }
+                }
+                """);
+
+        // The declaration is parsed by the type solver of the project classes, not by the parser of the class under analysis
+        MethodDeclaration put = (MethodDeclaration) cu.findFirst(MethodCallExpr.class).orElseThrow().resolve().toAst().orElseThrow();
+
+        assertTrue(put.getParameter(0).getType().resolve().isTypeVariable());
     }
 
     private static CompilationUnit parse(String code) throws IOException {

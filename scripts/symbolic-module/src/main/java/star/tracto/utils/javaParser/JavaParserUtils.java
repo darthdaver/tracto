@@ -102,9 +102,14 @@ public class JavaParserUtils {
         CombinedTypeSolver typeSolver = new CombinedTypeSolver();
         // TODO: Verify code without ReflectionTypeSolver and using java source code libraries
         // typeSolver.add(new ReflectionTypeSolver());
+        // The type solvers parse the classes of the projects and of the libraries with their own configuration (the
+        // default one of JavaParserTypeSolver). The symbol solver is set on it once created (below), so that the
+        // declarations reached by resolving the code under analysis (toAst, getWrappedNode) can be resolved in turn
+        ParserConfiguration typeSolverConfiguration = new ParserConfiguration()
+                .setLanguageLevel(ParserConfiguration.LanguageLevel.BLEEDING_EDGE);
         List<Path> repoProjectsPaths = findPotentialProjectsRoots(repoRootPath);
         for(Path projectPath : repoProjectsPaths) {
-            typeSolver.add(new JavaParserTypeSolver(projectPath.toFile()));
+            typeSolver.add(new JavaParserTypeSolver(projectPath, typeSolverConfiguration));
         }
         String[] classpathElements = classpath.split(":");
         for (String classPathElement : classpathElements) {
@@ -121,7 +126,7 @@ public class JavaParserUtils {
 
                     if (!libraryRootPaths.isEmpty()) {
                         for(Path libraryRootPath : libraryRootPaths) {
-                            typeSolver.add(new JavaParserTypeSolver(libraryRootPath.toFile()));
+                            typeSolver.add(new JavaParserTypeSolver(libraryRootPath, typeSolverConfiguration));
                         }
                     } else {
                         boolean jarFilesFolder = false;
@@ -151,6 +156,7 @@ public class JavaParserUtils {
             }
         }
         symbolSolver = new JavaSymbolSolver(typeSolver);
+        typeSolverConfiguration.setSymbolResolver(symbolSolver);
         ParserConfiguration parserConfiguration = new ParserConfiguration()
                 .setSymbolResolver(symbolSolver)
                 .setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_17); // or JAVA_17
