@@ -25,5 +25,5 @@ while IFS=, read -r repo_id repo_name; do
     echo "==============================" >> "$log_file"
     echo "Repo: $repo_name  ID: $repo_id" >> "$log_file"
     echo "==============================" >> "$log_file"
-    java -jar "${SYMBOLIC_JAR}" "${mode}" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_TRACTO_SYMBOLIC_DIR}" "${SYMBOLIC_DIR}" "${OUTPUT_SYMBOLIC_DIR}/raw-oracles-dataset-inference/${repo_id}" "${port}" "${config_num}" 24 >> "$log_file" 2>&1
+    java -jar "${SYMBOLIC_JAR}" "${mode}" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_TRACTO_SYMBOLIC_DIR}" "${SYMBOLIC_DIR}" "${OUTPUT_SYMBOLIC_DIR}/raw-oracles-dataset-inference/${repo_id}" "${port}" "${config_num}" auto >> "$log_file" 2>&1
 done < "$TEST_SET_REPOS_LIST_FILE"

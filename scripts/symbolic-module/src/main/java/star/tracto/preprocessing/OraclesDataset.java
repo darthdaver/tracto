@@ -13,6 +13,7 @@ import star.tracto.preprocessing.components.TestStats;
 import star.tracto.preprocessing.utils.JavaFileCollector;
 import star.tracto.preprocessing.utils.TestUtils;
 import star.tracto.utils.FilesUtils;
+import star.tracto.utils.JavaUtils;
 import star.tracto.utils.javaParser.JavaParserUtils;
 
 import java.io.IOException;
@@ -69,7 +70,12 @@ public class OraclesDataset {
         // Define test mapping hash map
         HashMap<Path, Path> mappedTests = new HashMap<>();
         // Define statistics hash map
-        HashMap<String, Integer> statistics = new HashMap<>();
+        HashMap<String, Object> statistics = new HashMap<>();
+        // The Java version of the repository and the JDKs whose sources are given to the symbol solver
+        statistics.put("javaVersion", JavaUtils.getJavaVersion().orElse(null));
+        statistics.put("javaVersionSource", JavaUtils.getJavaVersionSource());
+        statistics.put("jdkVersions", JavaUtils.getJdkVersions());
+        statistics.put("runtimeJdkVersion", JavaUtils.getRuntimeJdkVersion().orElse(null));
         // Define list of oracles datapoints
         List<TestClazzDatapoints<OracleDatapoint>> testClassesOracleDatapoints = new ArrayList<>();
         // Generate directories to output path if they do not exist

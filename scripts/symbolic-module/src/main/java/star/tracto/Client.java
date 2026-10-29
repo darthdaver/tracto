@@ -31,13 +31,14 @@ public class Client {
         Path inputDatasetPath = Path.of(args[5]);;
         int serverPort = Integer.parseInt(args[6]);
         int promptConfig = Integer.parseInt(args[7]);
-        int javaVersion = Integer.parseInt(args[8]);
+        // The Java version of the repository: a major version, or `auto` to detect it from its build files
+        String javaVersion = args[8];
         Path projectOutputPath = outputPath.resolve(projectIdentifier);
         Path nextTokenPath = projectOutputPath.resolve("next-token");
         FilesUtils.createDirectories(nextTokenPath);
         FilesUtils.createDirectories(projectOutputPath);
         String mlModelAPIUrl = String.format("http://127.0.0.1:%s/api/next_token?filepath=%s/token-step.json&config=%s&project_id=%s", serverPort, nextTokenPath, promptConfig, projectIdentifier);
-        JavaUtils.setJavaLibPath(basePath, javaVersion);
+        JavaUtils.setJavaLibPath(basePath, javaVersion, repoRootPath);
         String classpath = JavaUtils.initializeJavaClassPath();
         // Update classpath with the libraries paths
         List<Path> librariesPaths = SymbolicModule.findLibrariesPaths(repoRootPath);

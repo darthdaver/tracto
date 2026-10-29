@@ -31,8 +31,8 @@ public class SymbolicModule {
                 Path repoRootPath = Path.of(args[2]);
                 Path outputPath = Path.of(args[3]);
                 Path basePath = Path.of(args[4]);
-                int javaVersion = Integer.parseInt(args[5]);
-                JavaUtils.setJavaLibPath(basePath, javaVersion);
+                // The Java version of the repository: a major version, or `auto` to detect it from its build files
+                JavaUtils.setJavaLibPath(basePath, args[5], repoRootPath);
                 String classpath = JavaUtils.initializeJavaClassPath();
                 if (datasetType.equals("oracles")) {
                     Path configPath = Path.of(args[6]);

@@ -77,6 +77,31 @@ In particular, the script installs:
 
 **The script does not install anything globally, but only local versions within the project.**
 
+### Sources of the Java standard library
+The symbol solver resolves the classes and methods of the Java standard library from the sources of the JDKs in the
+`lib` folder (`lib/java<version>/src`), whose source folders are listed in `lib/java_classpaths.json`. The scripts of
+the datasets download them in their init phase (from `LIB_JDKS_LINK`, defined in `bash/utils/local_variables.sh`) when
+the folder of a version listed in `lib/java_classpaths.json` is missing.
+
+The folder is built by `bash/utils/setup-jdk-sources.sh`, which downloads the Eclipse Temurin JDKs from Adoptium and
+keeps only their sources:
+
+```shell
+bash bash/utils/setup-jdk-sources.sh --list                  # the versions available and the ones already in lib
+bash bash/utils/setup-jdk-sources.sh [version...]           # adds the missing versions (all the available ones by default)
+bash bash/utils/setup-jdk-sources.sh --archive <file>.zip   # also builds the archive to upload for LIB_JDKS_LINK
+```
+
+The symbolic module takes the Java version of the repository under analysis as argument (`auto` in the scripts):
+`auto` detects the version declared by the build files of the repository (Maven POMs, Gradle build scripts) and uses
+only the JDK with the smallest version not older than it; when the repository declares no version, it uses the newest
+JDK, then the oldest one (for the classes removed from the newer versions). A number (for example `17`) forces the
+version. When the selected JDK is older than the JVM running the module, the symbol solver also gets the sources of the 
+JDK of the running JVM, after the selected ones: JavaParser describes some classes of the standard library (such as 
+`java.lang.Enum`) by reflection on the running JVM, and they reference classes added by the newer versions. The version 
+and the JDKs used are recorded in the statistics of the oracles dataset (`javaVersion`, `javaVersionSource`, `jdkVersions`, 
+`runtimeJdkVersion`).
+
 ## Development
 
 ### Oracles dataset

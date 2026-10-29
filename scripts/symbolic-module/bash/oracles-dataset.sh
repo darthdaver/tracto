@@ -36,7 +36,15 @@ if [ ! -e "${SYMBOLIC_JAR}" ]; then
   mvn clean package -DskipTests
 fi
 
-if [ ! -d "${LIB_DIR}/java8" ] || [ ! -d "${LIB_DIR}/java11" ] || [ ! -d "${LIB_DIR}/java17" ] || [ ! -d "${LIB_DIR}/java21" ] || [ ! -d "${LIB_DIR}/java24" ]; then
+# Download the sources of the Java standard library if the folder of a version listed in `java_classpaths.json` is
+# missing (the archive is built by `utils/setup-jdk-sources.sh`)
+missing_jdk_sources=false
+for java_version in $(grep -oE '"[0-9]+"' "${LIB_DIR}/java_classpaths.json" | tr -d '"'); do
+    if [ ! -d "${LIB_DIR}/java${java_version}" ]; then
+        missing_jdk_sources=true
+    fi
+done
+if [ "${missing_jdk_sources}" == true ]; then
     if [ -d "${LIB_DIR}" ]; then
         mv "${LIB_DIR}/java_classpaths.json" "${LIB_DIR}/../java_classpaths.json"
         rm -rf "${LIB_DIR}/"*
@@ -113,7 +121,7 @@ while IFS=, read -r repo_id repo_name; do
 #        cd "$SYMBOLIC_DIR"
 #        # Generate Oracle dataset
 #        sdk use java "$JAVA21"
-#        java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" 24 "${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" >> "$log_file" 2>&1
+#        java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" auto"${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" >> "$log_file" 2>&1
 #      fi
 
       echo "Maven processing code: ${repo_id}-${repo_name}-${project_type}-${pom_count}-${junit_plugin}" >> "$log_file"
@@ -123,9 +131,9 @@ while IFS=, read -r repo_id repo_name; do
         # Generate Oracle dataset
         sdk use java "$JAVA21"
         if [ "$mode" == "training" ]; then
-          java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" 24 "${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" >> "$log_file" 2>&1
+          java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" auto"${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" >> "$log_file" 2>&1
         else
-          java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" 24 "${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" "${OUTPUT_MINER_DIR}/${repo_name}.json" >> "$log_file" 2>&1
+          java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" auto"${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" "${OUTPUT_MINER_DIR}/${repo_name}.json" >> "$log_file" 2>&1
         fi
       else
         echo "Project ${repo_name} do not use JUnit library to test, skipping."  >> "$log_file"

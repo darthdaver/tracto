@@ -10,6 +10,6 @@ PY_UTILS_DIR="${SYMBOLIC_DIR}/utils"
 # Libraries
 LIB_DIR="${SYMBOLIC_DIR}/lib"
 # Links
-LIB_JDKS_LINK="https://drive.switch.ch/index.php/s/TLGLFHnw6ilbdWl/download"
+LIB_JDKS_LINK="https://drive.switch.ch/public.php/dav/files/Mbzk6MHbx6iNZRP/?accept=zip"
 # Jars
 FERNFLOWER_JAR="${SYMBOLIC_DIR}/resources/fernflower.jar"

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import star.tracto.utils.JavaUtils;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -147,6 +148,23 @@ class OraclesDatasetTest {
                 "assertEquals(4, calc.total());",
                 "fail(\"negative sum\");"
         ), targets());
+    }
+
+    @Test
+    void statisticsRecordTheJavaVersionOfTheRepositoryAndTheJdksOfTheSymbolSolver() throws IOException {
+        write("pom.xml", "<project><properties><maven.compiler.release>9</maven.compiler.release></properties></project>");
+        Path base = tempDir.resolve("base");
+        Files.createDirectories(base.resolve("lib/java8/src"));
+        Files.createDirectories(base.resolve("lib/java11/src/java.base"));
+        Files.writeString(base.resolve("lib/java_classpaths.json"), "{\"8\": [\"src\"], \"11\": [\"src/java.base\"]}");
+        JavaUtils.setJavaLibPath(base, "auto", repoRoot);
+
+        OraclesDataset.generate(repoRoot, Optional.empty(), COMMITTED_CONFIG, outputPath, PROJECT, emptyClasspath.toString());
+
+        JsonNode statistics = readJson(outputPath.resolve("statistics-oracles-dataset-training/fixture/statistics-fixture.json"));
+        assertEquals(9, statistics.get("javaVersion").asInt());
+        assertEquals("detected", statistics.get("javaVersionSource").asText());
+        assertEquals("[11]", statistics.get("jdkVersions").toString());
     }
 
     @Test
