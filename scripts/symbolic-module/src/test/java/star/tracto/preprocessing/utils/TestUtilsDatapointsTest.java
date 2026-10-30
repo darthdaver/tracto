@@ -217,6 +217,55 @@ class TestUtilsDatapointsTest {
     }
 
     @Test
+    void callWithAPrimitiveArrayArgumentToAnOverloadedMethodIsAnInvokedMethod() throws IOException {
+        // JavaParser 3.28.x finds the call of count ambiguous (JavaParser issue 4991): before the workaround, the
+        // MethodAmbiguityException stopped the matching of the whole test prefix
+        repo.writeSourceClass("com/acme/Bytes.java", """
+                package com.acme;
+
+                public class Bytes {
+                    public static int count(byte[] values) { return values.length; }
+                    public static int count(int[] values) { return values.length; }
+                    public static int count(long[] values) { return values.length; }
+                }
+                """);
+
+        List<OracleDatapoint> datapoints = datapoints(FixtureRepo.CONFIG, """
+                @Test
+                public void testCount() {
+                    Calc calc = new Calc();
+                    byte[] data = {1, 2};
+                    int count = Bytes.count(data);
+                    calc.accumulate(count);
+                    assertEquals(2, calc.total());
+                }
+                """);
+
+        assertEquals(List.of("Calc", "count", "accumulate"), invokedMethodNames(datapoints.get(0)));
+        assertEquals("public static int count(byte[] values)", datapoints.get(0).testPrefix().invokedMethods().get(1).signature());
+    }
+
+    @Test
+    void testCaseWithARecordPatternProducesItsDatapoint() throws IOException {
+        List<OracleDatapoint> datapoints = datapoints(FixtureRepo.CONFIG, """
+                record Pair(int a, int b) {}
+
+                @Test
+                public void testPair() {
+                    Calc calc = new Calc();
+                    Object pair = new Pair(1, 2);
+                    if (pair instanceof Pair(int a, int b)) {
+                        assertEquals(3, calc.add(a, b));
+                    }
+                }
+                """);
+
+        assertEquals(List.of("assertEquals(3, calc.add(a, b));"), datapoints.stream().map(OracleDatapoint::target).toList());
+        assertEquals("{ Calc calc = new Calc(); Object pair = new Pair(1, 2); if (pair instanceof Pair(int a, int b)) { /*<MASK_PLACEHOLDER>*/ } }",
+                prefixBody(datapoints.get(0)));
+    }
+
+    @Test
     void assertAllIsTheTargetAsAWhole() throws IOException {
         List<OracleDatapoint> datapoints = datapoints(FixtureRepo.CONFIG, """
                 @Test
@@ -321,6 +370,22 @@ class TestUtilsDatapointsTest {
         }
 
         assertEquals(List.of("testAdd_split_1"), datapoints.stream().map(d -> d.testPrefix().identifier()).toList());
+    }
+
+    @Test
+    void unexpectedErrorWhileMatchingAStatementDropsOnlyItsInvokedMethods() throws IOException {
+        // As the UnsupportedOperationException of JavaParser 3.28.2 on a lambda of eec ("Return-Type-Substituable must
+        // be implemented on reference type"), injected for the call of add
+        List<OracleDatapoint> datapoints;
+        try (MockedStatic<JavaParserUtils> javaParserUtils = Mockito.mockStatic(JavaParserUtils.class, Mockito.CALLS_REAL_METHODS)) {
+            javaParserUtils.when(() -> JavaParserUtils.resolveCallExpression(Mockito.any(),
+                            Mockito.argThat(call -> call != null && call.isMethodCallExpr() && call.asMethodCallExpr().getNameAsString().equals("add")),
+                            Mockito.any()))
+                    .thenThrow(new UnsupportedOperationException("injected failure"));
+            datapoints = datapoints(FixtureRepo.CONFIG, TEST_ADD);
+        }
+
+        assertEquals(List.of("Calc", "accumulate"), invokedMethodNames(datapoints.get(1)));
     }
 
     /**

@@ -66,6 +66,8 @@ Found while writing the Step 8 tests (details in `docs/fixes/step-08-test-infras
 | D33 | splitter, `@Override` test cases | The split test cases of a test case overriding a test case of the superclass keep `@Override`, although with their new names they override nothing: the split test class does not compile, and the annotation is listed in the test prefixes. Found and fixed in Step 15 (kept by the split test cases of a test case without a test annotation, recognized as a test case by `@Override`). |
 | D34 | `JavaParserUtils.setRepoJavaParser` | The classes found by the type solvers (the projects of the repository, the JDK sources) are parsed without the symbol resolver: resolving a node of a declaration reached through the symbol solver (`toAst`, `getWrappedNode`) throws "Symbol resolution not configured". `processInvokedMethods` drops the methods whose description needs such a resolution, those with a type parameter of their class in the signature (`SuffixTrie<V>.put`, `List<E>.get`): 4,738 statements of the prefixes in the Step 15 A/B run. Found in the error statistics of the Step 15 A/B run and fixed in Step 16. |
 | D35 | `JavaUtils.initializeJavaClassPath` | All the JDKs of `lib/java_classpaths.json` are given to the symbol solver in the order of the file (Java 8 first), whatever the Java version argument (`24` in the scripts): the first JDK containing a class wins, so the JDK classes are always those of Java 8, and the methods added after Java 8 (`List.of`, `String.isBlank`, `Stream.toList`) never resolve. Found after Step 16 and fixed in Step 17, with the detection of the Java version of the repository. |
+| D36 | `JavaParserUtils.setRepoJavaParser` | The code under analysis is parsed at `JAVA_17` and the type solvers at the `BLEEDING_EDGE` of JavaParser 3.26.1 (`JAVA_21`): the syntax of Java 21 to 25 (record patterns, unnamed variables, statements before `super()`, module imports) is rejected and, as the parse problems are not checked, lost silently (a test case asserting within an `if` with a record pattern gives no datapoint); the focal classes declared as records make the processing of their whole test class fail ("Cannot get a reference type declaration from RecordDeclaration": 9 test classes of cryptofs). Fixed in Step 18 (JavaParser 3.28.2, one configuration at `JAVA_26`). |
+| D37 | JavaParser 3.28.x, method resolution | Defects of the library, fixed on its master branch after 3.28.2: arrays of primitive types are widened or boxed component by component (JavaParser #4991, #5065, #5146: `Arrays.sort(byte[])` ambiguous), the return types of the candidate methods must be resolvable (a test helper returning a class of Mockito or Hamcrest is not resolved), an `UnsupportedOperationException` on some lambdas; any of them stopped the matching of the invoked methods of the whole test prefix. Worked around in Step 18 (`JavaParserUtils.resolveMethodCall`, errors caught per statement). |
 
 Every confirmed defect with a simple trigger has a `@Disabled` test named after it (map in the Step 8 document).
 
@@ -229,3 +231,31 @@ java-uuid-generator, as for Steps 1–7.
 8. **Step 15 – robustness and clean-up**: D14, D16–D18, D20–D22, D25, dead code (the `temp` drafts were deleted on 2026-10-26). *Done on 2026-10-27, together with D33.*
 9. **Step 16 – invoked methods of the test prefixes** (D34), found after the plan in the error statistics of the Step 15 A/B run. *Done on 2026-10-28.*
 10. **Step 17 – Java version of the repository and JDK sources** (D35): the version declared by the build files selects the JDK whose sources are given to the symbol solver; the sources of the JDKs are built by `bash/utils/setup-jdk-sources.sh`. *Done on 2026-10-29.*
+11. **Step 18 – JavaParser 3.28.2 and a single parser configuration** (D36), with the workaround of the defects of the library (D37). *Done on 2026-10-30.*
+
+## Open items after Step 18 (2026-10-30)
+
+Found during Steps 15–18, not fixed yet; in the suggested order:
+
+1. **Compile check of the generated classes.** The split test classes have never been compiled within the real projects
+   (`mvn test-compile` of a few A/B projects with the generated classes in place): the only check of the whole output.
+2. **Inlining within flattened try statements.** `flatTryStmt` returns a detached block, so `AuxiliaryMethodInliner`
+   cannot resolve the calls of auxiliary methods within a try-with-resources or a try/finally ("The node is not inserted
+   in a CompilationUnit"): 37 calls in the A/B projects (eec 32, jsoup 3, plexus-utils 2) stay calls, their assertions
+   are not datapoints.
+3. **Dependencies of the projects.** `oracles-dataset.sh` gives the symbol solver no dependency of the project (the
+   `processed_libs` block is commented out): the types of Mockito, Hamcrest, JUnit 4 rules, servlets are the largest
+   category of errors of the invoked methods (esapi 896, ffmpeg 605 unsolved symbols), and a helper returning one of them
+   needs the workaround of Step 18.
+4. **JavaParser release.** Upgrade to the first release after 3.28.2 (it fixes #4991/#5065 and the resolution of the
+   return types), rerun the A/B, and simplify `JavaParserUtils.resolveMethodCall`. The fix of #5146 prepared for
+   JavaParser is not submitted. 16 calls of statically imported matchers of cryptofs are resolved only by the release.
+5. **Tokens dataset.** The order of the candidate tokens and of the contextual invoked methods changes at each run; the
+   candidates include non-public members of the JDK classes (`String.isLatin1`, `LATIN1`); they miss the variables of
+   nested blocks and the `length` of arrays ("Unexpected token"); the element type of `iterator().next()` on a generic
+   collection is not inferred at one step of crawler-commons.
+6. **Smaller items.** Anonymous classes are named with a random UUID (`Anonymous-<uuid>`), different at each run; the
+   normalizer does not support `switch` statements (kept as they are, reported); the `keep-try-catch` and `statement`
+   modes are covered by tests only; 21 of the 135 input repositories declare their Java version only in a parent POM
+   (the newest and the oldest JDK are used); the Mockito of the tests (5.2) needs `net.bytebuddy.experimental` on
+   Java 21.

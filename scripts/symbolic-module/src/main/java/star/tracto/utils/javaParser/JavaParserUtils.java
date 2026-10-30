@@ -11,6 +11,7 @@ import com.github.javaparser.ast.stmt.*;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.ReferenceType;
 import com.github.javaparser.ast.type.TypeParameter;
+import com.github.javaparser.resolution.MethodAmbiguityException;
 import com.github.javaparser.resolution.MethodUsage;
 import com.github.javaparser.resolution.UnsolvedSymbolException;
 import com.github.javaparser.resolution.declarations.*;
@@ -51,6 +52,7 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static org.plumelib.util.CollectionsPlume.mapList;
@@ -63,6 +65,12 @@ public class JavaParserUtils {
     private static JavaParser javaParser;
     private static JavaSymbolSolver symbolSolver;
     private static final Logger logger = LoggerFactory.getLogger(JavaParserUtils.class);
+    /**
+     * The language level of the parser, for the code under analysis and for the classes found by the type solvers: the
+     * highest one of JavaParser, which accepts the syntax of every Java version, from Java 8 to Java 26 (named instead
+     * of {@code BLEEDING_EDGE}, so that it does not change silently with JavaParser).
+     */
+    private static final ParserConfiguration.LanguageLevel LANGUAGE_LEVEL = ParserConfiguration.LanguageLevel.JAVA_26;
     /** Regex to match the Javadoc of a class or method. */
     private static final Pattern javadocPattern = Pattern.compile("/\\*\\*(.*?)\\*/", Pattern.DOTALL);
     /** Regex to match the binary name of a class (e.g. "package.submodule.InnerClass$OuterClass") */
@@ -102,14 +110,13 @@ public class JavaParserUtils {
         CombinedTypeSolver typeSolver = new CombinedTypeSolver();
         // TODO: Verify code without ReflectionTypeSolver and using java source code libraries
         // typeSolver.add(new ReflectionTypeSolver());
-        // The type solvers parse the classes of the projects and of the libraries with their own configuration (the
-        // default one of JavaParserTypeSolver). The symbol solver is set on it once created (below), so that the
-        // declarations reached by resolving the code under analysis (toAst, getWrappedNode) can be resolved in turn
-        ParserConfiguration typeSolverConfiguration = new ParserConfiguration()
-                .setLanguageLevel(ParserConfiguration.LanguageLevel.BLEEDING_EDGE);
+        // A single configuration parses the code under analysis and the classes found by the type solvers (the
+        // projects of the repository, the JDK sources). The symbol solver is set on it once created (below), so that
+        // the declarations reached by resolving the code under analysis (toAst, getWrappedNode) can be resolved in turn
+        ParserConfiguration parserConfiguration = new ParserConfiguration().setLanguageLevel(LANGUAGE_LEVEL);
         List<Path> repoProjectsPaths = findPotentialProjectsRoots(repoRootPath);
         for(Path projectPath : repoProjectsPaths) {
-            typeSolver.add(new JavaParserTypeSolver(projectPath, typeSolverConfiguration));
+            typeSolver.add(new JavaParserTypeSolver(projectPath, parserConfiguration));
         }
         String[] classpathElements = classpath.split(":");
         for (String classPathElement : classpathElements) {
@@ -126,7 +133,7 @@ public class JavaParserUtils {
 
                     if (!libraryRootPaths.isEmpty()) {
                         for(Path libraryRootPath : libraryRootPaths) {
-                            typeSolver.add(new JavaParserTypeSolver(libraryRootPath, typeSolverConfiguration));
+                            typeSolver.add(new JavaParserTypeSolver(libraryRootPath, parserConfiguration));
                         }
                     } else {
                         boolean jarFilesFolder = false;
@@ -156,10 +163,7 @@ public class JavaParserUtils {
             }
         }
         symbolSolver = new JavaSymbolSolver(typeSolver);
-        typeSolverConfiguration.setSymbolResolver(symbolSolver);
-        ParserConfiguration parserConfiguration = new ParserConfiguration()
-                .setSymbolResolver(symbolSolver)
-                .setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_17); // or JAVA_17
+        parserConfiguration.setSymbolResolver(symbolSolver);
         javaParser = new JavaParser(parserConfiguration);
         StaticJavaParser.setConfiguration(parserConfiguration);
         return javaParser;
@@ -770,6 +774,107 @@ public class JavaParserUtils {
     }
 
     /**
+     * Resolves a method call, working around two defects of JavaParser 3.28.x (both fixed after 3.28.2):
+     * <ul>
+     *   <li>it widens or boxes the components of an array of primitive types (JavaParser issues 4991 and 5065): an
+     *   {@code int[]} argument is accepted for {@code long[]}, {@code double[]} or {@code Integer[]} parameters, so the
+     *   call of an overloaded method such as {@code Arrays.sort(int[])} is reported as ambiguous;</li>
+     *   <li>it resolves the return type of the candidate methods while choosing one, and fails when that type is
+     *   missing from the classpath (a helper method of a test returning a type of Mockito).</li>
+     * </ul>
+     * The method of the type of the scope with the name and the number of arguments of the call is then returned when
+     * it is the only one; among several overloads, the one whose parameter types are exactly the types of the
+     * arguments (the overload javac selects in these cases), when it is the only one.
+     *
+     * @param call the method call
+     * @return the declaration of the invoked method
+     * @throws MethodAmbiguityException if the call is ambiguous and no single method matches it
+     * @throws UnsolvedSymbolException if the call cannot be resolved and no single method matches it
+     */
+    public static ResolvedMethodDeclaration resolveMethodCall(MethodCallExpr call) {
+        ResolvedMethodDeclaration method;
+        try {
+            method = call.resolve();
+        } catch (MethodAmbiguityException | UnsolvedSymbolException e) {
+            return methodMatchingTheCall(call).orElseThrow(() -> e);
+        }
+        // Depending on the order of the candidates, JavaParser 3.28.x can also choose a wrong overload without error
+        // (Arrays.copyOf(char[], int) resolved to copyOf(double[], int) in jsoup)
+        if (passesAnArrayToAnotherArrayType(call, method)) {
+            return methodMatchingTheCall(call).orElse(method);
+        }
+        return method;
+    }
+
+    /**
+     * Whether a parameter of an array type of the method receives an argument of another array type, one of the two
+     * holding primitive values: arrays of primitive types are invariant (JLS 4.10.3), so javac never selects such a
+     * method.
+     */
+    private static boolean passesAnArrayToAnotherArrayType(MethodCallExpr call, ResolvedMethodDeclaration method) {
+        try {
+            for (int i = 0; i < Math.min(method.getNumberOfParams(), call.getArguments().size()); i++) {
+                if (method.getParam(i).isVariadic()) {
+                    break;
+                }
+                ResolvedType parameterType = method.getParam(i).getType();
+                if (!parameterType.isArray()) {
+                    continue;
+                }
+                ResolvedType argumentType = call.getArgument(i).calculateResolvedType();
+                if (argumentType.isArray()
+                        && !argumentType.describe().equals(parameterType.describe())
+                        && (argumentType.asArrayType().getComponentType().isPrimitive() || parameterType.asArrayType().getComponentType().isPrimitive())) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Returns the only method of the type of the scope with the name and the number of arguments of the call, or, among
+     * several overloads, the only one whose parameter types are exactly the types of the arguments.
+     */
+    private static Optional<ResolvedMethodDeclaration> methodMatchingTheCall(MethodCallExpr call) {
+        try {
+            ResolvedReferenceTypeDeclaration declaringType = call.getScope().isPresent()
+                    ? call.getScope().get().calculateResolvedType().asReferenceType().getTypeDeclaration().orElseThrow()
+                    : call.findAncestor(TypeDeclaration.class).orElseThrow().resolve();
+            List<ResolvedMethodDeclaration> candidates = methodsOf(declaringType).stream()
+                    .filter(method -> method.getName().equals(call.getNameAsString()) && method.getNumberOfParams() == call.getArguments().size())
+                    .toList();
+            if (candidates.size() == 1) {
+                return Optional.of(candidates.get(0));
+            }
+            List<String> argumentTypes = call.getArguments().stream()
+                    .map(argument -> argument.calculateResolvedType().describe())
+                    .toList();
+            List<ResolvedMethodDeclaration> exactOverloads = candidates.stream()
+                    .filter(method -> IntStream.range(0, argumentTypes.size())
+                            .allMatch(i -> method.getParam(i).getType().describe().equals(argumentTypes.get(i))))
+                    .toList();
+            return exactOverloads.size() == 1 ? Optional.of(exactOverloads.get(0)) : Optional.empty();
+        } catch (RuntimeException e) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Returns the methods of a type, the inherited ones included; only its declared methods when its ancestors cannot
+     * be resolved.
+     */
+    private static List<ResolvedMethodDeclaration> methodsOf(ResolvedReferenceTypeDeclaration type) {
+        try {
+            return type.getAllMethods().stream().map(MethodUsage::getDeclaration).toList();
+        } catch (RuntimeException e) {
+            return new ArrayList<>(type.getDeclaredMethods());
+        }
+    }
+
+    /**
      * Process the callable expression return the corresponding {@link CallableDeclaration}
      * @param typeDeclaration the type declaration corresponding to the class where to search the definition of the method
      *                        or constructor (i.e. the callable expression) defined
@@ -788,7 +893,7 @@ public class JavaParserUtils {
             if (exprType == CallableExprType.METHOD) {
                 // Try to resolve the method call expression to a method declaration
                 MethodCallExpr methodCallExpr = callExpr.asMethodCallExpr();
-                Node resolvedCallExpr = methodCallExpr.resolve().toAst().orElseThrow(() -> new UnsolvedSymbolException(methodCallExpr.getNameAsString()));
+                Node resolvedCallExpr = resolveMethodCall(methodCallExpr).toAst().orElseThrow(() -> new UnsolvedSymbolException(methodCallExpr.getNameAsString()));
                 if (resolvedCallExpr instanceof MethodDeclaration) {
                     focalMethod = (MethodDeclaration) resolvedCallExpr;
                     // Retrieve the method within the type declaration to avoid to lose the symbol solver functionality

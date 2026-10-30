@@ -2269,7 +2269,7 @@ public class TestUtils {
                                         if (resolvedMethodDeclaration == null) {
                                             throw new CandidateCallableDeclarationNotFoundException("The method in the expression " + expr.toString() + " cannot be resolved in the given focal class " + focalClass.getNameAsString());
                                         }
-                                        invokedMethods.add(processMethodCallExpr(expr.asMethodCallExpr().resolve()));
+                                        invokedMethods.add(processMethodCallExpr(JavaParserUtils.resolveMethodCall(expr.asMethodCallExpr())));
                                     }
                                 }
                             }
@@ -2350,7 +2350,7 @@ public class TestUtils {
                                 fromExternalLibrary = true;
                                 try {
                                     if (exprType == CallableExprType.METHOD) {
-                                        invokedMethods.add(processMethodCallExpr(expr.asMethodCallExpr().resolve()));
+                                        invokedMethods.add(processMethodCallExpr(JavaParserUtils.resolveMethodCall(expr.asMethodCallExpr())));
                                     } else {
                                         invokedMethods.add(processObjectCreationExpr(expr.asObjectCreationExpr()));
                                     }
@@ -2368,12 +2368,10 @@ public class TestUtils {
                                 }
                             }
                         }
-                    } catch (
-                            NoFocalMethodMatchingException | NoPrimaryTypeException | UnrecognizedExprException |
-                            CandidateCallableDeclarationNotFoundException |
-                            CandidateCallableMethodUsageNotFoundException |
-                            MultipleCandidatesException | UnsolvedSymbolException | IllegalStateException e
-                    ) {
+                    } catch (RuntimeException e) {
+                        // An error drops the invoked methods of this statement only: the matching exceptions of the
+                        // module, and the errors of the symbol solver (an UnsupportedOperationException or a
+                        // MethodAmbiguityException of JavaParser stopped the matching of the whole test prefix)
                         String errorMsg = "Error processing statement " + exprStmt + " of test case " + testName;
                         // logger.error(errorMsg);
                         testsProcessingErrors.get(testClassName).get(testName).add(errorMsg + " | " + e.getMessage());
