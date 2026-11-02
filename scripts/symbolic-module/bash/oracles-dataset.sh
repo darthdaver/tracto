@@ -121,7 +121,7 @@ while IFS=, read -r repo_id repo_name; do
 #        cd "$SYMBOLIC_DIR"
 #        # Generate Oracle dataset
 #        sdk use java "$JAVA21"
-#        java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" auto"${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" >> "$log_file" 2>&1
+#        java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" auto "${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" >> "$log_file" 2>&1
 #      fi
 
       echo "Maven processing code: ${repo_id}-${repo_name}-${project_type}-${pom_count}-${junit_plugin}" >> "$log_file"
@@ -131,9 +131,9 @@ while IFS=, read -r repo_id repo_name; do
         # Generate Oracle dataset
         sdk use java "$JAVA21"
         if [ "$mode" == "training" ]; then
-          java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" auto"${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" >> "$log_file" 2>&1
+          java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" auto "${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" >> "$log_file" 2>&1
         else
-          java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" auto"${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" "${OUTPUT_MINER_DIR}/${repo_name}.json" >> "$log_file" 2>&1
+          java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" auto "${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" "${OUTPUT_MINER_DIR}/${repo_name}.json" >> "$log_file" 2>&1
         fi
       else
         echo "Project ${repo_name} do not use JUnit library to test, skipping."  >> "$log_file"

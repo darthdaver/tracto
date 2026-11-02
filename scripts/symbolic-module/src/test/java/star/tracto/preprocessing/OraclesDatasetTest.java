@@ -151,6 +151,36 @@ class OraclesDatasetTest {
     }
 
     @Test
+    void statisticsCountTheAssertionsWithALambdaBlockByOutcome() throws IOException {
+        write("src/test/java/com/acme/CalcTest.java", """
+                package com.acme;
+
+                import org.junit.jupiter.api.Test;
+                import static org.junit.jupiter.api.Assertions.*;
+
+                public class CalcTest {
+                    @Test
+                    public void testBlocks() {
+                        Calc calc = new Calc();
+                        assertDoesNotThrow(() -> { calc.accumulate(1); calc.add(1, 2); });
+                        assertDoesNotThrow(() -> { calc.accumulate(1); assertEquals(2, calc.total()); });
+                        assertThrows(ArithmeticException.class, () -> { calc.accumulate(1); assertEquals(0, 1 / calc.add(0, 0)); });
+                    }
+                }
+                """);
+
+        OraclesDataset.generate(repoRoot, Optional.empty(), COMMITTED_CONFIG, outputPath, PROJECT, emptyClasspath.toString());
+
+        JsonNode statistics = readJson(outputPath.resolve("statistics-oracles-dataset-training/fixture/statistics-fixture.json"));
+        JsonNode assertionLambdaBlocks = statistics.get("assertionLambdaBlocks");
+        assertEquals(1, assertionLambdaBlocks.get("moved-to-prefix").asInt());
+        assertEquals(1, assertionLambdaBlocks.get("unwrapped").asInt());
+        assertEquals(1, assertionLambdaBlocks.get("skipped-last-statement-assertion").asInt());
+        // The skipped assertThrows produces no datapoint
+        assertEquals(List.of("assertDoesNotThrow(() -> calc.add(1, 2));", "assertEquals(2, calc.total());"), targets());
+    }
+
+    @Test
     void statisticsRecordTheJavaVersionOfTheRepositoryAndTheJdksOfTheSymbolSolver() throws IOException {
         write("pom.xml", "<project><properties><maven.compiler.release>9</maven.compiler.release></properties></project>");
         Path base = tempDir.resolve("base");

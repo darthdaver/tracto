@@ -276,6 +276,90 @@ class TestUtilsSplitTest {
     }
 
     @Test
+    void statementsAfterTheSplitPointWithinALambdaBlockAreRemoved() throws IOException {
+        Pair<Path, Path> result = split(FixtureRepo.CONFIG, """
+                @Test
+                public void testLambda() {
+                    int[] values = {1, 2};
+                    java.util.Arrays.stream(values).forEach(v -> {
+                        int w = v * 2;
+                        assertTrue(w > 0);
+                        System.out.println(w);
+                        assertEquals(0, w % 2);
+                    });
+                }
+                """);
+
+        assertEquals(Map.of(
+                "testLambda_split_0", block("int[] values = {1, 2}; java.util.Arrays.stream(values).forEach(v -> { int w = v * 2; assertTrue(w > 0); });"),
+                "testLambda_split_1", block("int[] values = {1, 2}; java.util.Arrays.stream(values).forEach(v -> { int w = v * 2; assertTrue(w > 0); System.out.println(w); assertEquals(0, w % 2); });")
+        ), methodBodies(result.getValue0()));
+        assertEquals(Map.of(
+                "testLambda_split_0", block("int[] values = {1, 2}; java.util.Arrays.stream(values).forEach(v -> { int w = v * 2; });"),
+                "testLambda_split_1", block("int[] values = {1, 2}; java.util.Arrays.stream(values).forEach(v -> { int w = v * 2; assertTrue(w > 0); System.out.println(w); });")
+        ), methodBodies(result.getValue1()));
+    }
+
+    @Test
+    void assertionWithinANestedLambdaBlockIsASplitPoint() throws IOException {
+        Pair<Path, Path> result = split(FixtureRepo.CONFIG, """
+                @Test
+                public void testNested() {
+                    java.util.List<int[]> rows = java.util.List.of(new int[] {1});
+                    rows.forEach(row -> {
+                        java.util.Arrays.stream(row).forEach(v -> {
+                            assertTrue(v > 0);
+                            System.out.println(v);
+                        });
+                        System.out.println(row.length);
+                    });
+                }
+                """);
+
+        assertEquals(Map.of(
+                "testNested_split_0", block("java.util.List<int[]> rows = java.util.List.of(new int[] {1}); rows.forEach(row -> { java.util.Arrays.stream(row).forEach(v -> { assertTrue(v > 0); }); });")
+        ), methodBodies(result.getValue0()));
+        assertEquals(Map.of(
+                "testNested_split_0", block("java.util.List<int[]> rows = java.util.List.of(new int[] {1}); rows.forEach(row -> { java.util.Arrays.stream(row).forEach(v -> { }); });")
+        ), methodBodies(result.getValue1()));
+    }
+
+    @Test
+    void assertionsWithinTwoLambdaBlocksOfTheSameStatementAreNotSplitPoints() throws IOException {
+        Pair<Path, Path> result = split(FixtureRepo.CONFIG, """
+                @Test
+                public void testTwoLambdas() {
+                    java.util.concurrent.CompletableFuture.runAsync(() -> { assertTrue(true); }).thenRun(() -> { assertFalse(false); });
+                    assertNotNull("done");
+                }
+                """);
+
+        assertEquals(Map.of(
+                "testTwoLambdas_split_0", block("java.util.concurrent.CompletableFuture.runAsync(() -> { assertTrue(true); }).thenRun(() -> { assertFalse(false); }); assertNotNull(\"done\");")
+        ), methodBodies(result.getValue0()));
+    }
+
+    @Test
+    void assertionWithinAnAnonymousClassIsNotASplitPoint() throws IOException {
+        Pair<Path, Path> result = split(FixtureRepo.CONFIG, """
+                @Test
+                public void testAnonymous() {
+                    Runnable check = new Runnable() {
+                        public void run() {
+                            assertTrue(true);
+                        }
+                    };
+                    check.run();
+                    assertNotNull(check);
+                }
+                """);
+
+        assertEquals(Map.of(
+                "testAnonymous_split_0", block("Runnable check = new Runnable() { public void run() { assertTrue(true); } }; check.run(); assertNotNull(check);")
+        ), methodBodies(result.getValue0()));
+    }
+
+    @Test
     void assertThrowsIsASplitPoint() throws IOException {
         Pair<Path, Path> result = split(FixtureRepo.CONFIG, """
                 @Test

@@ -68,6 +68,7 @@ Found while writing the Step 8 tests (details in `docs/fixes/step-08-test-infras
 | D35 | `JavaUtils.initializeJavaClassPath` | All the JDKs of `lib/java_classpaths.json` are given to the symbol solver in the order of the file (Java 8 first), whatever the Java version argument (`24` in the scripts): the first JDK containing a class wins, so the JDK classes are always those of Java 8, and the methods added after Java 8 (`List.of`, `String.isBlank`, `Stream.toList`) never resolve. Found after Step 16 and fixed in Step 17, with the detection of the Java version of the repository. |
 | D36 | `JavaParserUtils.setRepoJavaParser` | The code under analysis is parsed at `JAVA_17` and the type solvers at the `BLEEDING_EDGE` of JavaParser 3.26.1 (`JAVA_21`): the syntax of Java 21 to 25 (record patterns, unnamed variables, statements before `super()`, module imports) is rejected and, as the parse problems are not checked, lost silently (a test case asserting within an `if` with a record pattern gives no datapoint); the focal classes declared as records make the processing of their whole test class fail ("Cannot get a reference type declaration from RecordDeclaration": 9 test classes of cryptofs). Fixed in Step 18 (JavaParser 3.28.2, one configuration at `JAVA_26`). |
 | D37 | JavaParser 3.28.x, method resolution | Defects of the library, fixed on its master branch after 3.28.2: arrays of primitive types are widened or boxed component by component (JavaParser #4991, #5065, #5146: `Arrays.sort(byte[])` ambiguous), the return types of the candidate methods must be resolvable (a test helper returning a class of Mockito or Hamcrest is not resolved), an `UnsupportedOperationException` on some lambdas; any of them stopped the matching of the invoked methods of the whole test prefix. Worked around in Step 18 (`JavaParserUtils.resolveMethodCall`, errors caught per statement). |
+| D38 | normalizer, `to-assert-throws` (`flatTryStmt`) | A variable of the try block (or a resource) hiding a field is renamed when the try statement is flattened, but the copy of the failing call within the `assertThrows` kept the old name: `String s2 = "x"; assertThrows(E.class, () -> Integer.parseInt(s));` reads the field. Found and fixed in Step 19 (the variables are renamed before the failing call is copied). |
 
 Every confirmed defect with a simple trigger has a `@Disabled` test named after it (map in the Step 8 document).
 
@@ -232,10 +233,12 @@ java-uuid-generator, as for Steps 1–7.
 9. **Step 16 – invoked methods of the test prefixes** (D34), found after the plan in the error statistics of the Step 15 A/B run. *Done on 2026-10-28.*
 10. **Step 17 – Java version of the repository and JDK sources** (D35): the version declared by the build files selects the JDK whose sources are given to the symbol solver; the sources of the JDKs are built by `bash/utils/setup-jdk-sources.sh`. *Done on 2026-10-29.*
 11. **Step 18 – JavaParser 3.28.2 and a single parser configuration** (D36), with the workaround of the defects of the library (D37). *Done on 2026-10-30.*
+12. **Step 19 – lambda blocks of `assertThrows`, `assertThrowsExactly` and `assertDoesNotThrow`**: the statements before the last one move before the assertion (`assertion-lambda-blocks = move-to-prefix`), an `assertDoesNotThrow` ending with an assertion is unwrapped, the shapes whose throwing statement is unclear produce no datapoint (`skip` makes all of them produce none); tests of the lambda paths of the splitter. *Done on 2026-11-02, together with D38.*
 
-## Open items after Step 18 (2026-10-30)
+## Open items after Step 19 (2026-11-02)
 
-Found during Steps 15–18, not fixed yet; in the suggested order:
+Found during Steps 15–19, not fixed yet; in the suggested order (on 2026-11-02 the user chose the dependencies, item 3,
+as the next step, mainly for the tokens dataset):
 
 1. **Compile check of the generated classes.** The split test classes have never been compiled within the real projects
    (`mvn test-compile` of a few A/B projects with the generated classes in place): the only check of the whole output.
@@ -259,3 +262,10 @@ Found during Steps 15–18, not fixed yet; in the suggested order:
    modes are covered by tests only; 21 of the 135 input repositories declare their Java version only in a parent POM
    (the newest and the oldest JDK are used); the Mockito of the tests (5.2) needs `net.bytebuddy.experimental` on
    Java 21.
+7. **Lambda blocks (after Step 19).** The lambda blocks of `assertAll`, `assertTimeout`, `assertTimeoutPreemptively` and
+   AssertJ `assertThatThrownBy` are kept as they are (about 50 blocks of two or more statements in the input
+   repositories, 5 `assertTimeoutPreemptively` in cryptofs); the normalizer does not visit the lambda blocks of the other
+   statements (`values.forEach(v -> { ... })`): their auxiliary methods are not inlined and their try statements are
+   not converted, while the splitter splits within them. The type inference of JavaParser for lambdas varies from run
+   to run (`Equivalent types are: [InferenceVariableType{id=1}, ...]`: one error and one invoked method of eec differ
+   between two runs on identical generated files).

@@ -11,6 +11,7 @@ final class ConfigBuilder {
 
     private SplitStrategyType split = SplitStrategyType.ASSERTION;
     private TryCatchFinallyStrategyType tryCatchFinally = TryCatchFinallyStrategyType.TO_ASSERT_THROWS;
+    private AssertionLambdaBlocksStrategyType assertionLambdaBlocks = AssertionLambdaBlocksStrategyType.MOVE_TO_PREFIX;
     private StatementStrategyType statement = StatementStrategyType.KEEP;
     private AssertionStrategyType condition = AssertionStrategyType.KEEP;
     private AssertionStrategyType assertion = AssertionStrategyType.MASK;
@@ -28,6 +29,11 @@ final class ConfigBuilder {
 
     ConfigBuilder tryCatchFinally(TryCatchFinallyStrategyType tryCatchFinally) {
         this.tryCatchFinally = tryCatchFinally;
+        return this;
+    }
+
+    ConfigBuilder assertionLambdaBlocks(AssertionLambdaBlocksStrategyType assertionLambdaBlocks) {
+        this.assertionLambdaBlocks = assertionLambdaBlocks;
         return this;
     }
 
@@ -65,6 +71,7 @@ final class ConfigBuilder {
         return new OraclesDatasetConfig(
                 split,
                 tryCatchFinally,
+                assertionLambdaBlocks,
                 statement,
                 condition,
                 assertion,

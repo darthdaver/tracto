@@ -26,6 +26,9 @@ public record TestStats(
         int numberOfVariables,
         /* The counter of the different types of assertions detected within the test case */
         HashMap<String,Integer> assertionsDistribution,
+        /* The number of assertions with a lambda block (assertThrows, assertThrowsExactly, assertDoesNotThrow) by
+           outcome: `moved-to-prefix`, `unwrapped`, or `skipped-<shape>` (no datapoint) */
+        HashMap<String,Integer> assertionLambdaBlocks,
         /* The reason why the test case has been discarded during the normalization (for example `MULTI_CATCH`), or
            null if the test case has been normalized */
         String discardReason

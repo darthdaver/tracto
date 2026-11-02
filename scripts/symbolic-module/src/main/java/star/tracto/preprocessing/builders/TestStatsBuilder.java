@@ -21,6 +21,7 @@ public class TestStatsBuilder {
     private  int numberOfMethodCalls;
     private  int numberOfVariables;
     private HashMap<String, Integer> assertionsDistribution;
+    private HashMap<String, Integer> assertionLambdaBlocks;
     private String discardReason;
 
     /**
@@ -39,6 +40,7 @@ public class TestStatsBuilder {
                 this.numberOfMethodCalls,
                 this.numberOfVariables,
                 this.assertionsDistribution,
+                this.assertionLambdaBlocks,
                 this.discardReason
         );
     }
@@ -48,6 +50,10 @@ public class TestStatsBuilder {
      *
      * @param identifier the identifier of the test case
      */
+    public void setAssertionLambdaBlocks(HashMap<String, Integer> assertionLambdaBlocks) {
+        this.assertionLambdaBlocks = assertionLambdaBlocks;
+    }
+
     public void setIdentifier(String identifier) {
         this.identifier = identifier;
     }

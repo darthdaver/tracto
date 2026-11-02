@@ -7,7 +7,8 @@ it accepts, where the code reads it, and its current status.
 **Loaded into:** the record `star.tracto.data.records.OraclesDatasetConfig` (via Jackson, `FilesUtils.readJSON`)
 **Passed by:** `bash/oracles-dataset.sh`, as the 7th argument of the jar (`oracles <id> <repo> <output> <base> <java> <config>`)
 
-Last reviewed: 2026-10-26, on branch `22-test-processing-refactoring` (the `try-catch-finally` key was redefined in Step 9).
+Last reviewed: 2026-11-02, on branch `22-test-processing-refactoring` (the `try-catch-finally` key was redefined in Step 9,
+the `assertion-lambda-blocks` key was added in Step 19).
 
 ## How the file is loaded
 
@@ -27,6 +28,7 @@ Values are case-sensitive and lower case (`"assertion"`, not `"ASSERTION"`).
 {
   "split": "assertion",
   "try-catch-finally": "to-assert-throws",
+  "assertion-lambda-blocks": "move-to-prefix",
   "statement": "keep",
   "condition": "keep",
   "assertion": "mask",
@@ -38,8 +40,9 @@ Values are case-sensitive and lower case (`"assertion"`, not `"ASSERTION"`).
 }
 ```
 
-The file changed on 2026-10-26 (Step 9: `try-catch-finally` from `standard` to `to-assert-throws`). Two keys are
-missing: `num-assertions-match` (→ `null`, the check is disabled). The key `assertThrows` was removed in Step 10.
+The file changed on 2026-10-26 (Step 9: `try-catch-finally` from `standard` to `to-assert-throws`) and on 2026-11-02
+(Step 19: `assertion-lambda-blocks` added). One key is missing: `num-assertions-match` (→ `null`, the check is
+disabled). The key `assertThrows` was removed in Step 10.
 
 ## Summary of the keys
 
@@ -56,6 +59,7 @@ missing: `num-assertions-match` (→ `null`, the check is disabled). The key `as
 | `mask-placeholder` | any string | `null` | Used (with `mask`) |
 | `no-assertion-target-placeholder` | any string | `null` | Used |
 | `try-catch-finally` | `to-assert-throws`, `keep-try-catch` | **error** at startup (required since Step 9) | Used |
+| `assertion-lambda-blocks` | `move-to-prefix`, `skip` | **error** at startup (required since Step 19) | Used |
 | `condition` | `keep`, `mask`, `remove` | `null` | **Never used** (not implemented) |
 
 ## How a datapoint is built
@@ -170,6 +174,42 @@ the splitter; that commit moved the handling of try statements into the normaliz
 Step 9. The old `flat` behaviour (the origin of the `THROW EXCEPTION` target and of the `throws` clause of the split test
 cases) is dropped.
 
+### `assertion-lambda-blocks`: assertions whose lambda expression is a block
+
+Read in `TestUtils.parseNormalizeTestStatementsBlock` and `TestCaseSplitter.split` (since Step 19,
+`docs/fixes/step-19-assertion-lambda-blocks.md`). The key is required.
+
+It applies to an `assertThrows`, `assertThrowsExactly` or `assertDoesNotThrow` written as a statement (or as the
+initializer of a variable, `E e = assertThrows(...)`) whose lambda expression is a block of **at least two**
+statements. A single-statement block, an expression lambda, a method reference, the other assertions taking a lambda
+(`assertAll`, `assertTimeout`) and an assertion nested in another call are left as they are. Each assertion in scope is
+classified by the last statement of its block (`AssertionLambdaBlockClassifier`):
+
+| Shape | Last statement | `move-to-prefix`: `assertThrows`, `assertThrowsExactly` | `move-to-prefix`: `assertDoesNotThrow` |
+|-------|----------------|----------------------------------------------------------|-----------------------------------------|
+| `LAST_CALL` | a call or an object creation, possibly assigned, declared or returned | the statements before it move before the assertion; only the call stays in the lambda | same |
+| `LAST_ASSERTION` | an assertion (`assert`, a JUnit assertion, `fail()`) | no datapoint | the block replaces the assertion (unwrapped): its assertions become targets |
+| `LAST_COMPOUND` | try, loop, `if`, `switch`, `synchronized`, labeled statement, block | no datapoint | no datapoint |
+| `LAST_THROW` | `throw` | no datapoint | no datapoint |
+| `LAST_OTHER` | anything else (a bare `return`, `int r = 1 / a;`, `return v;`) | no datapoint | no datapoint |
+| `EARLY_RETURN` | a `return` of the lambda precedes the last statement (it would end the test case once moved) | no datapoint | no datapoint |
+
+| Value | Meaning |
+|-------|---------|
+| `move-to-prefix` (committed config) | As in the table. Example: `assertThrows(E.class, () -> { a(); b(); })` becomes `a(); assertThrows(E.class, () -> b());`, so `a()` is part of the test prefix and the target is the short assertion. The moved statements are normalized like the others (helpers inlined, try statements converted, nested lambda blocks moved in turn); a variable of the block hiding a field is renamed (`count2`), a reassigned variable used by the remaining call gets a final copy (`finalI`), and the test case declares `throws Exception` (unless it declares `Exception` or `Throwable`), since the lambda absorbed the checked exceptions of the moved statements. |
+| `skip` | Conservative: no assertion in scope produces a datapoint, whatever its shape, since the statement that throws (or must not throw) is not known. The test case is not changed. |
+
+"No datapoint" means that the assertion is not a split point (with both `split` values); it stays in the prefixes of the
+following assertions as an ordinary statement, it is not counted by `num-assertions-match`, and it does not end the
+extra split test case of `keep-statements-after-last-assertion`. The other datapoints of the test case are kept. The
+outcome of each assertion is counted in the statistics: `assertionLambdaBlocks` in `test-stats-<project>.json` (per test
+case) and in `statistics-<project>.json` (total), with the keys `moved-to-prefix`, `unwrapped` and
+`skipped-<shape>` (for example `skipped-last-statement-assertion`).
+
+The move rests on the same assumption as the conversion of try/catch/fail: in a passing test the statements after the
+one that throws never run, so the last statement is the one that throws (unless the test contains dead code). For
+`assertDoesNotThrow` no statement of the block throws in a passing test, so moving them does not change what runs.
+
 ### `integrate-auxiliary-methods`: inline helper methods
 
 Read in `TestUtils.normalizeTest` (passed to `parseNormalizeTestStatementsBlock`).
@@ -229,7 +269,8 @@ exists. Presumably meant to keep, mask or remove the conditions of `if`/loops in
 ## Open points
 
 1. `condition` has no effect. Options: remove it from the config and the record, or implement it.
-2. Missing keys are silently `null` (except `try-catch-finally`, validated by a compact constructor since Step 9).
+2. Missing keys are silently `null` (except `try-catch-finally` and `assertion-lambda-blocks`, validated by a compact
+   constructor since Steps 9 and 19).
    Validating the other keys the same way (or giving them explicit defaults) would make the choice visible; until then,
    it is safer to write every key explicitly in the config file.
 3. ~~`assertThrows` is the only camelCase key.~~ The key was removed in Step 10.

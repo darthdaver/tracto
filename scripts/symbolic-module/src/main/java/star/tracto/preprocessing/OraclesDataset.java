@@ -167,6 +167,13 @@ public class OraclesDataset {
         }
         // Store the number of test cases discarded during the normalization (the reason of each one is in its statistics)
         statistics.put("discardedTestCases", (int) testStatsList.stream().filter(testStats -> testStats.discardReason() != null).count());
+        // Store the number of assertions with a lambda block by outcome: moved to the prefix, unwrapped, or skipped (no
+        // datapoint) by shape
+        HashMap<String, Integer> assertionLambdaBlocks = new HashMap<>();
+        testStatsList.stream()
+                .filter(testStats -> testStats.discardReason() == null)
+                .forEach(testStats -> testStats.assertionLambdaBlocks().forEach((outcome, count) -> assertionLambdaBlocks.merge(outcome, count, Integer::sum)));
+        statistics.put("assertionLambdaBlocks", assertionLambdaBlocks);
         // Update java parser considering the new split files generated within the repository
         JavaParserUtils.setRepoJavaParser(repoRootPath, classpath);
         // Define the list to store the test pair of split test cases (generated from the original test cases) and the

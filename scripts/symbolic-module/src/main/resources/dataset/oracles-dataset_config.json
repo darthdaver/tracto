@@ -1,6 +1,7 @@
 {
   "split": "assertion",
   "try-catch-finally": "to-assert-throws",
+  "assertion-lambda-blocks": "move-to-prefix",
   "statement": "keep",
   "condition": "keep",
   "assertion": "mask",

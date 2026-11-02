@@ -11,6 +11,9 @@ public record OraclesDatasetConfig(
         @JsonProperty("split") SplitStrategyType splitStrategy,
         /* The try-catch-finally strategy: keep-try-catch or to-assert-throws. Required. */
         @JsonProperty("try-catch-finally") TryCatchFinallyStrategyType tryCatchFinallyStrategy,
+        /* The strategy for the lambda blocks of assertThrows, assertThrowsExactly and assertDoesNotThrow: move-to-prefix
+           or skip. Required. */
+        @JsonProperty("assertion-lambda-blocks") AssertionLambdaBlocksStrategyType assertionLambdaBlocksStrategy,
         /* The statement strategy: keep, mask, or remove. */
         @JsonProperty("statement") StatementStrategyType statementStrategy,
         /* The condition strategy: keep, mask, or remove. */
@@ -33,6 +36,9 @@ public record OraclesDatasetConfig(
     public OraclesDatasetConfig {
         if (tryCatchFinallyStrategy == null) {
             throw new IllegalArgumentException("Missing key \"try-catch-finally\" in the configuration of the oracles dataset (values: \"keep-try-catch\", \"to-assert-throws\").");
+        }
+        if (assertionLambdaBlocksStrategy == null) {
+            throw new IllegalArgumentException("Missing key \"assertion-lambda-blocks\" in the configuration of the oracles dataset (values: \"move-to-prefix\", \"skip\").");
         }
     }
 }

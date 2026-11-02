@@ -41,6 +41,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -261,7 +262,9 @@ public class TestUtils {
                         labelNamesOf(originalTestCase),
                         new ArrayDeque<>(),
                         junitVersion,
-                        config
+                        config,
+                        new HashMap<>(),
+                        new AtomicBoolean(false)
                 );
 
                 // Parse the statements block and normalize the test case
@@ -279,7 +282,7 @@ public class TestUtils {
                     // cases, with the reason recorded in its statistics
                     logger.warn("Test case {} discarded: {}", originalTestCase.getNameAsString(), e.getMessage());
                     saveTestCaseReport(cu, originalTestCase, discardedOutputPath);
-                    testStatsList.add(buildTestStats(testClass, testFilePath, originalTestCase, originalTestCase.getBody().orElseThrow(), e.getReason()));
+                    testStatsList.add(buildTestStats(testClass, testFilePath, originalTestCase, originalTestCase.getBody().orElseThrow(), new HashMap<>(), e.getReason()));
                     continue;
                 }
                 // If an exception occurred during the normalization of the method, keep track of it for future
@@ -287,7 +290,12 @@ public class TestUtils {
                 if (thrownedException) {
                     saveTestCaseReport(cu, originalTestCase, errorOutputPath);
                 }
-                testStatsList.add(buildTestStats(testClass, testFilePath, normalizedTestCase, normalizedTestCaseBody, null));
+                // The statements moved out of the lambda expression of an assertion can throw the checked exceptions it
+                // absorbed
+                if (context.statementsLeftALambda().get()) {
+                    declareThrowsException(normalizedTestCase);
+                }
+                testStatsList.add(buildTestStats(testClass, testFilePath, normalizedTestCase, normalizedTestCaseBody, context.assertionLambdaBlocks(), null));
                 normalizedTestCases.add(normalizedTestCase);
             }
             //testClass.setName(testClass.getNameAsString() + NamingConvention.NORMALIZED_TEST_CLASS.getConventionName());
@@ -362,7 +370,7 @@ public class TestUtils {
      *                      if the test case has been normalized
      * @return the statistics of the test case
      */
-    private static TestStats buildTestStats(TypeDeclaration testClass, Path testFilePath, MethodDeclaration testCase, BlockStmt body, String discardReason) {
+    private static TestStats buildTestStats(TypeDeclaration testClass, Path testFilePath, MethodDeclaration testCase, BlockStmt body, HashMap<String, Integer> assertionLambdaBlocks, String discardReason) {
         TestStatsBuilder testStatsBuilder = new TestStatsBuilder();
         testStatsBuilder.setIdentifier(testCase.getNameAsString());
         testStatsBuilder.setSignature(testCase.getSignature().toString());
@@ -389,6 +397,7 @@ public class TestUtils {
         allVarList.addAll(usedVarList);
         allVarList.addAll(paramList);
         testStatsBuilder.setNumberOfVariables(allVarList.size());
+        testStatsBuilder.setAssertionLambdaBlocks(assertionLambdaBlocks);
         testStatsBuilder.setDiscardReason(discardReason);
         return testStatsBuilder.build();
     }
@@ -643,7 +652,10 @@ public class TestUtils {
      *     body is processed as a block statement calling the function recursively. The result of the recursion is
      *     appended to the body of the cloned `do` wrapper.</li>
      *     <li>If the statement is an expression statement {@link ExpressionStmt}, it is analyzed and added to the reference
-     *     block of statements, according to their type: (i) if the expression refers to a method call to an auxiliary method,
+     *     block of statements, according to their type: (o) if the statement is an {@code assertThrows},
+     *     {@code assertThrowsExactly} or {@code assertDoesNotThrow} whose lambda expression is a block of statements,
+     *     the statements before the last one move before the assertion, or the assertion is kept and produces no
+     *     datapoint ({@link #normalizeAssertionLambdaBlock}); (i) if the expression refers to a method call to an auxiliary method,
      *     the body of the method is inlined in the reference block of statements, if possible, and normalized as well
      *     ({@link #inlineAuxiliaryMethod}); (ii) if the expression refers to a variable declaration, the statement is
      *     added to the reference block as it is; (iii) any other type of expression could contain method calls that
@@ -721,6 +733,10 @@ public class TestUtils {
                             doStmtCloneBody,
                             context
                     );
+                } else if (AssertionLambdaBlockClassifier.find(statement).isPresent()) {
+                    // An assertThrows, assertThrowsExactly or assertDoesNotThrow whose lambda expression is a block of
+                    // statements
+                    thrownedException |= normalizeAssertionLambdaBlock(AssertionLambdaBlockClassifier.find(statement).get(), currentBlockStmt, context);
                 } else if (statement.isExpressionStmt()) {
                     Expression exprStmt = statement.asExpressionStmt().getExpression();
                     // Check if the expression is a method call to an auxiliary method (not an assertion)
@@ -956,6 +972,10 @@ public class TestUtils {
      * @param inliningStack the signatures of the auxiliary methods being inlined (a recursive call is not inlined)
      * @param junitVersion the version of JUnit used in the test class
      * @param config the configuration options for the dataset to generate
+     * @param assertionLambdaBlocks the number of assertions with a lambda block by outcome (the statistics of the test
+     *                              case)
+     * @param statementsLeftALambda whether statements moved out of the lambda expression of an assertion: the test
+     *                              case declares {@code throws Exception}, since they can throw checked exceptions
      */
     private record NormalizationContext(
             TypeDeclaration<?> testClass,
@@ -966,7 +986,9 @@ public class TestUtils {
             NameAllocator labelNames,
             Deque<String> inliningStack,
             JUnitVersion junitVersion,
-            OraclesDatasetConfig config
+            OraclesDatasetConfig config,
+            HashMap<String, Integer> assertionLambdaBlocks,
+            AtomicBoolean statementsLeftALambda
     ) {}
 
     /**
@@ -1073,10 +1095,18 @@ public class TestUtils {
     private static void renameVariablesHidingFields(BlockStmt block, NormalizationContext context) {
         // The keys are compared by reference: distinct declarations with the same content are equal for JavaParser
         Map<VariableDeclarator, String> variablesToRename = new IdentityHashMap<>();
+        // The variables are assigned within the block that declares them (the field with the same name can be assigned
+        // anywhere in the test case)
+        Set<String> assignedVariables = JavaParserUtils.getAssignedVariableNames(block);
         for (VariableDeclarationExpr declaration : new VariableDeclarationExprVisitor().visit(block)) {
             for (VariableDeclarator variable : declaration.getVariables()) {
                 if (context.fieldNames().contains(variable.getNameAsString())) {
-                    variablesToRename.put(variable, context.variableNames().allocate(variable.getNameAsString()));
+                    String newName = context.variableNames().allocate(variable.getNameAsString());
+                    variablesToRename.put(variable, newName);
+                    // A reassigned variable keeps needing a final copy when captured by a lambda expression
+                    if (assignedVariables.contains(variable.getNameAsString())) {
+                        context.reassignedVariables().add(newName);
+                    }
                 }
             }
         }
@@ -1153,11 +1183,14 @@ public class TestUtils {
         List<Statement> statements = new ArrayList<>();
         // Check if the try statement contains a catch clause, in which case collect the statements within it
         if (tryStmt.getCatchClauses().size() == 1) {
+            // Add the resources of the try statement (if any) to the flat version of the block
+            statements.addAll(flatResources(tryStmt, context));
+            // Rename the local variables of the try block that would hide a field, before the failing call is copied
+            // into the assertThrows (the resources are renamed by flatResources)
+            renameVariablesHidingFields(tryStmt.getTryBlock(), context);
             int tryStmtsSize = tryStmt.getTryBlock().getStatements().size();
             // Convert catch clause into an assertThrows statement
             MethodCallExpr assertThrowsCall = generateAssertThrowsFromTryStmt(context.junitVersion(), tryStmt);
-            // Add the resources of the try statement (if any) to the flat version of the block
-            statements.addAll(flatResources(tryStmt, context));
             // Get the exception class expression and the lambda expression with the failing call from the
             // assertThrows (their position depends on the JUnit version and on the presence of a message)
             NodeList<Expression> assertThrowsArguments = assertThrowsCall.getArguments();
@@ -1170,40 +1203,9 @@ public class TestUtils {
                     .filter(Expression::isLambdaExpr)
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException("No lambda expression found in " + assertThrowsCall));
-            // The variables captured by the lambda expression must be effectively final: a local variable reassigned
-            // within the test case gets a final copy, defined before the call (`final int finalI = i;`) and used
-            // within the lambda expression; the other variables and the fields are captured as they are. The
-            // variables are resolved on the original failing call, still attached to the compilation unit, and
-            // renamed in its copy within the lambda expression (the two expressions have the same structure, so
-            // their name expressions are found in the same order)
-            List<NameExpr> originalNameExprs = TryStatementClassifier.getFailingExpression(tryStmt).orElseThrow().findAll(NameExpr.class);
-            List<NameExpr> lambdaNameExprs = failingExpr.findAll(NameExpr.class);
-            int finalVarDeclIdx = tryStmtsSize - 2;
-            // The final copies already defined, for the variables used more than once in the failing call (the names
-            // of the variables are unique within the test case)
-            Map<String, String> finalCopies = new HashMap<>();
-            for (int i = 0; i < originalNameExprs.size(); i++) {
-                NameExpr nameExpr = originalNameExprs.get(i);
-                String name = nameExpr.getNameAsString();
-                if (!context.reassignedVariables().contains(name)) {
-                    continue;
-                }
-                if (!finalCopies.containsKey(name)) {
-                    Optional<com.github.javaparser.ast.type.Type> type = declaredTypeOfLocalVariable(nameExpr);
-                    if (type.isEmpty()) {
-                        // A field, or a name that is not a variable
-                        continue;
-                    }
-                    String finalName = context.variableNames().allocate("final" + Character.toUpperCase(name.charAt(0)) + name.substring(1));
-                    VariableDeclarationExpr finalVarDeclExpr = new VariableDeclarationExpr(new VariableDeclarator(type.get(), finalName, new NameExpr(name)));
-                    finalVarDeclExpr.addModifier(Modifier.Keyword.FINAL);
-                    tryStmt.getTryBlock().getStatements().add(finalVarDeclIdx++, new ExpressionStmt(finalVarDeclExpr));
-                    finalCopies.put(name, finalName);
-                }
-                lambdaNameExprs.get(i).setName(finalCopies.get(name));
-            }
-            // Rename the local variables of the try block that would hide a field
-            renameVariablesHidingFields(tryStmt.getTryBlock(), context);
+            // The final copies of the variables reassigned within the test case are defined before the failing call
+            tryStmt.getTryBlock().getStatements().addAll(tryStmtsSize - 2,
+                    finalCopiesOfReassignedVariables(TryStatementClassifier.getFailingExpression(tryStmt).orElseThrow(), failingExpr, context));
             // Add the list of statements from the try block
             statements.addAll(tryStmt.getTryBlock().getStatements());
             // Remove the method now called in the assertThrows assertion
@@ -1261,6 +1263,121 @@ public class TestUtils {
         }
         // Return the flat try block
         return flatTryStmtBlock;
+    }
+
+    /**
+     * Normalizes an assertion whose lambda expression is a block of statements ({@link AssertionLambdaBlockClassifier}),
+     * according to its outcome:
+     * <ul>
+     *     <li>{@code MOVE_TO_PREFIX}: the statements before the last one are normalized and added to the current block,
+     *     followed by the final copies of the reassigned variables captured by the lambda expression, and by the
+     *     assertion with only the call of the last statement within the lambda expression
+     *     ({@code a(); assertThrows(E.class, () -> b());});</li>
+     *     <li>{@code UNWRAP}: the statements of the block are normalized and added to the current block, in place of the
+     *     {@code assertDoesNotThrow};</li>
+     *     <li>{@code SKIP}: the assertion is added unchanged (it produces no datapoint: the split does not make it a
+     *     split point).</li>
+     * </ul>
+     * The variables declared within the block that would hide a field are renamed first, since they are visible to the
+     * statements that follow the assertion once moved (the names of the variables are unique within the test case).
+     *
+     * @param lambdaBlock the assertion with its lambda block, attached to the compilation unit
+     * @param currentBlockStmt the reference block of statements
+     * @param context the state of the normalization of the test case
+     * @return {@code true} if an exception has been thrown during the normalization of the moved statements
+     */
+    private static boolean normalizeAssertionLambdaBlock(AssertionLambdaBlockClassifier.AssertionLambdaBlock lambdaBlock, BlockStmt currentBlockStmt, NormalizationContext context) {
+        AssertionLambdaBlockClassifier.Outcome outcome = AssertionLambdaBlockClassifier.outcome(lambdaBlock, context.config().assertionLambdaBlocksStrategy());
+        if (outcome == AssertionLambdaBlockClassifier.Outcome.SKIP) {
+            context.assertionLambdaBlocks().merge("skipped-" + lambdaBlock.shape().getKey(), 1, Integer::sum);
+            currentBlockStmt.addStatement(lambdaBlock.statement());
+            return false;
+        }
+        renameVariablesHidingFields(lambdaBlock.block(), context);
+        List<Statement> statements = new ArrayList<>(lambdaBlock.block().getStatements());
+        // The comment of the assertion introduces the statements of its block: it moves to the first of them, unless
+        // that one has its own comment
+        Optional<Comment> comment = lambdaBlock.statement().getComment();
+        boolean commentMoved = comment.isPresent() && statements.get(0).getComment().isEmpty();
+        if (commentMoved) {
+            statements.get(0).setComment(comment.get().clone());
+        }
+        boolean thrownedException;
+        if (outcome == AssertionLambdaBlockClassifier.Outcome.UNWRAP) {
+            thrownedException = parseNormalizeTestStatementsBlock(statements, currentBlockStmt, context);
+            context.assertionLambdaBlocks().merge("unwrapped", 1, Integer::sum);
+        } else {
+            // The call of the last statement is copied into the lambda expression of a copy of the assertion, with the
+            // final copies of the reassigned variables it uses
+            Expression lastCall = AssertionLambdaBlockClassifier.lastCall(lambdaBlock);
+            Expression lambdaBody = lastCall.clone();
+            List<Statement> finalCopies = finalCopiesOfReassignedVariables(lastCall, lambdaBody, context);
+            Statement assertion = lambdaBlock.statement().clone();
+            AssertionLambdaBlockClassifier.find(assertion).orElseThrow().lambda().setBody(new ExpressionStmt(lambdaBody));
+            if (commentMoved) {
+                assertion.removeComment();
+            }
+            thrownedException = parseNormalizeTestStatementsBlock(statements.subList(0, statements.size() - 1), currentBlockStmt, context);
+            finalCopies.forEach(currentBlockStmt::addStatement);
+            currentBlockStmt.addStatement(assertion);
+            context.assertionLambdaBlocks().merge("moved-to-prefix", 1, Integer::sum);
+        }
+        context.statementsLeftALambda().set(true);
+        return thrownedException;
+    }
+
+    /**
+     * Adds {@code throws Exception} to a test case, unless it already declares {@code Exception} or {@code Throwable}.
+     */
+    private static void declareThrowsException(MethodDeclaration testCase) {
+        boolean declared = testCase.getThrownExceptions().stream()
+                .map(thrownException -> thrownException.asString().replaceFirst("^java\\.lang\\.", ""))
+                .anyMatch(name -> name.equals("Exception") || name.equals("Throwable"));
+        if (!declared) {
+            testCase.addThrownException(new ClassOrInterfaceType(null, "Exception"));
+        }
+    }
+
+    /**
+     * Defines the final copies of the variables captured by a lambda expression: a local variable reassigned within
+     * the test case gets a final copy (`final int finalI = i;`), used within the lambda expression; the other variables
+     * and the fields are captured as they are. The variables are resolved on the original expression, still attached
+     * to the compilation unit, and renamed in its copy within the lambda expression (the two expressions have the same
+     * structure, so their name expressions are found in the same order).
+     *
+     * @param originalExpr the original expression, attached to the compilation unit
+     * @param lambdaExpr the copy of the expression within the lambda expression, whose variables are renamed
+     * @param context the state of the normalization of the test case
+     * @return the declarations of the final copies, to add before the lambda expression
+     */
+    private static List<Statement> finalCopiesOfReassignedVariables(Expression originalExpr, Expression lambdaExpr, NormalizationContext context) {
+        List<NameExpr> originalNameExprs = originalExpr.findAll(NameExpr.class);
+        List<NameExpr> lambdaNameExprs = lambdaExpr.findAll(NameExpr.class);
+        List<Statement> declarations = new ArrayList<>();
+        // The final copies already defined, for the variables used more than once in the expression (the names of the
+        // variables are unique within the test case)
+        Map<String, String> finalCopies = new HashMap<>();
+        for (int i = 0; i < originalNameExprs.size(); i++) {
+            NameExpr nameExpr = originalNameExprs.get(i);
+            String name = nameExpr.getNameAsString();
+            if (!context.reassignedVariables().contains(name)) {
+                continue;
+            }
+            if (!finalCopies.containsKey(name)) {
+                Optional<com.github.javaparser.ast.type.Type> type = declaredTypeOfLocalVariable(nameExpr);
+                if (type.isEmpty()) {
+                    // A field, or a name that is not a variable
+                    continue;
+                }
+                String finalName = context.variableNames().allocate("final" + Character.toUpperCase(name.charAt(0)) + name.substring(1));
+                VariableDeclarationExpr finalVarDeclExpr = new VariableDeclarationExpr(new VariableDeclarator(type.get(), finalName, new NameExpr(name)));
+                finalVarDeclExpr.addModifier(Modifier.Keyword.FINAL);
+                declarations.add(new ExpressionStmt(finalVarDeclExpr));
+                finalCopies.put(name, finalName);
+            }
+            lambdaNameExprs.get(i).setName(finalCopies.get(name));
+        }
+        return declarations;
     }
 
     /**

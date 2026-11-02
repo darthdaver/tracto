@@ -1043,6 +1043,96 @@ class TestUtilsNormalizeTest {
                 """.formatted(expectedStatements)), findMethod(normalized, "testThrows").getBody().orElseThrow());
     }
 
+    /**
+     * A variable of the try block hiding a field is renamed when the try statement is flattened: the failing call
+     * within the lambda expression of the assertThrows must use the new name, otherwise it reads the field.
+     */
+    @Test
+    void variableHidingAFieldIsRenamedWithinTheAssertThrowsToo() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    private String s = "field";
+
+                    @Test
+                    public void testThrows() {
+                        try {
+                            String s = "x";
+                            Integer.parseInt(s);
+                            fail();
+                        } catch (NumberFormatException e) {
+                        }
+                        assertEquals("field", s);
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    String s2 = "x";
+                    assertThrows(NumberFormatException.class, () -> Integer.parseInt(s2));
+                    assertEquals("field", s);
+                }
+                """), findMethod(normalized, "testThrows").getBody().orElseThrow());
+    }
+
+    /**
+     * A variable of the try block hiding a field and reassigned gets a final copy with the new name.
+     */
+    @Test
+    void reassignedVariableHidingAFieldGetsAFinalCopyOfItsNewName() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    private String s = "field";
+
+                    @Test
+                    public void testThrows() {
+                        try {
+                            String s = "x";
+                            s = s + "y";
+                            Integer.parseInt(s);
+                            fail();
+                        } catch (NumberFormatException e) {
+                        }
+                        assertEquals("field", s);
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    String s2 = "x";
+                    s2 = s2 + "y";
+                    final String finalS2 = s2;
+                    assertThrows(NumberFormatException.class, () -> Integer.parseInt(finalS2));
+                    assertEquals("field", s);
+                }
+                """), findMethod(normalized, "testThrows").getBody().orElseThrow());
+    }
+
+    /**
+     * A resource of the try statement hiding a field is renamed within the assertThrows too.
+     */
+    @Test
+    void resourceHidingAFieldIsRenamedWithinTheAssertThrowsToo() throws IOException {
+        Path normalized = normalizeHelperTest("""
+                    private Reader reader;
+
+                    @Test
+                    public void testThrows() {
+                        try (Reader reader = new StringReader("x")) {
+                            reader.reset();
+                            fail();
+                        } catch (IOException e) {
+                        }
+                        assertNull(reader);
+                    }
+                """);
+
+        assertEquals(StaticJavaParser.parseBlock("""
+                {
+                    Reader reader2 = new StringReader("x");
+                    assertThrows(IOException.class, () -> reader2.reset());
+                    assertNull(reader);
+                }
+                """), findMethod(normalized, "testThrows").getBody().orElseThrow());
+    }
+
     @Test
     void classNameInFailingCallIsNotCopiedAsVariable() throws IOException {
         Path normalized = normalizeHelperTest("""

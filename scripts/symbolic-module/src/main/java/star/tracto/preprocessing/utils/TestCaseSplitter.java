@@ -72,12 +72,12 @@ final class TestCaseSplitter {
         // code: the split points are located in the copies by their index in pre-order, so they are collected again
         // on a copy of the wrapped test case
         MethodDeclaration wrapped = testCase.clone();
-        collectSplitPoints(wrapped.getBody().orElseThrow(), config.splitStrategy());
+        collectSplitPoints(wrapped.getBody().orElseThrow(), config);
         MethodDeclaration source = wrapped.clone();
         BlockStmt body = source.getBody().orElseThrow();
-        List<Statement> splitPoints = collectSplitPoints(body, config.splitStrategy());
+        List<Statement> splitPoints = collectSplitPoints(body, config);
         if (config.splitStrategy() == SplitStrategyType.ASSERTION) {
-            checkNumberOfAssertions(source, splitPoints.size(), config.numAssertionsMatchStrategy());
+            checkNumberOfAssertions(source, splitPoints.size(), config);
         }
         List<Statement> statements = body.findAll(Statement.class);
         List<SplitTestCase> splitTestCases = new ArrayList<>();
@@ -85,9 +85,10 @@ final class TestCaseSplitter {
             splitTestCases.add(splitAt(source, indexOf(statements, splitPoint), splitTestCases.size()));
         }
         // The statements after the last split point form one more split test case, ending with the last statement
+        // (unless the last statement belongs to an assertion that produces no datapoint)
         if (config.keepStatementsAfterLastAssertion() && !splitTestCases.isEmpty()) {
             BlockStmt lastSplitTestCaseBody = splitTestCases.get(splitTestCases.size() - 1).testCase().getBody().orElseThrow();
-            if (!lastSplitTestCaseBody.equals(body)) {
+            if (!lastSplitTestCaseBody.equals(body) && !isWithinAnAssertionWithoutDatapoint(statements.get(statements.size() - 1), config)) {
                 splitTestCases.add(splitAt(source, statements.size() - 1, splitTestCases.size()));
             }
         }
@@ -97,10 +98,10 @@ final class TestCaseSplitter {
     /**
      * Collects the split points within the body of a test case, in the order of the source code.
      */
-    private static List<Statement> collectSplitPoints(BlockStmt body, SplitStrategyType splitStrategy) {
+    private static List<Statement> collectSplitPoints(BlockStmt body, OraclesDatasetConfig config) {
         List<Statement> splitPoints = new ArrayList<>();
         for (Statement statement : body.getStatements()) {
-            collectSplitPoints(statement, splitStrategy, splitPoints);
+            collectSplitPoints(statement, config, splitPoints);
         }
         return splitPoints;
     }
@@ -108,19 +109,22 @@ final class TestCaseSplitter {
     /**
      * Collects the split points within a statement, in the order of the source code. With the assertion strategy the
      * split points are the assertions; with the statement strategy they are the statements that are not split further,
-     * and the compound statements without split points within them (for example an empty loop).
+     * and the compound statements without split points within them (for example an empty loop). An assertion with a
+     * lambda block that produces no datapoint ({@link AssertionLambdaBlockClassifier}) is never a split point.
      */
-    private static void collectSplitPoints(Statement statement, SplitStrategyType splitStrategy, List<Statement> splitPoints) {
+    private static void collectSplitPoints(Statement statement, OraclesDatasetConfig config, List<Statement> splitPoints) {
+        SplitStrategyType splitStrategy = config.splitStrategy();
         List<Statement> innerStatements = innerStatements(statement);
         if (innerStatements == null) {
-            if (splitStrategy == SplitStrategyType.STATEMENT || JavaParserUtils.isAssertionStatement(statement)) {
+            if ((splitStrategy == SplitStrategyType.STATEMENT || JavaParserUtils.isAssertionStatement(statement))
+                    && !AssertionLambdaBlockClassifier.producesNoDatapoint(statement, config.assertionLambdaBlocksStrategy())) {
                 splitPoints.add(statement);
             }
             return;
         }
         int splitPointsBefore = splitPoints.size();
         for (Statement innerStatement : innerStatements) {
-            collectSplitPoints(innerStatement, splitStrategy, splitPoints);
+            collectSplitPoints(innerStatement, config, splitPoints);
         }
         if (splitStrategy == SplitStrategyType.STATEMENT && splitPoints.size() == splitPointsBefore) {
             splitPoints.add(statement);
@@ -191,6 +195,19 @@ final class TestCaseSplitter {
             node = node.getParentNode().orElse(null);
         }
         return true;
+    }
+
+    /**
+     * Checks if a node is (or is within) an assertion with a lambda block that produces no datapoint.
+     */
+    private static boolean isWithinAnAssertionWithoutDatapoint(Node node, OraclesDatasetConfig config) {
+        while (node != null) {
+            if (node instanceof Statement statement && AssertionLambdaBlockClassifier.producesNoDatapoint(statement, config.assertionLambdaBlocksStrategy())) {
+                return true;
+            }
+            node = node.getParentNode().orElse(null);
+        }
+        return false;
     }
 
     private static boolean isLoop(Statement statement) {
@@ -321,8 +338,15 @@ final class TestCaseSplitter {
      * {@code num-assertions-match} strategy. The numbers differ, for example, with AssertJ chains
      * ({@code assertThat(x).isEqualTo(1)}), counted as assertions but not split points.
      */
-    private static void checkNumberOfAssertions(MethodDeclaration testCase, int numberOfSplitPoints, NumAssertionsMatchStrategyType numAssertionsMatch) {
-        int numberOfAssertions = TestUtils.getNumberOfAssertions(testCase.getBody().orElseThrow().getStatements());
+    private static void checkNumberOfAssertions(MethodDeclaration testCase, int numberOfSplitPoints, OraclesDatasetConfig config) {
+        NumAssertionsMatchStrategyType numAssertionsMatch = config.numAssertionsMatchStrategy();
+        BlockStmt body = testCase.getBody().orElseThrow();
+        // The assertions with a lambda block that produce no datapoint are not expected to be split points, nor the
+        // assertions within them
+        List<Statement> assertionsWithoutDatapoint = body.findAll(Statement.class,
+                statement -> AssertionLambdaBlockClassifier.producesNoDatapoint(statement, config.assertionLambdaBlocksStrategy())
+                        && !isWithinAnAssertionWithoutDatapoint(statement.getParentNode().orElseThrow(), config));
+        int numberOfAssertions = TestUtils.getNumberOfAssertions(body.getStatements()) - TestUtils.getNumberOfAssertions(assertionsWithoutDatapoint);
         if (numberOfAssertions != numberOfSplitPoints) {
             String errMsg = "Unexpected number of split test cases generated from test case " + testCase.getNameAsString() + ". Expected: " + numberOfAssertions + ", Found: " + numberOfSplitPoints;
             if (numAssertionsMatch == NumAssertionsMatchStrategyType.STRICT) {

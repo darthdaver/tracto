@@ -2,6 +2,7 @@ package star.tracto.data.records;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import star.tracto.data.enums.AssertionLambdaBlocksStrategyType;
 import star.tracto.data.enums.TryCatchFinallyStrategyType;
 import star.tracto.utils.FilesUtils;
 
@@ -29,8 +30,33 @@ class OraclesDatasetConfigTest {
     }
 
     @Test
+    void committedConfigurationMovesTheStatementsOfTheAssertionLambdaBlocksToThePrefix() {
+        OraclesDatasetConfig config = FilesUtils.readJSON(COMMITTED_CONFIG, OraclesDatasetConfig.class);
+
+        assertEquals(AssertionLambdaBlocksStrategyType.MOVE_TO_PREFIX, config.assertionLambdaBlocksStrategy());
+    }
+
+    @Test
+    void skipOfTheAssertionLambdaBlocksIsAccepted() throws IOException {
+        Path configFile = writeConfig("\"try-catch-finally\": \"to-assert-throws\", \"assertion-lambda-blocks\": \"skip\"");
+
+        OraclesDatasetConfig config = FilesUtils.readJSON(configFile, OraclesDatasetConfig.class);
+
+        assertEquals(AssertionLambdaBlocksStrategyType.SKIP, config.assertionLambdaBlocksStrategy());
+    }
+
+    @Test
+    void missingAssertionLambdaBlocksKeyIsRejected() throws IOException {
+        Path configFile = writeConfig("\"try-catch-finally\": \"to-assert-throws\"");
+
+        Error error = assertThrows(Error.class, () -> FilesUtils.readJSON(configFile, OraclesDatasetConfig.class));
+
+        assertTrue(rootCauseMessage(error).contains("assertion-lambda-blocks"), rootCauseMessage(error));
+    }
+
+    @Test
     void keepTryCatchIsAccepted() throws IOException {
-        Path configFile = writeConfig("\"try-catch-finally\": \"keep-try-catch\"");
+        Path configFile = writeConfig("\"try-catch-finally\": \"keep-try-catch\", \"assertion-lambda-blocks\": \"move-to-prefix\"");
 
         OraclesDatasetConfig config = FilesUtils.readJSON(configFile, OraclesDatasetConfig.class);
 
@@ -48,7 +74,7 @@ class OraclesDatasetConfigTest {
 
     @Test
     void valueOfTheRemovedStrategiesIsRejected() throws IOException {
-        Path configFile = writeConfig("\"try-catch-finally\": \"standard\"");
+        Path configFile = writeConfig("\"try-catch-finally\": \"standard\", \"assertion-lambda-blocks\": \"move-to-prefix\"");
 
         Error error = assertThrows(Error.class, () -> FilesUtils.readJSON(configFile, OraclesDatasetConfig.class));
 
@@ -57,7 +83,7 @@ class OraclesDatasetConfigTest {
 
     @Test
     void removedAssertThrowsKeyIsRejected() throws IOException {
-        Path configFile = writeConfig("\"try-catch-finally\": \"to-assert-throws\", \"assertThrows\": \"flat\"");
+        Path configFile = writeConfig("\"try-catch-finally\": \"to-assert-throws\", \"assertion-lambda-blocks\": \"move-to-prefix\", \"assertThrows\": \"flat\"");
 
         Error error = assertThrows(Error.class, () -> FilesUtils.readJSON(configFile, OraclesDatasetConfig.class));
 
