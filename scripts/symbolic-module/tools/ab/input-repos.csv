@@ -1,0 +1,10 @@
+id,repository,url,commit
+crawler,crawler-commons/crawler-commons,https://github.com/crawler-commons/crawler-commons.git,9740d790a85efd74918e8b8c81ac412590d8b64d
+ffmpeg,bramp/ffmpeg-cli-wrapper,https://github.com/bramp/ffmpeg-cli-wrapper.git,a6655138d7cc1b2c62a57a5e95798695e060de6e
+jsoup,jhy/jsoup,https://github.com/jhy/jsoup.git,f727535bcae771a26daf9dff585a8bfd9f015668
+eec,wangguanquan/eec,https://github.com/wangguanquan/eec.git,43cbda4ee4e09bf9988e033f4e4ac8cc3b108af4
+plexus,codehaus-plexus/plexus-utils,https://github.com/codehaus-plexus/plexus-utils.git,86c5f2f77e0c43a93beb0443b6829da284483e32
+esapi,esapi/esapi-java-legacy,https://github.com/esapi/esapi-java-legacy.git,58be1699d92336f3eff87435ee22cceced9a466d
+cryptofs,cryptomator/cryptofs,https://github.com/cryptomator/cryptofs.git,2b2f33795278ffd31389c2211cbcfc0d37c06e37
+uuid,cowtowncoder/java-uuid-generator,https://github.com/cowtowncoder/java-uuid-generator.git,3f2109438765a4e196b69bff6d14234e5bf33075
+steve,steve-community/steve,https://github.com/steve-community/steve.git,ea62fe17daa2d3bafe236e131d9e68b828a17b1a
