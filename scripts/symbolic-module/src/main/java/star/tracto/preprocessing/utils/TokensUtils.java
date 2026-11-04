@@ -56,6 +56,8 @@ public class TokensUtils {
     private static boolean streamFlag = false;
     private static Set<String> unsolvableTokens = new HashSet<>();
     private static boolean unsolvableWarn = false;
+    /* The message recorded when the position of the target is not found in its test prefix. */
+    static final String TARGET_POSITION_NOT_FOUND = "Target position not found in the test prefix: the local variables in scope are limited to the top level of the test prefix";
 
     /**
      * A support class to collect various types of candidate token identifiers categorized by their type when processing
@@ -279,6 +281,8 @@ public class TokensUtils {
             // Get the compilation units for the test class and the focal class
             CompilationUnit tcCu = JavaParserUtils.getCompilationUnit(testPrefixClassPath);
             CompilationUnit fcCu = JavaParserUtils.getCompilationUnit(focalClassPath);
+            // The split test cases, ending with their targets: they locate the position of each target in its prefix
+            Optional<CompilationUnit> splitTestCu = parseSplitTestClass(testClassPath);
             // Check that the compilation units are not null
             if (tcCu == null || fcCu == null) {
                 logger.error("Compilation unit is null for test class: " + testPrefixClassPath + " or focal class: " + focalClassPath);
@@ -323,7 +327,7 @@ public class TokensUtils {
                             clazzDatapointsErrors.get(testPrefix.getNameAsString()).putIfAbsent("targetFound", new ArrayList<>());
                             clazzDatapointsErrors.get(testPrefix.getNameAsString()).putIfAbsent("targetMissing", new ArrayList<>());
                             // Setup the root token identifiers amd references collector
-                            setUpRootTokenIdentifiers(tcCu, testPrefix, targetAssertion);
+                            setUpRootTokenIdentifiers(tcCu, testPrefix, targetAssertion, targetPosition(splitTestCu, testPrefix));
                             setupRootTokenReferences(rootTokenReferencesCollector, rootTokenIdentifiersCollector);
                             TokenIdentifiersCollector currentTokenIdentifiersCollector = cloneRootTokenIdentifiers();
                             TokenReferencesCollector currentTokenReferences = new TokenReferencesCollector(); //cloneRootTokenReferences();
@@ -601,6 +605,8 @@ public class TokensUtils {
             // Get the compilation units for the test class and the focal class
             CompilationUnit tcCu = JavaParserUtils.getCompilationUnit(testPrefixClassPath);
             CompilationUnit fcCu = JavaParserUtils.getCompilationUnit(focalClassPath);
+            // The split test cases, ending with their targets: they locate the position of each target in its prefix
+            Optional<CompilationUnit> splitTestCu = parseSplitTestClass(testClassPath);
             // Check that the compilation units are not null
             if (tcCu == null || fcCu == null) {
                 logger.error("Compilation unit is null for test class: " + testPrefixClassPath + " or focal class: " + focalClassPath);
@@ -649,7 +655,7 @@ public class TokensUtils {
                             // Setup error map for the test case
                             clazzDatapointsErrors.get(testPrefix.getNameAsString()).putIfAbsent(targetAssertion, new ArrayList<>());
                             // Setup the root token identifiers amd references collector
-                            setUpRootTokenIdentifiers(tcCu, testPrefix, targetAssertion);
+                            setUpRootTokenIdentifiers(tcCu, testPrefix, targetAssertion, targetPosition(splitTestCu, testPrefix));
                             setupRootTokenReferences(rootTokenReferencesCollector, rootTokenIdentifiersCollector);
                             TokenIdentifiersCollector currentTokenIdentifiersCollector = cloneRootTokenIdentifiers();
                             TokenReferencesCollector currentTokenReferences = new TokenReferencesCollector(); //cloneRootTokenReferences();
@@ -908,12 +914,21 @@ public class TokensUtils {
      * @param tcCu the compilation unit of the test class
      * @param tp the method declaration of the test prefix
      * @param targetAssertion the target assertion to process
+     * @param targetPosition the block (or switch entry) of the test prefix that contained the target
+     *                       ({@link TargetScope#targetPosition}): the local variables and the parameters collected are the
+     *                       ones in scope there. If empty, the local variables declared at the top level of the test
+     *                       prefix and all the parameters declared within its body are collected
      */
     public static void setUpRootTokenIdentifiers (
             CompilationUnit tcCu,
             MethodDeclaration tp,
-            String targetAssertion
+            String targetAssertion,
+            Optional<Node> targetPosition
     ) {
+        TargetScope.Declarations declarationsInScope = targetPosition.map(TargetScope::declarationsInScope).orElse(null);
+        if (declarationsInScope == null) {
+            clazzDatapointsErrors.get(tp.getNameAsString()).get(targetAssertion).add(TARGET_POSITION_NOT_FOUND);
+        }
         // Get the primary type of the test class to collect fields and methods defined within it
         TypeDeclaration tc = tcCu.getPrimaryType().get();
         // Collect the fields defined within the test class and the test prefix (immediately accessible)
@@ -930,7 +945,11 @@ public class TokensUtils {
                     ClassOrInterfaceDeclaration.class,
                     0
             );
-            updateHashMapOfFieldTypeIdentifiers(fieldTypeIdentifiers, tp, 0);
+            if (declarationsInScope != null) {
+                updateHashMapOfVariableIdentifiers(fieldTypeIdentifiers, declarationsInScope.variables());
+            } else {
+                updateHashMapOfFieldTypeIdentifiers(fieldTypeIdentifiers, tp, 0);
+            }
         } catch (Exception e) {
             String message = "Error collecting root variables type identifiers for test case: " + tp.getNameAsString() + " - " + e.getMessage();
             logger.error(message);
@@ -965,10 +984,15 @@ public class TokensUtils {
             }
             logger.error("********************************************************************");
         }
-        // Collect the parameters defined within try/catch statements within the test prefix
+        // Collect the parameters in scope at the position of the target (of the test method, of the enclosing catch
+        // clauses and lambda expressions)
         HashMap<String, List<Type>> parameterIdentifiers = new HashMap<>();
         try {
-            updateHashMapOfParameterIdentifiers(parameterIdentifiers, tp);
+            if (declarationsInScope != null) {
+                updateHashMapOfParameterIdentifiers(parameterIdentifiers, declarationsInScope.parameters());
+            } else {
+                updateHashMapOfParameterIdentifiers(parameterIdentifiers, tp);
+            }
         } catch (Exception e) {
             String message = "Error collecting parameter identifiers for test case: " + tp.getNameAsString() + " - " + e.getMessage();
             logger.error(message);
@@ -2820,6 +2844,72 @@ public class TokensUtils {
                 if (!isAlreadyPresent) {
                     parameterTypeIdentifiers.get(parameterName).add(parameter.getType());
                 }
+            }
+        }
+    }
+
+    /**
+     * Parses the class of the split test cases (with their targets), or returns an empty optional if it cannot be parsed
+     * (the targets are then not located: {@link #setUpRootTokenIdentifiers} falls back to the top level of the prefix).
+     */
+    private static Optional<CompilationUnit> parseSplitTestClass(Path splitTestClassPath) {
+        try {
+            return Optional.of(JavaParserUtils.getCompilationUnit(splitTestClassPath));
+        } catch (Exception e) {
+            logger.error("Error parsing the split test class " + splitTestClassPath + ": " + e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Locates the position of the target of a test prefix ({@link TargetScope#targetPosition}), from the split test case
+     * with the same name.
+     */
+    private static Optional<Node> targetPosition(Optional<CompilationUnit> splitTestCu, MethodDeclaration testPrefix) {
+        Optional<TypeDeclaration<?>> splitTestClass = splitTestCu.flatMap(CompilationUnit::getPrimaryType);
+        if (splitTestClass.isEmpty()) {
+            return Optional.empty();
+        }
+        List<MethodDeclaration> splitTestCases = splitTestClass.get().getMethodsByName(testPrefix.getNameAsString());
+        if (splitTestCases.size() != 1) {
+            return Optional.empty();
+        }
+        return TargetScope.targetPosition(splitTestCases.get(0), testPrefix);
+    }
+
+    /**
+     * Updates the map of variable identifiers with the given variables (the variables in scope at the position of the
+     * target). If a variable name already exists in the map, it adds the new variable declarator to the list of existing
+     * ones.
+     */
+    private static void updateHashMapOfVariableIdentifiers(
+            HashMap<String, List<Pair<VariableDeclarator,Type>>> variableIdentifiers,
+            List<VariableDeclarator> variables
+    ) {
+        for (VariableDeclarator variableDeclarator : variables) {
+            String variableName = variableDeclarator.getNameAsString();
+            Type variableType = variableDeclarator.getType();
+            variableIdentifiers.putIfAbsent(variableName, new ArrayList<>());
+            boolean isAlreadyPresent = variableIdentifiers.get(variableName).stream().anyMatch(v -> v.getValue0().equals(variableDeclarator) && v.getValue1().equals(variableType));
+            if (!isAlreadyPresent) {
+                variableIdentifiers.get(variableName).add(new Pair<>(variableDeclarator, variableType));
+            }
+        }
+    }
+
+    /**
+     * Updates the map of parameter identifiers with the given parameters (the parameters in scope at the position of the
+     * target). If a parameter name already exists in the map, it adds the new type to the list of existing ones.
+     */
+    private static void updateHashMapOfParameterIdentifiers(
+            HashMap<String, List<Type>> parameterTypeIdentifiers,
+            List<Parameter> parameters
+    ) {
+        for (Parameter parameter : parameters) {
+            parameterTypeIdentifiers.putIfAbsent(parameter.getNameAsString(), new ArrayList<>());
+            boolean isAlreadyPresent = parameterTypeIdentifiers.get(parameter.getNameAsString()).stream().anyMatch(p -> p.equals(parameter.getType()));
+            if (!isAlreadyPresent) {
+                parameterTypeIdentifiers.get(parameter.getNameAsString()).add(parameter.getType());
             }
         }
     }
