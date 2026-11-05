@@ -2,6 +2,7 @@ package star.tracto.preprocessing;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.MappingIterator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.javatuples.Pair;
 import org.slf4j.Logger;
@@ -13,6 +14,7 @@ import star.tracto.preprocessing.components.PartialOracleDatapoint;
 import star.tracto.preprocessing.components.TestClazzDatapoints;
 import star.tracto.preprocessing.utils.TokensUtils;
 import star.tracto.utils.FilesUtils;
+import star.tracto.utils.JsonArrayWriter;
 import star.tracto.utils.javaParser.JavaParserUtils;
 
 import java.io.IOException;
@@ -52,34 +54,41 @@ public class TokensDataset {
         // Set up Jackson type for reading input JSON
         ObjectMapper mapper = new ObjectMapper();
         JavaType innerType = mapper.getTypeFactory().constructParametricType(TestClazzDatapoints.class, OracleDatapoint.class);
-        JavaType listType = mapper.getTypeFactory().constructCollectionType(List.class, innerType);
 
         // Walk through the directory and process files recursively
         Files.walk(inputDatasetPath)
                 .filter(Files::isRegularFile) // Only process files, not directories
                 .filter(path -> filePattern.matcher(path.getFileName().toString()).matches()) // Match pattern
                 .forEach(filePath -> {
-                    // Initialize per-file data containers to avoid memory buildup
-                    List<TestClazzDatapoints<PartialOracleDatapoint>> testClassesPartialOracleDatapoints = new ArrayList<>();
+                    // Each test class is read, processed and written one at a time, instead of the whole file at once
+                    // (Step 23): only the errors statistics (small) are kept until the end of the file
                     HashMap<String, HashMap<String, HashMap<String, List<String>>>> errorsStatistics = new HashMap<>();
-                    List<TestClazzDatapoints<OracleDatapoint>> testClazzOraclesDatapoints = FilesUtils.readJSONList(filePath, listType);
-                    for (TestClazzDatapoints testClazzDatapoint : testClazzOraclesDatapoints) {
-                        try {
-                            Pair<TestClazzDatapoints, HashMap<String, HashMap<String, List<String>>>> result = TokensUtils.generateTokenSteps(repoRootPath, testClazzDatapoint);
-                            TestClazzDatapoints testClazzDatapoints = result.getValue0();
-                            errorsStatistics.put(testClazzDatapoints.testClass().filePath(), result.getValue1());
-                            testClassesPartialOracleDatapoints.add(testClazzDatapoints);
-                        } catch (IllegalStateException e) {
-                            logger.error(e.getMessage());
-                        }
-                    }
-
-                    logger.info("Datapoints processed: {}", testClassesPartialOracleDatapoints.size());
-
                     Path datapointsOutFile = outputDatasetPath.resolve(filePath.getFileName().toString());
                     Path statsOutFile = outputStatisticsPath.resolve(filePath.getFileName().toString());
+                    int datapointsProcessed;
+                    try (MappingIterator<TestClazzDatapoints<OracleDatapoint>> testClazzOraclesDatapoints = FilesUtils.readJSONArray(filePath, innerType);
+                         JsonArrayWriter datapointsWriter = new JsonArrayWriter(objectMapper, datapointsOutFile)) {
+                        while (testClazzOraclesDatapoints.hasNextValue()) {
+                            TestClazzDatapoints testClazzDatapoint = testClazzOraclesDatapoints.nextValue();
+                            TestClazzDatapoints testClazzDatapoints;
+                            try {
+                                Pair<TestClazzDatapoints, HashMap<String, HashMap<String, List<String>>>> result = TokensUtils.generateTokenSteps(repoRootPath, testClazzDatapoint);
+                                testClazzDatapoints = result.getValue0();
+                                errorsStatistics.put(testClazzDatapoints.testClass().filePath(), result.getValue1());
+                            } catch (IllegalStateException e) {
+                                logger.error(e.getMessage());
+                                continue;
+                            }
+                            datapointsWriter.write(testClazzDatapoints);
+                        }
+                        datapointsProcessed = datapointsWriter.written();
+                    } catch (IOException e) {
+                        throw new RuntimeException("Error reading or writing JSON of file " + filePath, e);
+                    }
+
+                    logger.info("Datapoints processed: {}", datapointsProcessed);
+
                     try {
-                        objectMapper.writeValue(datapointsOutFile.toFile(), testClassesPartialOracleDatapoints);
                         objectMapper.writerWithDefaultPrettyPrinter().writeValue(statsOutFile.toFile(), errorsStatistics);
                     } catch (IOException e) {
                         throw new RuntimeException("Error writing JSON to file", e);
