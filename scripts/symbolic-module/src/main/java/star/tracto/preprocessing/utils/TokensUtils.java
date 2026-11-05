@@ -934,17 +934,8 @@ public class TokensUtils {
         // Collect the fields defined within the test class and the test prefix (immediately accessible)
         HashMap<String, List<Pair<VariableDeclarator,Type>>> fieldTypeIdentifiers = new HashMap<>();
         try {
-            updateHashMapOfFieldTypeIdentifiers(
-                    fieldTypeIdentifiers,
-                    tc.getFields(),
-                    List.of(
-                        List.of(new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))),
-                        List.of(new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(true))),
-                        List.of(new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(true)))
-                    ),
-                    ClassOrInterfaceDeclaration.class,
-                    0
-            );
+            // All the fields of the test class (package-private included) and the fields it inherits
+            updateHashMapOfTestClassFieldIdentifiers(fieldTypeIdentifiers, tc);
             if (declarationsInScope != null) {
                 updateHashMapOfVariableIdentifiers(fieldTypeIdentifiers, declarationsInScope.variables());
             } else {
@@ -1007,7 +998,7 @@ public class TokensUtils {
         // Collect the list of methods defined within the test class (immediately accessible)
         HashMap<String, List<MethodUsage>> methodUsageIdentifiers = new HashMap<>();
         try {
-            updateHashMapOfMethodUsageIdentifiers(methodUsageIdentifiers, tc, new ArrayList<>(), List.of(new Pair("Test", Boolean.valueOf(false))));
+            updateHashMapOfTestClassMethodIdentifiers(methodUsageIdentifiers, tc);
         } catch (Exception e) {
             String message = "Error collecting root method usage identifiers for test case: " + tp.getNameAsString() + " - " + e.getMessage();
             logger.error(message);
@@ -1595,10 +1586,10 @@ public class TokensUtils {
                         break;
                     case THIS:
                         try {
-                            // Retrieve the private, protected and public fields defined within the test class
-                            updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, tc.getFields(), new ArrayList<>(), ClassOrInterfaceDeclaration.class, 0);
-                            // Retrieve the private, protected and public methods defined within the test class (excluding test methods)
-                            updateHashMapOfMethodUsageIdentifiers(methodIdentifiers, tc, new ArrayList<>(), List.of(new Pair("Test", Boolean.valueOf(false))));
+                            // Retrieve the fields of the test class and the ones it inherits
+                            updateHashMapOfTestClassFieldIdentifiers(fieldIdentifiers, tc);
+                            // Retrieve the methods of the test class and the ones it inherits (excluding test methods)
+                            updateHashMapOfTestClassMethodIdentifiers(methodIdentifiers, tc);
                             // This keyword excludes constructors
                             constructorIdentifiers = new HashMap<>();
                             // Retrieve the enum constants defined within the test class (in case)
@@ -2901,4 +2892,42 @@ public class TokensUtils {
             }
         }
     }
+
+    /**
+     * Updates the map of field identifiers with the fields visible within the test class: all the fields declared in
+     * it, whatever their access modifier, then the fields it inherits from its ancestors ({@link TestClassScope}).
+     */
+    private static void updateHashMapOfTestClassFieldIdentifiers(
+            HashMap<String, List<Pair<VariableDeclarator,Type>>> fieldIdentifiers,
+            TypeDeclaration<?> testClass
+    ) {
+        updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, testClass.getFields(), new ArrayList<>(), ClassOrInterfaceDeclaration.class, 0);
+        updateHashMapOfVariableIdentifiers(fieldIdentifiers, TestClassScope.inheritedFields(testClass));
+    }
+
+    /**
+     * Updates the map of method identifiers with the methods callable within the test class, excluding the test
+     * methods. If the test class cannot be resolved as a whole (the signature of one of its methods, or of an inherited
+     * one, cannot be resolved), the methods are collected one by one ({@link TestClassScope#methodsOneByOne}): a method
+     * whose signature cannot be resolved is offered by its name.
+     */
+    private static void updateHashMapOfTestClassMethodIdentifiers(
+            HashMap<String, List<MethodUsage>> methodIdentifiers,
+            TypeDeclaration<?> testClass
+    ) {
+        Set<MethodUsage> allMethods;
+        try {
+            allMethods = testClass.resolve().getAllMethods();
+        } catch (Exception e) {
+            unsolvableTokens.add(testClass.getNameAsString());
+            logger.warn("Unable to resolve the methods of the test class " + testClass.getNameAsString() + " as a whole, collecting them one by one: " + e.getMessage());
+            for (TestClassScope.Method method : TestClassScope.methodsOneByOne(testClass)) {
+                List<MethodUsage> usages = methodIdentifiers.computeIfAbsent(method.name(), name -> new ArrayList<>());
+                method.usage().filter(usage -> usages.stream().noneMatch(usage::equals)).ifPresent(usages::add);
+            }
+            return;
+        }
+        collectMethodUsages(methodIdentifiers, allMethods, new ArrayList<>(), List.of(new Pair<>("Test", Boolean.FALSE)));
+    }
+
 }
