@@ -18,6 +18,7 @@ import org.javatuples.Pair;
 import org.javatuples.Triplet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import star.tracto.utils.LinkedIdentitySet;
 import star.tracto.data.enums.*;
 import star.tracto.data.exceptions.ServerErrorException;
 import star.tracto.data.exceptions.ServerUnexpectedResponseCodeException;
@@ -2565,7 +2566,8 @@ public class TokensUtils {
             List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules,
             List<Pair<String, Boolean>> annotations
     ) {
-        for (ResolvedMethodDeclaration resolvedMethodDeclaration : resolvedMethodDeclarations) {
+        // In a fixed order: the order of the set depends on the identity hash codes of the methods (Step 24)
+        for (ResolvedMethodDeclaration resolvedMethodDeclaration : MemberOrder.methodDeclarations(resolvedMethodDeclarations)) {
             List<Modifier> methodModifiers = new ArrayList<>();
             AccessSpecifier accessSpecifier = resolvedMethodDeclaration.accessSpecifier();
 
@@ -2756,7 +2758,8 @@ public class TokensUtils {
             Class scope,
             int hierarchicalLevel
     ) {
-        Set<VariableDeclarator> tcVariablesMap = Collections.newSetFromMap(new IdentityHashMap<>());
+        // By identity, in the order of the declarations: not in the order of the identity hash codes (Step 24)
+        Set<VariableDeclarator> tcVariablesMap = new LinkedIdentitySet<>();
         JavaParserUtils.collectExistingVariables(tcVariablesMap, fieldDeclarations, modifiersRules, scope, hierarchicalLevel);
 
         tcVariablesMap.forEach(variableDeclarator -> {
@@ -2785,7 +2788,8 @@ public class TokensUtils {
             MethodDeclaration methodDeclaration,
             int hierarchicalLevel
     ) {
-        Set<VariableDeclarator> tpVariablesMap = Collections.newSetFromMap(new IdentityHashMap<>());
+        // By identity, in the order of the declarations: not in the order of the identity hash codes (Step 24)
+        Set<VariableDeclarator> tpVariablesMap = new LinkedIdentitySet<>();
         JavaParserUtils.collectExistingVariables(tpVariablesMap, methodDeclaration.getBody().get(), MethodDeclaration.class, hierarchicalLevel);
 
         tpVariablesMap.forEach(variableDeclarator -> {

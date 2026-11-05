@@ -3,9 +3,7 @@ package star.tracto.preprocessing.utils;
 import com.github.javaparser.resolution.MethodUsage;
 import com.github.javaparser.resolution.types.ResolvedType;
 
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -21,12 +19,6 @@ import java.util.Map;
  * changed from one oracle to another and with any change to the code run before.</p>
  */
 final class TypeParameterValues {
-
-    /** Orders the methods by declaring type, then signature (then name, when the signature cannot be resolved). */
-    private static final Comparator<MethodUsage> FIXED_ORDER = Comparator
-            .comparing(TypeParameterValues::declaringTypeName)
-            .thenComparing(TypeParameterValues::signature)
-            .thenComparing(MethodUsage::getName);
 
     private TypeParameterValues() {
         throw new UnsupportedOperationException("This class cannot be instantiated.");
@@ -72,28 +64,12 @@ final class TypeParameterValues {
      * @return the methods in a fixed order
      */
     static List<MethodUsage> inFixedOrder(Collection<MethodUsage> methods) {
-        List<MethodUsage> ordered = new ArrayList<>(methods);
-        ordered.sort(FIXED_ORDER);
-        return ordered;
+        // The order is shared with the other collections of methods, with the position in the source as the last key
+        // (Step 24)
+        return MemberOrder.methodUsages(methods);
     }
 
     private static String key(ResolvedType typeVariable) {
         return typeVariable.asTypeParameter().getContainerQualifiedName() + "<" + typeVariable.asTypeParameter().getName() + ">";
-    }
-
-    private static String declaringTypeName(MethodUsage method) {
-        try {
-            return method.declaringType().getQualifiedName();
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
-    private static String signature(MethodUsage method) {
-        try {
-            return method.getSignature();
-        } catch (Exception e) {
-            return method.getName();
-        }
     }
 }
