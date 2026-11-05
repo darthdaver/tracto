@@ -1910,21 +1910,17 @@ public class TokensUtils {
 
                                         for(com.github.javaparser.utils.Pair<ResolvedTypeParameterDeclaration, ResolvedType> typeParameterPair: typeParameters) {
                                             ResolvedTypeParameterDeclaration typeParameterDeclaration = typeParameterPair.a;
-                                            ResolvedType typeParameterValue = typeParameterPair.b;
                                             String typeParameterKey = typeParameterDeclaration.getContainerQualifiedName() + "<" + typeParameterDeclaration.getName() + ">";
-                                            if(typeParameterValue.isTypeVariable()) {
-                                                String typeParameterValueKey = typeParameterValue.asTypeParameter().getContainerQualifiedName() + "<" + typeParameterValue.asTypeParameter().getName() + ">";
-                                                if (tokenReferences.typeParametersReferences.containsKey(typeParameterValueKey)) {
-                                                    typeParameterValue = tokenReferences.typeParametersReferences.get(typeParameterValueKey).get(0);
+                                            // A type variable stands for the resolved values recorded for its type parameter, not for the first one (Step 21)
+                                            for (ResolvedType typeParameterValue : TypeParameterValues.valuesOf(typeParameterPair.b, tokenReferences.typeParametersReferences)) {
+                                                if (!typeParameterReferences.containsKey(typeParameterKey)) {
+                                                    typeParameterReferences.put(typeParameterKey, new ArrayList<>());
                                                 }
-                                            }
-                                            if (!typeParameterReferences.containsKey(typeParameterKey)) {
-                                                typeParameterReferences.put(typeParameterKey, new ArrayList<>());
-                                            }
-                                            final ResolvedType typeParameterValueToCompare = typeParameterValue;
-                                            boolean isAlreadyPresent = typeParameterReferences.get(typeParameterKey).stream().anyMatch(t -> t.toString().equals(typeParameterValueToCompare.toString()));
-                                            if (!isAlreadyPresent) {
-                                                typeParameterReferences.get(typeParameterKey).add(typeParameterValue);
+                                                final ResolvedType typeParameterValueToCompare = typeParameterValue;
+                                                boolean isAlreadyPresent = typeParameterReferences.get(typeParameterKey).stream().anyMatch(t -> t.toString().equals(typeParameterValueToCompare.toString()));
+                                                if (!isAlreadyPresent) {
+                                                    typeParameterReferences.get(typeParameterKey).add(typeParameterValue);
+                                                }
                                             }
                                         }
                                     }
@@ -2077,21 +2073,21 @@ public class TokensUtils {
                         }
 
 
+                        // The types whose members follow: a type variable stands for the resolved values recorded for its type
+                        // parameter, not for the first one (Step 21)
+                        List<ResolvedType> memberTypes = new ArrayList<>();
                         for (ResolvedType resolvedType: resolvedTypes) {
+                            while (resolvedType.isArray()) {
+                                resolvedType = resolvedType.asArrayType().getComponentType();
+                            }
+                            memberTypes.addAll(TypeParameterValues.valuesOf(resolvedType, tokenReferences.typeParametersReferences));
+                        }
+                        for (ResolvedType resolvedType: memberTypes) {
                             List<List<Pair<Modifier.Keyword,Boolean>>> modifiers = new ArrayList<>(List.of(
                                     List.of(new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))),
                                     List.of(new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(false))),
                                     List.of(new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(false)))
                             ));
-                            while (resolvedType.isArray()) {
-                                resolvedType = resolvedType.asArrayType().getComponentType();
-                            }
-                            if (resolvedType.isTypeVariable()) {
-                                String resolvedTypeKey = resolvedType.asTypeParameter().getContainerQualifiedName() + "<" + resolvedType.asTypeParameter().getName() + ">";
-                                if (tokenReferences.typeParametersReferences.containsKey(resolvedTypeKey)) {
-                                    resolvedType = tokenReferences.typeParametersReferences.get(resolvedTypeKey).get(0);
-                                }
-                            }
 
                             if (resolvedType.isReferenceType()) {
                                 int typeNameIdx = resolvedType.asReferenceType().getQualifiedName().lastIndexOf(".");
@@ -2147,21 +2143,17 @@ public class TokensUtils {
                                 }
                                 for(com.github.javaparser.utils.Pair<ResolvedTypeParameterDeclaration, ResolvedType> typeParameterPair: typeParameters) {
                                     ResolvedTypeParameterDeclaration typeParameterDeclaration = typeParameterPair.a;
-                                    ResolvedType typeParameterValue = typeParameterPair.b;
                                     String typeParameterKey = typeParameterDeclaration.getContainerQualifiedName() + "<" + typeParameterDeclaration.getName() + ">";
-                                    if(typeParameterValue.isTypeVariable()) {
-                                        String typeParameterValueKey = typeParameterValue.asTypeParameter().getContainerQualifiedName() + "<" + typeParameterValue.asTypeParameter().getName() + ">";
-                                        if (tokenReferences.typeParametersReferences.containsKey(typeParameterValueKey)) {
-                                            typeParameterValue = tokenReferences.typeParametersReferences.get(typeParameterValueKey).get(0);
+                                    // A type variable stands for the resolved values recorded for its type parameter, not for the first one (Step 21)
+                                    for (ResolvedType typeParameterValue : TypeParameterValues.valuesOf(typeParameterPair.b, tokenReferences.typeParametersReferences)) {
+                                        if (!typeParameterReferences.containsKey(typeParameterKey)) {
+                                            typeParameterReferences.put(typeParameterKey, new ArrayList<>());
                                         }
-                                    }
-                                    if (!typeParameterReferences.containsKey(typeParameterKey)) {
-                                        typeParameterReferences.put(typeParameterKey, new ArrayList<>());
-                                    }
-                                    final ResolvedType typeParameterValueToCompare = typeParameterValue;
-                                    boolean isAlreadyPresent = typeParameterReferences.get(typeParameterKey).stream().anyMatch(t -> t.equals(typeParameterValueToCompare));
-                                    if (!isAlreadyPresent) {
-                                        typeParameterReferences.get(typeParameterKey).add(typeParameterValue);
+                                        final ResolvedType typeParameterValueToCompare = typeParameterValue;
+                                        boolean isAlreadyPresent = typeParameterReferences.get(typeParameterKey).stream().anyMatch(t -> t.equals(typeParameterValueToCompare));
+                                        if (!isAlreadyPresent) {
+                                            typeParameterReferences.get(typeParameterKey).add(typeParameterValue);
+                                        }
                                     }
                                 }
 
@@ -2377,22 +2369,17 @@ public class TokensUtils {
             }
             for(com.github.javaparser.utils.Pair<ResolvedTypeParameterDeclaration, ResolvedType> typeParameterPair: typeParameters) {
                 ResolvedTypeParameterDeclaration typeParameterDeclaration = typeParameterPair.a;
-                ResolvedType typeParameterValue = typeParameterPair.b;
-
                 String typeParameterKey = typeParameterDeclaration.getContainerQualifiedName() + "<" + typeParameterDeclaration.getName() + ">";
 
-                if(typeParameterValue.isTypeVariable()) {
-                    String typeParameterValueKey = typeParameterValue.asTypeParameter().getContainerQualifiedName() + "<" + typeParameterValue.asTypeParameter().getName() + ">";
-                    if (tokenReferences.typeParametersReferences.containsKey(typeParameterValueKey)) {
-                        typeParameterValue = tokenReferences.typeParametersReferences.get(typeParameterValueKey).get(0);
+                // A type variable stands for the resolved values recorded for its type parameter, not for the first one (Step 21)
+                for (ResolvedType typeParameterValue : TypeParameterValues.valuesOf(typeParameterPair.b, tokenReferences.typeParametersReferences)) {
+                    if (!typeParameterReferences.containsKey(typeParameterKey)) {
+                        typeParameterReferences.put(typeParameterKey, new ArrayList<>());
                     }
-                }
-                if (!typeParameterReferences.containsKey(typeParameterKey)) {
-                    typeParameterReferences.put(typeParameterKey, new ArrayList<>());
-                }
-                boolean isAlreadyPresent = typeParameterReferences.get(typeParameterKey).contains(typeParameterValue);
-                if (!isAlreadyPresent) {
-                    typeParameterReferences.get(typeParameterKey).add(typeParameterValue);
+                    boolean isAlreadyPresent = typeParameterReferences.get(typeParameterKey).contains(typeParameterValue);
+                    if (!isAlreadyPresent) {
+                        typeParameterReferences.get(typeParameterKey).add(typeParameterValue);
+                    }
                 }
             }
         }
@@ -2641,7 +2628,8 @@ public class TokensUtils {
             List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules,
             List<Pair<String, Boolean>> annotations
     ) {
-        for (MethodUsage methodUsage : methodUsages) {
+        // In a fixed order: the order of the set depends on the identity hash codes of the methods (Step 21)
+        for (MethodUsage methodUsage : TypeParameterValues.inFixedOrder(methodUsages)) {
             List<Modifier> methodModifiers = new ArrayList<>();
 
             if (methodUsage.getDeclaration() instanceof JavaParserMethodDeclaration jpMethodDeclaration) {
