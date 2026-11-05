@@ -1,0 +1,386 @@
+{
+ "created": "2026-11-05",
+ "from": "tmp/ab/step21-B",
+ "max_class_seconds": 120,
+ "pairs": [
+  "tmp/ab/step20-A:tmp/ab/step20-B",
+  "tmp/ab/step21-A:tmp/ab/step21-B"
+ ],
+ "projects": {
+  "crawler": {
+   "classes": {
+    "BasicURLNormalizerTestSTARSplitTest": [
+     "guard:step20-B",
+     "target:grammar"
+    ],
+    "LinkAttributesTestSTARSplitTest": [
+     "sample"
+    ],
+    "MimeTypeDetectorTestSTARSplitTest": [
+     "sample"
+    ],
+    "NewsAttributesTestSTARSplitTest": [
+     "target:grammar",
+     "target:other"
+    ],
+    "SimpleRobotRulesTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "SuffixTrieTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "URLUtilsTestSTARSplitTest": [
+     "guard:step20-B"
+    ]
+   },
+   "guard_oracles_in_slow_classes_skipped": {
+    "guard:step20-B": 48
+   },
+   "seconds_on_server": 130
+  },
+  "cryptofs": {
+   "classes": {
+    "AttributeViewTypeTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "BackupHelperTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "ChunkLoaderTestSTARSplitTest": [
+     "target:member of a known type"
+    ],
+    "CleartextFileChannelTestSTARSplitTest": [
+     "target:class name"
+    ],
+    "CryptoDosFileAttributeViewTestSTARSplitTest": [
+     "sample"
+    ],
+    "CryptoFileSystemModuleTestSTARSplitTest": [
+     "target:member of a chain"
+    ],
+    "CryptoPosixFileAttributesTestSTARSplitTest": [
+     "target:class name"
+    ],
+    "DirStructureTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "DirectoryStreamFactoryTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "FilePathMigrationTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "LongFileNameProviderTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "MigratorsTestSTARSplitTest": [
+     "sample"
+    ],
+    "MissingContentDirTestSTARSplitTest": [
+     "target:member of a known type"
+    ],
+    "MissingDirIdBackupTestSTARSplitTest": [
+     "target:dependency",
+     "target:test class member"
+    ],
+    "OrphanContentDirTestSTARSplitTest": [
+     "target:member of a chain"
+    ],
+    "PathMatcherFactoryTestSTARSplitTest": [
+     "target:grammar"
+    ],
+    "ReadonlyFlagTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "RealUseTokenTestSTARSplitTest": [
+     "target:other"
+    ],
+    "StringUtilsTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "UnknownTypeTestSTARSplitTest": [
+     "target:dependency",
+     "target:test class member"
+    ]
+   },
+   "guard_oracles_in_slow_classes_skipped": {},
+   "seconds_on_server": 242
+  },
+  "eec": {
+   "classes": {
+    "CSVUtilTestSTARSplitTest": [
+     "guard:step20-B",
+     "target:class name"
+    ],
+    "CacheTestSTARSplitTest": [
+     "target:member of a known type",
+     "target:nested-block variable"
+    ],
+    "DateUtilTestSTARSplitTest": [
+     "sample"
+    ],
+    "DimensionTestSTARSplitTest": [
+     "sample"
+    ],
+    "HeaderStyleTestSTARSplitTest": [
+     "guard:step20-B",
+     "target:class name",
+     "target:member of a chain"
+    ],
+    "IndexSharedStringTableTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "ReflectUtilTestSTARSplitTest": [
+     "target:member of a chain"
+    ],
+    "SharedStringsTestSTARSplitTest": [
+     "guard:step20-B"
+    ]
+   },
+   "guard_oracles_in_slow_classes_skipped": {
+    "guard:step20-B": 362
+   },
+   "seconds_on_server": 430
+  },
+  "esapi": {
+   "classes": {
+    "ByteConversionUtilTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "CodecLogScrubberTestSTARSplitTest": [
+     "target:dependency",
+     "target:member of a chain"
+    ],
+    "CryptoHelperTestSTARSplitTest": [
+     "target:test class member"
+    ],
+    "DateValidationRuleTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "HTMLEntityCodecTestSTARSplitTest": [
+     "target:test class member"
+    ],
+    "JavaLogFactoryTestSTARSplitTest": [
+     "target:class name",
+     "target:grammar"
+    ],
+    "PercentCodecTestSTARSplitTest": [
+     "sample"
+    ],
+    "PlainTextTestSTARSplitTest": [
+     "target:member of a chain"
+    ],
+    "PushBackStringTestSTARSplitTest": [
+     "target:class name"
+    ],
+    "SecurityWrapperRequestTestSTARSplitTest": [
+     "target:member of a known type"
+    ],
+    "SecurityWrapperResponseTestSTARSplitTest": [
+     "target:member of a known type"
+    ],
+    "Slf4JLogFactoryTestSTARSplitTest": [
+     "target:grammar"
+    ],
+    "Slf4JLoggerTestSTARSplitTest": [
+     "sample"
+    ],
+    "UserInfoSupplierTestSTARSplitTest": [
+     "target:dependency"
+    ]
+   },
+   "guard_oracles_in_slow_classes_skipped": {
+    "guard:step20-B": 8
+   },
+   "seconds_on_server": 174
+  },
+  "ffmpeg": {
+   "classes": {
+    "FFmpegExecutorTestSTARSplitTest": [
+     "target:class name"
+    ],
+    "FFmpegHlsOutputBuilderTestSTARSplitTest": [
+     "target:dependency"
+    ],
+    "FFmpegTestSTARSplitTest": [
+     "target:test class member"
+    ],
+    "FFmpegUtilsTestSTARSplitTest": [
+     "target:static import"
+    ],
+    "FFprobeBuilderTestSTARSplitTest": [
+     "target:class name",
+     "target:dependency"
+    ],
+    "FractionAdapterTestSTARSplitTest": [
+     "sample"
+    ],
+    "TcpProgressParserTestSTARSplitTest": [
+     "target:other"
+    ],
+    "UdpProgressParserTestSTARSplitTest": [
+     "sample"
+    ]
+   },
+   "guard_oracles_in_slow_classes_skipped": {},
+   "seconds_on_server": 185
+  },
+  "jsoup": {
+   "classes": {
+    "CommentTestSTARSplitTest": [
+     "sample"
+    ],
+    "ControllableInputStreamTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "FormElementTestSTARSplitTest": [
+     "target:grammar"
+    ],
+    "HtmlTreeBuilderStateTestSTARSplitTest": [
+     "guard:step20-B",
+     "target:class name",
+     "target:grammar"
+    ],
+    "HtmlTreeBuilderTestSTARSplitTest": [
+     "target:class name"
+    ],
+    "NodeIteratorTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "PrinterTestSTARSplitTest": [
+     "target:member of a chain"
+    ],
+    "QueryParserTestSTARSplitTest": [
+     "target:static import"
+    ],
+    "QuietAppendableTestSTARSplitTest": [
+     "sample"
+    ],
+    "RegexTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "SafelistTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "SoftPoolTestSTARSplitTest": [
+     "guard:step20-B",
+     "target:member of a chain"
+    ],
+    "StructuralEvaluatorTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "TokenQueueTestSTARSplitTest": [
+     "guard:step20-B",
+     "target:dependency",
+     "target:other",
+     "target:test class member"
+    ],
+    "TokeniserStateTestSTARSplitTest": [
+     "guard:step20-B"
+    ]
+   },
+   "guard_oracles_in_slow_classes_skipped": {
+    "guard:step20-B": 17
+   },
+   "seconds_on_server": 690
+  },
+  "plexus": {
+   "classes": {
+    "CommandLineUtilsTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "CommandlineTestSTARSplitTest": [
+     "target:grammar"
+    ],
+    "ExpandTestSTARSplitTest": [
+     "target:class name"
+    ],
+    "ReflectionValueExtractorTestSTARSplitTest": [
+     "target:class name",
+     "target:member of a chain",
+     "target:test class member"
+    ],
+    "SelectorUtilsTestSTARSplitTest": [
+     "sample"
+    ],
+    "StreamPumperTestSTARSplitTest": [
+     "sample"
+    ],
+    "SweeperPoolTestSTARSplitTest": [
+     "target:test class member"
+    ]
+   },
+   "guard_oracles_in_slow_classes_skipped": {
+    "guard:step20-B": 10
+   },
+   "seconds_on_server": 349
+  },
+  "steve": {
+   "classes": {
+    "ChangeConfigurationTaskTestSTARSplitTest": [
+     "target:class name",
+     "target:dependency"
+    ],
+    "ChargeBoxIdValidatorTestSTARSplitTest": [
+     "target:test class member"
+    ],
+    "ConnectorStatusFilterTestSTARSplitTest": [
+     "sample"
+    ],
+    "DateTimeEditorTestSTARSplitTest": [
+     "guard:step20-B",
+     "target:dependency",
+     "target:test method parameter"
+    ],
+    "IdTagValidatorTestSTARSplitTest": [
+     "target:test class member"
+    ],
+    "OcppProtocolTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "OcppTagsRestControllerTestSTARSplitTest": [
+     "sample"
+    ],
+    "OcppVersionTestSTARSplitTest": [
+     "guard:step20-B",
+     "target:nested-block variable"
+    ],
+    "SecurityProfileValidatorTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "TransactionStopServiceHelperTestSTARSplitTest": [
+     "target:class name"
+    ]
+   },
+   "guard_oracles_in_slow_classes_skipped": {},
+   "seconds_on_server": 70
+  },
+  "uuid": {
+   "classes": {
+    "EgressInterfaceFinderTestSTARSplitTest": [
+     "sample"
+    ],
+    "LockedFileTestSTARSplitTest": [
+     "target:class name"
+    ],
+    "TimeBasedEpochGeneratorTestSTARSplitTest": [
+     "sample"
+    ],
+    "UUIDComparatorTestSTARSplitTest": [
+     "guard:step20-B"
+    ],
+    "UUIDTimerTestSTARSplitTest": [
+     "target:class name",
+     "target:member of a chain"
+    ],
+    "UUIDUtilTestSTARSplitTest": [
+     "guard:step20-B"
+    ]
+   },
+   "guard_oracles_in_slow_classes_skipped": {
+    "guard:step20-B": 78
+   },
+   "seconds_on_server": 249
+  }
+ }
+}

@@ -130,10 +130,10 @@ regular expressions on the partial oracle and on the split test prefix (not the 
   the speed of this computation matters.
 - Peak memory of the oracles stage: up to 4.5 GB (ffmpeg), 3.7 GB (java-uuid-generator).
 
-Proposed fix (not decided): write the datapoints of each test class to the output file as soon as the class is processed,
-streaming the same JSON array, so that the memory depends on the largest test class and not on the project; verify that
-the output files are byte-identical on crawler-commons and ffmpeg. Without this fix, the measurement needs a larger heap
-(`--jvm-options "-Xmx16g"`, one project at a time on a 32 GB machine).
+**Fixed by Step 23 (2026-11-05):** both stages write each test class as soon as it is processed
+(`docs/fixes/step-23-streaming-datasets.md`), with the same bytes. The oracles stage of the nine projects then fits in
+`-Xmx6g` (peak RSS 6.6 GB: eec, jsoup, ffmpeg); before, with `-Xmx24g`, the tokens stage peaked at 20.6 GB (jsoup) and
+15 GB (eec).
 
 ## 6. Dependencies (what is known so far)
 
@@ -173,6 +173,12 @@ the output files are byte-identical on crawler-commons and ffmpeg. Without this 
   oracles are counted apart from the lost ones (2026-11-04).
 - The A/B may stop early while a fix is developed (a run on the test classes concerned, then the small projects first,
   stopped at the first regression); each step still ends with the complete A/B on the nine projects (2026-11-04).
+- **2026-11-05, replaces the complete A/B after each step:** the development moves to a 16 GB laptop; each step is
+  checked with its tests and the regression corpus (`tools/ab/corpus.py`, `docs/resume.md` section 4), and the complete
+  nine-project test runs on a large server only before the training, with the generation of the training dataset
+  (`docs/resume.md` section 7).
+- **2026-11-05:** the order of the candidates is deterministic in the dataset (the prompt builder writes them verbatim);
+  a shuffle against positional shortcuts, if wanted, goes in the Python prompt builder, seeded and configurable.
 
 ## 8. How to restart
 
@@ -222,31 +228,54 @@ datasets of A/B runs (it imports `compare17.py`).
 
 ## 9. Plan of the fixes (approved by the author)
 
-Measured on the nine projects before Step 20: 27.3% of the oracles lost; after Step 20: 20.7%. Status on 2026-11-04.
+Measured on the nine projects (`missing_tokens.py`): 27.3% of the oracles lost before Step 20, 20.8% after Step 20 and
+after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/resume.md` (section 4).
 
-1. **Done, Step 20:** the local declarations in scope at the position of the target
-   (`docs/fixes/step-20-target-scope.md`).
-2. **In progress, Step 21 (found during the A/B of the test class step, approved by the author on 2026-11-05):** the
-   type of a chain depended on the order of a hash set. A type variable (`next()` returns `E`) was resolved to the first
-   value recorded for its type parameter, and `Iterator<E>` gets two after `items().iterator()` (the element type from
-   `Collection.iterator()`, the unresolved `T` from `Iterable.iterator()`), in the order of `getAllMethods()`, a hash
-   set ordered by identity hash codes: the same chain was lost in some oracles and not in others, and any change to the
-   code moved the losses (false regressions in every A/B). Fix: the resolved values instead of the first one, and the
-   methods in a fixed order (`docs/fixes/step-21-type-parameter-order.md`).
-3. **Next, Step 22:** the names visible from the whole test class: the fields and methods of the test class and of its
-   superclasses (code and tests ready, A/B to run on top of Step 21); then, each its own step, the static imports
-   (wildcard included) and the class names (`java.lang`, imports, same package, the classes nested in the test class).
-4. **The qualified JUnit assertions left in the dataset:** the targets lose their `Assert.` / `Assertions.` qualifier
-   (`target: assertion`), but the split test prefix files of cryptofs still contain qualified calls
-   (`Assertions.assertEquals(...)`, `e = Assertions.assertThrows(...)`: 60 files): the model sees the qualified form in
-   its input while it must always generate the bare one. First check whether they are within the test prefix or only in
-   the other methods of the files, then remove the qualifier wherever the dataset shows it, for consistency.
-5. **Grammar:** the spacing of `instanceof`, the `)` after a string concatenation.
-6. **Assertion forms (JUnit only):** the block lambdas (`No enum constant for symbol: EOF`), the assigned assertions
-   (`X e = assertThrows(...)`, `var r = assertDoesNotThrow(...)`), the leading `//` comments of the targets.
-7. **Type inference of the chains** (members of a chain, members of a known type).
-8. **Dependencies:** design (section 6) with the answer of the author on the inference setting.
-9. **Defects found during Step 20**, each its own step: the candidates depend on the processing history (state kept
-   across datapoints), and the protected-member filter compares package names with `String.contains`. Found during
-   Step 21: the copy of the root references is shallow (the stream path appends to the lists of the root), and the
-   classes generated by the pipeline (`…STARSplitTest`, `…STARNormalizedTest`) are offered as class names.
+**Done** (one commit and one document in `docs/fixes/` each):
+
+- Step 20: the local declarations in scope at the position of the target.
+- Step 21: type variables resolved to all their values, methods in a fixed order (A/B: 0 regressions, no status
+  change; the result of an oracle no longer depends on what was processed before it).
+- Step 22: the fields and methods of the test class and of its superclasses (verified on the regression corpus).
+- Step 23: the datasets written one test class at a time (same bytes; the memory no longer follows the output).
+- Step 24: fields, local variables and declared methods in a fixed order (the dataset is reproducible byte for byte).
+
+**Lost oracles by cause after Step 21** (oracles recovered by fixing that cause alone, of 9,049; an oracle can have
+several causes):
+
+| Cause | Oracles (alone) | Where |
+|---|---|---|
+| member of a chain (type inference) | 456 (426) | jsoup 288, eec 57, uuid 55 |
+| class name | 331 (247) | jsoup 92, eec 86, esapi 50, crawler 37 |
+| dropped: Hamcrest `assertThat` (out of scope) | 314 | ffmpeg 312 |
+| dropped: assigned assertions (`X e = assertThrows(...)`, "Assertion do not start with JUnit api") | 91 | cryptofs 32, esapi 28, jsoup 20 |
+| dropped: Hamcrest `MatcherAssert.assertThat` (out of scope; 8 with leading `//` comments) | 110 | cryptofs 110 |
+| grammar | 168 (101) | crawler 63, uuid 57, esapi 24 |
+| test class member (Step 22) | 147 (133) | steve 64, plexus 26 |
+| static import | 133 (130) | jsoup 70, eec 41, ffmpeg 20 |
+| dependency | 91 (85) | esapi 39, ffmpeg 35 |
+| dropped: block lambdas ("No enum constant for symbol") | 52 | cryptofs 49 |
+| member of a known type | 46 (39) | cryptofs 20 |
+| other / nested-block variable | 18 / 10 | |
+
+**Next steps, in the approved order** (details and entry points in `docs/resume.md`, section 6):
+
+1. **Static imports** (130), wildcard included.
+2. **Class names** (247): `java.lang`, the imports, the same package, the classes nested in the test class; never the
+   classes generated by the pipeline (`…STARSplitTest`, `…STARNormalizedTest`, `…STARSplitTestPrefix`).
+3. **Qualified JUnit assertions in the prefixes** (no oracle recovered: no target is qualified; a consistency fix of the
+   model input): the split prefix files of cryptofs still contain `Assertions.assertX(...)`; first check whether they
+   are in the test prefix or only in other methods, then normalize to the unqualified form.
+4. **Grammar** (101): the spacing of `instanceof`, the `)` after a string concatenation.
+5. **Assertion forms, JUnit only** (143): assigned assertions (`X e = assertThrows(...)`, 91), block lambdas (52).
+6. **Type inference of the chains** (426, the largest but the hardest).
+7. **Dependencies** (85): design (section 6) with the answer of the author on the inference setting.
+8. **Pre-existing defects**, each its own step: candidates depending on the processing history (state across
+   datapoints and classes: static `unsolvableTokens`, the shallow `cloneRootTokenReferences`); the protected-member
+   filter (`String.contains` on package names); a substring of an error message holding an identity hash; `Client.java`
+   reading whole oracles files; the test methods annotated `@ParameterizedTest` (or other test annotations than `@Test`)
+   offered as candidates; the `LAMBDA_PARAM` placeholder offered outside lambdas (`assertEquals(hot.toString(`).
+
+Proposed to the author on 2026-11-05 (not decided): bring the assigned assertions (91 oracles, step 5) forward, after
+the class names; cut the first training dataset after steps 1, 2 and the assigned assertions (about 470 oracles at most,
+the causes overlap), measured with the full test of `docs/resume.md` section 7.
