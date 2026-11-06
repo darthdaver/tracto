@@ -64,6 +64,7 @@ public class JavaParserUtils {
 
     private static JavaParser javaParser;
     private static JavaSymbolSolver symbolSolver;
+    private static CombinedTypeSolver repoTypeSolver;
     private static final Logger logger = LoggerFactory.getLogger(JavaParserUtils.class);
     /**
      * The language level of the parser, for the code under analysis and for the classes found by the type solvers: the
@@ -162,11 +163,32 @@ public class JavaParserUtils {
                 }
             }
         }
+        repoTypeSolver = typeSolver;
         symbolSolver = new JavaSymbolSolver(typeSolver);
         parserConfiguration.setSymbolResolver(symbolSolver);
         javaParser = new JavaParser(parserConfiguration);
         StaticJavaParser.setConfiguration(parserConfiguration);
         return javaParser;
+    }
+
+    /**
+     * Resolves a type by its canonical name (a nested type with dots, as {@code a.b.Outer.Inner}) with the type solvers
+     * of the repository set by {@link #setRepoJavaParser}.
+     *
+     * @param canonicalName the canonical name of the type
+     * @return the declaration of the type, or empty if no type solver resolves it (or the solvers are not set)
+     */
+    public static Optional<ResolvedReferenceTypeDeclaration> solveType(String canonicalName) {
+        if (repoTypeSolver == null) {
+            return Optional.empty();
+        }
+        try {
+            var reference = repoTypeSolver.tryToSolveType(canonicalName);
+            return reference.isSolved() ? Optional.of(reference.getCorrespondingDeclaration()) : Optional.empty();
+        } catch (Exception | StackOverflowError e) {
+            logger.warn("Type {} not resolved - {}", canonicalName, e.getMessage());
+            return Optional.empty();
+        }
     }
 
     /**

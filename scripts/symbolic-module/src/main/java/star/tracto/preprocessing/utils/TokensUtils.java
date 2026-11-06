@@ -13,6 +13,7 @@ import com.github.javaparser.resolution.declarations.ResolvedTypeParameterDeclar
 import com.github.javaparser.resolution.types.ResolvedReferenceType;
 import com.github.javaparser.resolution.types.ResolvedType;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserMethodDeclaration;
+import com.github.javaparser.resolution.model.typesystem.ReferenceTypeImpl;
 import org.antlr.v4.runtime.misc.Triple;
 import org.javatuples.Pair;
 import org.javatuples.Triplet;
@@ -1011,11 +1012,21 @@ public class TokensUtils {
             }
             logger.error("********************************************************************");
         }
+        // Collect the members imported statically (Step 25)
+        HashMap<String, List<EnumConstantDeclaration>> enumConstantIdentifiers = new HashMap<>();
+        try {
+            updateHashMapsOfStaticImportIdentifiers(methodUsageIdentifiers, fieldTypeIdentifiers, parameterIdentifiers, enumConstantIdentifiers, tcCu);
+        } catch (Exception e) {
+            String message = "Error collecting the static imports for test case: " + tp.getNameAsString() + " - " + e.getMessage();
+            logger.error(message);
+            clazzDatapointsErrors.get(tp.getNameAsString()).get(targetAssertion).add(message);
+        }
         // Setup the token identifiers map
         rootTokenIdentifiersCollector.setClassIdentifiersMap(typeDeclarationPathIdentifiers);
         rootTokenIdentifiersCollector.setFieldIdentifiersMap(fieldTypeIdentifiers);
         rootTokenIdentifiersCollector.setMethodIdentifiersMap(methodUsageIdentifiers);
         rootTokenIdentifiersCollector.setParameterIdentifiersMap(parameterIdentifiers);
+        rootTokenIdentifiersCollector.setEnumIdentifiersMap(enumConstantIdentifiers);
     }
 
     public static void setupRootTokenReferences (
@@ -1035,6 +1046,10 @@ public class TokensUtils {
         for (Map.Entry<String,List<Pair<VariableDeclarator,Type>>> entry: fields.entrySet()) {
             collectTypeParametersReferencesFromFieldIdentifiers(entry.getValue(), tokenReferencesCollector);
         }
+        // The enum constants imported statically (Step 25)
+        HashMap<String,List<EnumConstantDeclaration>> enums = new HashMap<>();
+        updateHashMapOfEnumConstantReferencesFromIdentifiers(enums, tokenIdentifiersCollector.enumIdentifiers);
+        tokenReferencesCollector.setEnums(enums);
     }
 
     private static void updateHashMapOfFieldTypeReferencesFromIdentifiers(
@@ -1696,6 +1711,8 @@ public class TokensUtils {
                         boolean fieldsMatch = tokenIdentifiersCollector.fieldIdentifiers.containsKey(token);
                         boolean parametersMatch = tokenIdentifiersCollector.parameterIdentifiers.containsKey(token);
                         boolean lambdasMatch = tokenIdentifiersCollector.lambdaIdentifiers.containsKey(token);
+                        // An enum constant: imported statically, or after the name of its enum (Step 25)
+                        boolean enumConstantsMatch = tokenIdentifiersCollector.enumIdentifiers.containsKey(token);
                         ContextualInfoType contextualInfoType = ContextualInfoType.IDENTIFIER;
                         List<ResolvedType> resolvedTypes = new ArrayList<>();
 
@@ -1705,9 +1722,10 @@ public class TokensUtils {
                         if (fieldsMatch) matchCount++;
                         if (lambdasMatch) matchCount++;
                         if (parametersMatch) matchCount++;
+                        if (enumConstantsMatch) matchCount++;
                         // If the token does not match any identifier, clear all maps to avoid suggesting irrelevant tokens
                         // TODO: Manage tokens that could refer to lambda expressions or generics
-                        if (!classesMatch && !methodsMatch && !fieldsMatch && !lambdasMatch && !parametersMatch) {
+                        if (!classesMatch && !methodsMatch && !fieldsMatch && !lambdasMatch && !parametersMatch && !enumConstantsMatch) {
                             tokenIdentifiersCollector.setClassIdentifiersMap(new HashMap<>());
                             tokenIdentifiersCollector.setMethodIdentifiersMap(new HashMap<>());
                             tokenIdentifiersCollector.setConstructorIdentifiersMap(new HashMap<>());
@@ -1773,7 +1791,7 @@ public class TokensUtils {
                         }
 
                         if (matchCount > 1) {
-                            String message = "Multiple identifier matches for token: " + token + " (classes (or constructors): " + classesMatch + ", methods: " + methodsMatch + ", fields: " + fieldsMatch + ", lambdas: " + lambdasMatch + ")";
+                            String message = "Multiple identifier matches for token: " + token + " (classes (or constructors): " + classesMatch + ", methods: " + methodsMatch + ", fields: " + fieldsMatch + ", lambdas: " + lambdasMatch + ", enum constants: " + enumConstantsMatch + ")";
                             logger.warn(message);
                             clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
                         }
@@ -2064,6 +2082,32 @@ public class TokensUtils {
                             }
                         }
 
+                        if (enumConstantsMatch) {
+                            // The members of an enum constant are the ones of its enum
+                            for (EnumConstantDeclaration enumConstant : tokenIdentifiersCollector.enumIdentifiers.get(token)) {
+                                Optional<EnumDeclaration> enumDeclaration = enumConstant.findAncestor(EnumDeclaration.class);
+                                if (enumDeclaration.isEmpty()) {
+                                    continue;
+                                }
+                                try {
+                                    ResolvedReferenceTypeDeclaration enumType = enumDeclaration.get().resolve();
+                                    ResolvedType resolvedType = new ReferenceTypeImpl(enumType);
+                                    if (resolvedTypes.stream().noneMatch(r -> r.equals(resolvedType))) {
+                                        resolvedTypes.add(resolvedType);
+                                        processDeclaringType(tokenReferences, enumType.getQualifiedName(), currentClassReferences, typeParameterReferences, resolvedType, new ArrayList<>());
+                                    }
+                                } catch (Exception e) {
+                                    unsolvableTokens.add(token);
+                                    String message = "Unable to process enum constant " + token + " - " + e.getMessage();
+                                    logger.error(message);
+                                    clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
+                                }
+                            }
+                            HashMap<String, List<EnumConstantDeclaration>> matchedEnumConstants = new HashMap<>();
+                            matchedEnumConstants.put(token, tokenIdentifiersCollector.enumIdentifiers.get(token));
+                            updateHashMapOfEnumConstantReferencesFromIdentifiers(enumReferences, matchedEnumConstants);
+                            contextualInfoType = ContextualInfoType.FIELD_CALL;
+                        }
 
                         // The types whose members follow: a type variable stands for the resolved values recorded for its type
                         // parameter, not for the first one (Step 21)
@@ -2932,6 +2976,44 @@ public class TokensUtils {
             return;
         }
         collectMethodUsages(methodIdentifiers, allMethods, new ArrayList<>(), List.of(new Pair<>("Test", Boolean.FALSE)));
+    }
+
+    /**
+     * Updates the maps of identifiers with the members imported statically by the test class ({@link StaticImports}).
+     * The declarations of the test class shadow them (JLS 6.4.1): an imported method is not added if the test class
+     * has a method of the same name, an imported field or enum constant if a variable (field, local variable or
+     * parameter) of the same name is in scope.
+     */
+    private static void updateHashMapsOfStaticImportIdentifiers(
+            HashMap<String, List<MethodUsage>> methodIdentifiers,
+            HashMap<String, List<Pair<VariableDeclarator,Type>>> fieldIdentifiers,
+            HashMap<String, List<Type>> parameterIdentifiers,
+            HashMap<String, List<EnumConstantDeclaration>> enumConstantIdentifiers,
+            CompilationUnit testCu
+    ) {
+        StaticImports.Members imported = StaticImports.of(testCu);
+        Set<String> testClassMethods = new HashSet<>(methodIdentifiers.keySet());
+        Set<String> variablesInScope = new HashSet<>(fieldIdentifiers.keySet());
+        variablesInScope.addAll(parameterIdentifiers.keySet());
+        for (MethodUsage method : imported.methods()) {
+            if (!testClassMethods.contains(method.getName())) {
+                List<MethodUsage> usages = methodIdentifiers.computeIfAbsent(method.getName(), name -> new ArrayList<>());
+                if (usages.stream().noneMatch(method::equals)) {
+                    usages.add(method);
+                }
+            }
+        }
+        updateHashMapOfVariableIdentifiers(fieldIdentifiers, imported.fields().stream()
+                .filter(variable -> !variablesInScope.contains(variable.getNameAsString()))
+                .toList());
+        for (EnumConstantDeclaration constant : imported.enumConstants()) {
+            if (!variablesInScope.contains(constant.getNameAsString())) {
+                List<EnumConstantDeclaration> constants = enumConstantIdentifiers.computeIfAbsent(constant.getNameAsString(), name -> new ArrayList<>());
+                if (constants.stream().noneMatch(c -> c == constant)) {
+                    constants.add(constant);
+                }
+            }
+        }
     }
 
 }
