@@ -606,44 +606,24 @@ public class JavaParserUtils {
      * are found.
      */
     public static List<TypeDeclaration> getTypeDeclarationsFromCompilationUnitAndName(CompilationUnit cu, String typeName) {
+        // The top-level and member types (nested at any depth, not the local classes of a method), in the order of the
+        // source (Step 26: the member types were never searched, the loop over them did not run)
         List<TypeDeclaration> typeDeclarations = new ArrayList<>();
-        for (TypeDeclaration typeDeclaration: cu.getTypes()) {
-            if (typeDeclaration.getNameAsString().equals(typeName)) {
-                 typeDeclarations.add(typeDeclaration);
-                 continue;
-            }
-
-            Optional<TypeDeclaration> targetTypeDeclaration =  Optional.empty();
-
-            List<TypeDeclaration> innerTypeDeclarations = (List<TypeDeclaration>) typeDeclaration.getMembers().stream()
-                    .filter(m -> ((BodyDeclaration) m).isTypeDeclaration())
-                    .collect(Collectors.toList());
-
-            while (!targetTypeDeclaration.isEmpty() && innerTypeDeclarations.size() > 0) {
-                List<TypeDeclaration> newInnerTypeDeclarations = new ArrayList<>();
-                for (TypeDeclaration innerTypeDeclaration: innerTypeDeclarations) {
-                    if (innerTypeDeclaration.getNameAsString().equals(typeName)) {
-                        targetTypeDeclaration = Optional.of(innerTypeDeclaration);
-                        break;
-                    } else {
-                        newInnerTypeDeclarations.addAll((
-                                List<TypeDeclaration>) innerTypeDeclaration.getMembers().stream()
-                                .filter(m -> ((BodyDeclaration) m).isTypeDeclaration())
-                                .collect(Collectors.toList())
-                        );
-                    }
-                }
-                if (targetTypeDeclaration.isEmpty()) {
-                    innerTypeDeclarations = newInnerTypeDeclarations;
-                } else {
-                    innerTypeDeclarations = new ArrayList<>();
-                }
-            }
-            if (targetTypeDeclaration.isPresent()) {;
-                typeDeclarations.add(targetTypeDeclaration.get());
+        for (TypeDeclaration<?> typeDeclaration : cu.findAll(TypeDeclaration.class)) {
+            if (typeDeclaration.getNameAsString().equals(typeName) && isMemberOrTopLevelType(typeDeclaration)) {
+                typeDeclarations.add(typeDeclaration);
             }
         }
         return typeDeclarations;
+    }
+
+    /** Whether a type is declared at the top level of its compilation unit or as a member of such a type. */
+    public static boolean isMemberOrTopLevelType(TypeDeclaration<?> typeDeclaration) {
+        Optional<Node> parent = typeDeclaration.getParentNode();
+        while (parent.isPresent() && parent.get() instanceof TypeDeclaration) {
+            parent = parent.get().getParentNode();
+        }
+        return parent.isPresent() && parent.get() instanceof CompilationUnit;
     }
 
     /**
@@ -1850,10 +1830,15 @@ public class JavaParserUtils {
         try {
             String packageIdentifier = cu.getPackageDeclaration().orElseThrow(IllegalStateException::new).getNameAsString();
             Path pathToPackage = repoSourcePath.resolve(packageIdentifier.replace(".","/"));
-            Files.walk(pathToPackage)
-                    .filter(Files::isRegularFile) // Only process files, not directories
-                    .filter(path -> path.toString().endsWith(".java")) // Match pattern
-                    .forEach(filePath -> {
+            // The files of the package itself, not of its subpackages (Step 26), in a fixed order
+            List<Path> packageFiles;
+            try (Stream<Path> files = Files.list(pathToPackage)) {
+                packageFiles = files.filter(Files::isRegularFile)
+                        .filter(path -> path.toString().endsWith(".java"))
+                        .sorted()
+                        .toList();
+            }
+            packageFiles.forEach(filePath -> {
                         try {
                             CompilationUnit javaFileCu = JavaParserUtils.getCompilationUnit(filePath);
                             for (TypeDeclaration typeDeclaration : javaFileCu.getTypes()) {
@@ -1861,13 +1846,7 @@ public class JavaParserUtils {
                                 if(!checkModifiersRules(modifiersRules, typeDeclaration.getModifiers())) {
                                     continue;
                                 }
-                                // If the type declaration is a class or an interface, add it to the map of existing classes
-                                if (typeDeclaration.isClassOrInterfaceDeclaration()) {
-                                    if (typeDeclaration.asClassOrInterfaceDeclaration().isInterface()) {
-                                        // Skip interfaces that cannot be instantiated or used in test assertions
-                                        continue;
-                                    }
-                                }
+                                // The interfaces too (Step 26): their constants and static methods, `instanceof`
                                 if (!existingClasses.containsKey(typeDeclaration.getNameAsString())) {
                                     existingClasses.put(typeDeclaration.getNameAsString(), new ArrayList<>());
                                 }
@@ -1978,6 +1957,15 @@ public class JavaParserUtils {
     ) {
         // Iterate over all the imports in the compilation unit
         for (ImportDeclaration importDecl : cu.getImports()) {
+            // The member types imported (Step 26): `import a.B.Inner`, `import a.B.*`, and the static imports of member
+            // types (`import static a.B.Inner`, `import static a.B.*`)
+            if (collectPathsOfImportedMemberTypes(existingClasses, repoSourcePaths, importDecl)) {
+                continue;
+            }
+            if (importDecl.isStatic()) {
+                // The other static imports name members, not types (Step 25)
+                continue;
+            }
             Set<Path> relatedTypeDeclarationPaths = new HashSet<>();
 
             // Get the fully qualified name of the imported class
@@ -2008,31 +1996,12 @@ public class JavaParserUtils {
                         if (!checkModifiersRules(modifiersRules, typeDecl.getModifiers())) {
                             continue;
                         }
-                        // If the type declaration is a class or an interface, add it to the map of existing classes
-                        if (typeDecl.isClassOrInterfaceDeclaration()) {
-                            ClassOrInterfaceDeclaration classOrInterfaceDecl = typeDecl.asClassOrInterfaceDeclaration();
-                            // if (classOrInterfaceDecl.isInterface()) {
-                                // Skip interfaces that cannot be instantiated or used in test assertions
-                            //    continue;
-                            // }
-                            if (!existingClasses.containsKey(classOrInterfaceDecl.getNameAsString())) {
-                                existingClasses.put(classOrInterfaceDecl.getNameAsString(), new ArrayList<>());
-                            }
-                            boolean isAlreadyPresent = existingClasses.get(classOrInterfaceDecl.getNameAsString()).stream().anyMatch(t -> t.equals(relatedTypeDeclPath));
-                            if (!isAlreadyPresent) {
-                                // Add the type declaration to the list of existing classes
-                                existingClasses.get(classOrInterfaceDecl.getNameAsString()).add(relatedTypeDeclPath);
-                            }
-                        } else if (typeDecl.isEnumDeclaration()) {
-                            EnumDeclaration enumDecl = typeDecl.asEnumDeclaration();
-                            if (!existingClasses.containsKey(enumDecl.getNameAsString())) {
-                                existingClasses.put(enumDecl.getNameAsString(), new ArrayList<>());
-                            }
-                            boolean isAlreadyPresent = existingClasses.get(enumDecl.getNameAsString()).stream().anyMatch(t -> t.equals(relatedTypeDeclPath));
-                            if (!isAlreadyPresent) {
-                                // Add the type declaration to the list of existing classes
-                                existingClasses.get(enumDecl.getNameAsString()).add(relatedTypeDeclPath);
-                            }
+                        // Every kind of type: class, interface, enum, record, annotation (Step 26: the records were
+                        // left out)
+                        String typeName = typeDecl.getNameAsString();
+                        List<Path> paths = existingClasses.computeIfAbsent(typeName, k -> new ArrayList<>());
+                        if (!paths.contains(relatedTypeDeclPath)) {
+                            paths.add(relatedTypeDeclPath);
                         }
                     }
                 } catch (IOException e) {
@@ -2041,6 +2010,105 @@ public class JavaParserUtils {
             }
         }
         return existingClasses;
+    }
+
+    /**
+     * Adds the member types named by an import (Step 26): a type nested in a class ({@code import a.B.Inner}, or
+     * {@code import static a.B.Inner}), or all the member types of a class ({@code import a.B.*}, or
+     * {@code import static a.B.*}), visible from another package (not private). The types are mapped to the file of
+     * their top-level class.
+     *
+     * @return whether the import names a class (its member types were collected), so that it is not handled as the
+     * import of a top-level type or of a package
+     */
+    private static boolean collectPathsOfImportedMemberTypes(
+            HashMap<String, List<Path>> existingClasses,
+            List<Path> repoSourcePaths,
+            ImportDeclaration importDecl
+    ) {
+        String name = importDecl.getNameAsString();
+        // The class whose member types are imported, and the simple name of the member type (empty for a wildcard)
+        String enclosingName;
+        Optional<String> memberName;
+        if (importDecl.isAsterisk()) {
+            enclosingName = name;
+            memberName = Optional.empty();
+        } else {
+            int lastDot = name.lastIndexOf('.');
+            if (lastDot < 0) {
+                return false;
+            }
+            enclosingName = name.substring(0, lastDot);
+            memberName = Optional.of(name.substring(lastDot + 1));
+        }
+        // A file declaring the enclosing class: a top-level class (a/b/B.java), or a class nested in it (a/b/B.java for a.b.B.C)
+        String topLevelName = enclosingName;
+        while (true) {
+            for (Path repoSourcePath : repoSourcePaths) {
+                Optional<Path> file = retrieveFilePathFromFullyQualifiedName(topLevelName, repoSourcePath);
+                if (file.isPresent()) {
+                    List<String> nesting = enclosingName.length() > topLevelName.length()
+                            ? List.of(enclosingName.substring(topLevelName.length() + 1).split("\\."))
+                            : List.of();
+                    addMemberTypes(existingClasses, file.get(), topLevelName.substring(topLevelName.lastIndexOf('.') + 1), nesting, memberName, importDecl.isStatic());
+                    return true;
+                }
+            }
+            int lastDot = topLevelName.lastIndexOf('.');
+            if (lastDot < 0) {
+                return false;
+            }
+            topLevelName = topLevelName.substring(0, lastDot);
+        }
+    }
+
+    /**
+     * Whether a member type is static (a static import imports only the static member types): declared static, an
+     * interface, an enum, a record, an annotation, or a member of an interface.
+     */
+    private static boolean isStaticMemberType(TypeDeclaration<?> type) {
+        if (type.hasModifier(Modifier.Keyword.STATIC) || type.isEnumDeclaration() || type.isRecordDeclaration()
+                || type.isAnnotationDeclaration()
+                || type instanceof ClassOrInterfaceDeclaration declaration && declaration.isInterface()) {
+            return true;
+        }
+        return type.getParentNode()
+                .filter(parent -> parent instanceof ClassOrInterfaceDeclaration declaration && declaration.isInterface())
+                .isPresent();
+    }
+
+    /** Adds the member types of the class reached from a top-level class by the given nesting, with the given name or all of them. */
+    private static void addMemberTypes(HashMap<String, List<Path>> existingClasses, Path file, String topLevelSimpleName,
+                                       List<String> nesting, Optional<String> memberName, boolean staticImport) {
+        try {
+            CompilationUnit importedCu = getCompilationUnit(file);
+            Optional<TypeDeclaration<?>> enclosing = importedCu.getTypes().stream()
+                    .filter(t -> t.getNameAsString().equals(topLevelSimpleName))
+                    .findFirst()
+                    .map(t -> (TypeDeclaration<?>) t);
+            for (String nested : nesting) {
+                enclosing = enclosing.flatMap(t -> t.getMembers().stream()
+                        .filter(m -> m instanceof TypeDeclaration<?> type && type.getNameAsString().equals(nested))
+                        .map(m -> (TypeDeclaration<?>) m)
+                        .findFirst());
+            }
+            if (enclosing.isEmpty()) {
+                return;
+            }
+            for (var member : enclosing.get().getMembers()) {
+                if (member instanceof TypeDeclaration<?> type
+                        && memberName.map(type.getNameAsString()::equals).orElse(true)
+                        && !type.hasModifier(Modifier.Keyword.PRIVATE)
+                        && (!staticImport || isStaticMemberType(type))) {
+                    List<Path> paths = existingClasses.computeIfAbsent(type.getNameAsString(), k -> new ArrayList<>());
+                    if (!paths.contains(file)) {
+                        paths.add(file);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            logger.error("Failed to process compilation unit from file " + file + " for the member types it declares");
+        }
     }
 
     /**
@@ -2560,22 +2628,25 @@ public class JavaParserUtils {
             Path packagePath = candidatePrefixPath.resolve(packageNamePath);
             if (Files.exists(packagePath) && Files.isDirectory(packagePath)) {
                 try {
-                    Files.walk(packagePath)
-                            .filter(Files::isRegularFile) // Only process files, not directories
-                            .filter(path -> path.toString().endsWith(".java")) // Match pattern
-                            .forEach(filePath -> {
-                                try {
-                                    CompilationUnit javaFileCu = JavaParserUtils.getCompilationUnit(filePath);
-                                    for (TypeDeclaration typeDeclaration : javaFileCu.getTypes()) {
-                                        // If the type declaration is a class or an interface, add it to the map of existing classes
-                                        if (typeDeclaration.isClassOrInterfaceDeclaration()) {
-                                            filePaths.add(filePath);
-                                        }
-                                    }
-                                } catch (Exception e) {
-                                    logger.error("Failed to process compilation unit from file " + filePath + " when processing the package " + packageName);
-                                }
-                            });
+                    // The files of the package itself, not of its subpackages (Step 26), in a fixed order; a file is
+                    // kept if it declares a type (class, interface, enum, record, annotation)
+                    List<Path> packageFiles;
+                    try (Stream<Path> files = Files.list(packagePath)) {
+                        packageFiles = files.filter(Files::isRegularFile)
+                                .filter(path -> path.toString().endsWith(".java"))
+                                .sorted()
+                                .toList();
+                    }
+                    for (Path filePath : packageFiles) {
+                        try {
+                            CompilationUnit javaFileCu = JavaParserUtils.getCompilationUnit(filePath);
+                            if (!javaFileCu.getTypes().isEmpty()) {
+                                filePaths.add(filePath);
+                            }
+                        } catch (Exception e) {
+                            logger.error("Failed to process compilation unit from file " + filePath + " when processing the package " + packageName);
+                        }
+                    }
                 } catch (IOException e) {
                     logger.error("Failed to walk through java classes in the package " + packageName + " in the repository " + repoSourcePath);
                 } catch (IllegalStateException e) {

@@ -194,6 +194,30 @@ public class JavaUtils {
         return pathList;
     }
 
+    /**
+     * The source files of the package {@code java.lang} itself (not of its subpackages) in the JDKs of {@code lib}
+     * selected for the repository, in a fixed order (the files of the first JDK first).
+     */
+    public static List<Path> javaLangSourceFiles() {
+        List<Path> files = new ArrayList<>();
+        for (Path sourceFolder : sourceFolders(jdkVersions)) {
+            Path javaLang = sourceFolder.resolve("java/lang");
+            if (!Files.isDirectory(javaLang)) {
+                continue;
+            }
+            try (Stream<Path> paths = Files.list(javaLang)) {
+                files.addAll(paths.filter(Files::isRegularFile)
+                        .filter(path -> path.getFileName().toString().endsWith(".java"))
+                        .filter(path -> !path.getFileName().toString().equals("package-info.java"))
+                        .sorted()
+                        .toList());
+            } catch (IOException e) {
+                logger.error("Failed to list the sources of java.lang in " + javaLang, e);
+            }
+        }
+        return files;
+    }
+
     /** Returns the source folders of the given JDKs of {@code lib}, in order. */
     private static List<Path> sourceFolders(List<Integer> versions) {
         List<Path> sourceFolders = new ArrayList<>();
