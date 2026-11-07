@@ -456,7 +456,7 @@ public class TokensUtils {
                                 tokenStepBuilder.setContextualInfos(List.of(generateTokenStepContextualInfo(tokenIdentifiersStack.get(tokenIdentifiersStack.size()-1).getValue1(), true)));
                                 tokenSteps.add(tokenStepBuilder.build());
                                 // Update the partial snippet
-                                partialSnippet += AntlrToken.isAtomicKeywordToken(Antlr4Utils.getAntlrToken(token)) ? token + " " : token;
+                                partialSnippet = appendToken(partialSnippet, token);
                                 // Update the token identifiers and references collectors
                                 Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>> updatedCollectors = updateTokenIdentifiersAndReferences(tokenIdentifiersStack, token, tokens.get(i - 1), testPrefixClass, testPrefix.getNameAsString(), targetAssertion);
                                 currentTokenIdentifiersCollector = updatedCollectors.getValue0();
@@ -575,6 +575,28 @@ public class TokensUtils {
             }
         }
         return false;
+    }
+
+    /**
+     * Joins the next token to a partial oracle, the same way in the tokens dataset and at inference (Step 28): a
+     * keyword is followed by a space, and preceded by one when it follows an operand (an identifier, a literal, a
+     * {@code )} or a {@code ]}), so that it is not joined to it ({@code x instanceof T}, not {@code xinstanceof T},
+     * that the lexer reads as one identifier); the other tokens are joined without spaces.
+     *
+     * @param partialSnippet the partial oracle
+     * @param token the next token
+     * @return the partial oracle followed by the token
+     */
+    static String appendToken(String partialSnippet, String token) {
+        if (!AntlrToken.isAtomicKeywordToken(Antlr4Utils.getAntlrToken(token))) {
+            return partialSnippet + token;
+        }
+        boolean afterOperand = false;
+        if (!partialSnippet.isEmpty()) {
+            char last = partialSnippet.charAt(partialSnippet.length() - 1);
+            afterOperand = Character.isJavaIdentifierPart(last) || last == ')' || last == ']' || last == '"' || last == '\'';
+        }
+        return partialSnippet + (afterOperand ? " " : "") + token + " ";
     }
 
     /**
@@ -842,7 +864,7 @@ public class TokensUtils {
                                 }
 
                                 // Update the partial snippet
-                                partialSnippet += AntlrToken.isAtomicKeywordToken(Antlr4Utils.getAntlrToken(nextToken)) && !Antlr4Utils.getAntlrToken(tokens.get(tokens.size() - 1)).equals(AntlrToken.DOT) ? " " + nextToken + " " : nextToken;
+                                partialSnippet = appendToken(partialSnippet, nextToken);
                                 // Update the token identifiers and references collectors
                                 Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>> updatedCollectors = updateTokenIdentifiersAndReferences(tokenIdentifiersStack, nextToken, tokens.get(tokens.size() - 1), testPrefixClass, testPrefix.getNameAsString(), targetAssertion);
                                 currentTokenIdentifiersCollector = updatedCollectors.getValue0();

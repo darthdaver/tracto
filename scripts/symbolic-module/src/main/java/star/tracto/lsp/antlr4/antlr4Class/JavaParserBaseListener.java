@@ -1193,18 +1193,6 @@ public class JavaParserBaseListener implements JavaParserListener {
 	 *
 	 * <p>The default implementation does nothing.</p>
 	 */
-	@Override public void enterTypeMethodReferenceSuffix(JavaParser.TypeMethodReferenceSuffixContext ctx) { }
-	/**
-	 * {@inheritDoc}
-	 *
-	 * <p>The default implementation does nothing.</p>
-	 */
-	@Override public void exitTypeMethodReferenceSuffix(JavaParser.TypeMethodReferenceSuffixContext ctx) { }
-	/**
-	 * {@inheritDoc}
-	 *
-	 * <p>The default implementation does nothing.</p>
-	 */
 	@Override public void enterClassMethodReferenceSuffix(JavaParser.ClassMethodReferenceSuffixContext ctx) { }
 	/**
 	 * {@inheritDoc}
@@ -1344,6 +1332,18 @@ public class JavaParserBaseListener implements JavaParserListener {
 	 * <p>The default implementation does nothing.</p>
 	 */
 	@Override public void exitInstanceOfOperatorExpr(JavaParser.InstanceOfOperatorExprContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void enterTypeMethodReferenceExpr(JavaParser.TypeMethodReferenceExprContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void exitTypeMethodReferenceExpr(JavaParser.TypeMethodReferenceExprContext ctx) { }
 	/**
 	 * {@inheritDoc}
 	 *

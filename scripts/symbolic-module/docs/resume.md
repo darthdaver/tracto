@@ -29,6 +29,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 25 | on the corpus: 978 → 1,009 complete (+31, 0 worse) |
 | After Step 26 | on the corpus: 1,009 → 1,071 complete (+62, 0 worse) |
 | After Step 27 | on the corpus: 1,071 → 1,089 complete (+18, 0 worse; dropped 57 → 38) |
+| After Step 28 | on the corpus: 1,089 → 1,110 complete (+21, 0 worse) |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -172,10 +173,13 @@ examples to start from.
    - Tests: extraction with `final`, a declared type different from the class literal, `assertDoesNotThrow`, a
      multi-line lambda; rebuilding gives back the original statement; an unparsable generated assertion gives
      `ERROR`; corpus: the 91 move from dropped to complete or "loses a step", 0 worse.
-4. **Qualified JUnit assertions in the prefixes** (no oracle recovered: no target is qualified; a consistency fix of
-   the model input): the split prefix files of cryptofs still contain `Assertions.assertEquals(...)`. Check whether
-   they are in the test prefix or only in other methods, then normalize to the unqualified form.
-5. **Grammar** (101): the spacing of `instanceof`, the `)` after a string concatenation. The grammar has no rule for `assertThrowsExactly`
+4. **Checked 2026-11-07, nothing to change: Qualified JUnit assertions in the prefixes.** The model input is already
+   unqualified: the bodies of the test prefixes and of the invoked methods, and the targets, go through a text
+   replacement of `Assert.`/`Assertions.` (`TestUtils`); none of the 9,154 datapoints of the corpus projects has a
+   qualified assertion. Only the split prefix files keep them (cryptofs 110 files, steve 18, esapi 14), read by the
+   symbolic module for the declarations in scope, not for the text of the calls. The text replacement has a latent
+   defect, added to step 9.
+5. **Done: Step 28** (`docs/fixes/step-28-grammar.md`). **Grammar** (101; 172 in the full run with the other causes): the spacing of `instanceof`, the `)` after a string concatenation. The grammar has no rule for `assertThrowsExactly`
    and `assertInstanceOf` (their lexer tokens exist; Step 27 added `assertDoesNotThrow`): check how many targets use them.
 6. **Block lambdas** (52 dropped; `No enum constant for symbol: EOF`, cryptofs 49). The other 110 targets with the
    message "Assertion do not start with JUnit api" are Hamcrest `MatcherAssert.assertThat` (out of scope).
@@ -201,6 +205,11 @@ examples to start from.
    - after the name of a class (`String.`), its instance and protected methods are offered too (`clone`, `finalize`);
    - the imports and the package of the focal class are added to the classes of the test class (not visible there
      unless imported in the test class too);
+   - the qualifiers `Assert.`/`Assertions.` are removed with a text replacement (`TestUtils`, targets and bodies):
+     `org.junit.Assert.assertFalse(...)` would become `org.junit.assertFalse(...)`, and a class of the project or of a
+     library named `Assert` loses its name (Spring `Assert.notNull(...)` in steve's main code). No datapoint of the
+     nine projects is affected today (esapi `AccessControllerTest`, the only fully qualified calls, has no datapoint;
+     steve's calls are not in an invoked method). Fix: an AST rewrite of the calls to the JUnit classes only;
    - the `LAMBDA_PARAM` placeholder (added when the token after `(` is missing in a stream context,
      `TokensUtils` ~line 412) is offered outside lambdas (eec `CacheTest`: `assertEquals(hot.toString(`); probably the
      stream flag is kept across datapoints (not verified).

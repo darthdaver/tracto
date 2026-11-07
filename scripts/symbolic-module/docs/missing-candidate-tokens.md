@@ -245,6 +245,8 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
   the generated classes; the classes after `instanceof` (corpus: +62 complete, 0 worse).
 - Step 27: the assigned assertions (`X e = assertThrows(...)`): the target is the assertion, the declaration is kept
   in `assignment` and added back at inference; the grammar rule of `assertDoesNotThrow` (corpus: +18 complete, 0 worse).
+- Step 28: the grammar (the message of an assertion is any expression; `Type::new`, `String[]::new`) and the partial
+  oracle joined the same way in the dataset and at inference (`x instanceof T`) (corpus: +21 complete, 0 worse).
 
 **Lost oracles by cause after Step 21** (oracles recovered by fixing that cause alone, of 9,049; an oracle can have
 several causes):
@@ -272,10 +274,10 @@ several causes):
 3. **Assigned assertions** (91; decided 2026-11-06), done (Step 27): the model generates the assertion only; the oracles stage keeps
    the declaration (`assignment`: modifiers, type, name) and the symbolic module adds it back at the end of the
    generation (design in `docs/resume.md`, section 6).
-4. **Qualified JUnit assertions in the prefixes** (no oracle recovered: no target is qualified; a consistency fix of the
+4. **Qualified JUnit assertions in the prefixes**, checked 2026-11-07, nothing to change (the model input is already unqualified; `docs/resume.md`, section 6) (no oracle recovered: no target is qualified; a consistency fix of the
    model input): the split prefix files of cryptofs still contain `Assertions.assertX(...)`; first check whether they
    are in the test prefix or only in other methods, then normalize to the unqualified form.
-5. **Grammar** (101): the spacing of `instanceof`, the `)` after a string concatenation.
+5. **Grammar** (101), done (Step 28): the spacing of `instanceof`, the `)` after a string concatenation.
 6. **Block lambdas** (52).
 7. **Type inference of the chains** (426, the largest but the hardest).
 8. **Dependencies** (85): design (section 6) with the answer of the author on the inference setting.

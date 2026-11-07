@@ -990,18 +990,6 @@ public interface JavaParserListener extends ParseTreeListener {
 	 */
 	void exitExpressionMethodReferenceSuffix(JavaParser.ExpressionMethodReferenceSuffixContext ctx);
 	/**
-	 * Enter a parse tree produced by the {@code TypeMethodReferenceSuffix}
-	 * labeled alternative in {@link JavaParser#methodReferenceSuffix}.
-	 * @param ctx the parse tree
-	 */
-	void enterTypeMethodReferenceSuffix(JavaParser.TypeMethodReferenceSuffixContext ctx);
-	/**
-	 * Exit a parse tree produced by the {@code TypeMethodReferenceSuffix}
-	 * labeled alternative in {@link JavaParser#methodReferenceSuffix}.
-	 * @param ctx the parse tree
-	 */
-	void exitTypeMethodReferenceSuffix(JavaParser.TypeMethodReferenceSuffixContext ctx);
-	/**
 	 * Enter a parse tree produced by the {@code ClassMethodReferenceSuffix}
 	 * labeled alternative in {@link JavaParser#methodReferenceSuffix}.
 	 * @param ctx the parse tree
@@ -1141,6 +1129,18 @@ public interface JavaParserListener extends ParseTreeListener {
 	 * @param ctx the parse tree
 	 */
 	void exitInstanceOfOperatorExpr(JavaParser.InstanceOfOperatorExprContext ctx);
+	/**
+	 * Enter a parse tree produced by the {@code TypeMethodReferenceExpr}
+	 * labeled alternative in {@link JavaParser#expression}.
+	 * @param ctx the parse tree
+	 */
+	void enterTypeMethodReferenceExpr(JavaParser.TypeMethodReferenceExprContext ctx);
+	/**
+	 * Exit a parse tree produced by the {@code TypeMethodReferenceExpr}
+	 * labeled alternative in {@link JavaParser#expression}.
+	 * @param ctx the parse tree
+	 */
+	void exitTypeMethodReferenceExpr(JavaParser.TypeMethodReferenceExprContext ctx);
 	/**
 	 * Enter a parse tree produced by the {@code MemberReferenceExpr}
 	 * labeled alternative in {@link JavaParser#expression}.

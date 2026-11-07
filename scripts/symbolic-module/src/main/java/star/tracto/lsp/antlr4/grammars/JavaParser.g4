@@ -569,10 +569,11 @@ memberReferenceSuffix
     )
     ;
 
+// A method reference or a constructor reference after an expression (`list::add`, `Foo::new`); the references after
+// a type that is not an expression (`String[]::new`, `int[]::clone`) are alternatives of `expression`
 methodReferenceSuffix
     : bop = '::' typeArguments? identifier                          #ExpressionMethodReferenceSuffix
-    | typeType '::' (typeArguments? identifier | NEW)               #TypeMethodReferenceSuffix
-    | classType '::' typeArguments? NEW                             #ClassMethodReferenceSuffix
+    | bop = '::' typeArguments? NEW                                 #ClassMethodReferenceSuffix
     ;
 
 
@@ -591,6 +592,7 @@ expression
     | expression memberReferenceSuffix                              #MemberReferenceExpr
     | methodCall                                                    #MethodCallExpression
     | expression methodReferenceSuffix                              #MethodReferenceExpr
+    | typeType '::' (typeArguments? identifier | NEW)               #TypeMethodReferenceExpr
     | switchExpression                                              #ExpressionSwitch
     | expression postfix = ('++' | '--')                            #PostIncrementDecrementOperatorExpr
     | prefix = ('+' | '-' | '++' | '--' | '~' | '!') expression     #UnaryOperatorExpr
@@ -865,72 +867,72 @@ assertAllMethodCall
     ;
 
 assertArrayEqualsMethodCall
-    : ASSERT_ARRAY_EQUALS '(' expression ',' expression (',' expression)? (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
+    : ASSERT_ARRAY_EQUALS '(' expression ',' expression (',' expression)? (',' (supplierExpression | expression))? ')' SEMI
     | ASSERT_ARRAY_EQUALS '(' (STRING_LITERAL ',')? expression ',' expression (',' expression)? ')' SEMI
     ;
 
 assertDoesNotThrowMethodCall
-    : ASSERT_DOES_NOT_THROW '(' (executable | throwingSupplierExpression) (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
+    : ASSERT_DOES_NOT_THROW '(' (executable | throwingSupplierExpression) (',' (supplierExpression | expression))? ')' SEMI
     ;
 
 assertEqualsMethodCall
-    : ASSERT_EQUALS '(' expression ',' expression (',' expression)? (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
+    : ASSERT_EQUALS '(' expression ',' expression (',' expression)? (',' (supplierExpression | expression))? ')' SEMI
     | ASSERT_EQUALS '(' (STRING_LITERAL ',')? expression ',' expression (',' expression)? ')' SEMI
     ;
 
 assertFalseMethodCall
-    : ASSERT_FALSE '(' (expression | booleanSupplierExpression) (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
+    : ASSERT_FALSE '(' (expression | booleanSupplierExpression) (',' (supplierExpression | expression))? ')' SEMI
     | ASSERT_FALSE '(' (STRING_LITERAL ',')? (expression | booleanSupplierExpression) ')' SEMI
     ;
 
 assertIterableEqualsMethodCall
-    : ASSERT_ITERABLE_EQUALS '(' expression ',' expression (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
+    : ASSERT_ITERABLE_EQUALS '(' expression ',' expression (',' (supplierExpression | expression))? ')' SEMI
     ;
 
 assertLinesMatchMethodCall
-    : ASSERT_LINES_MATCH '(' expression ',' expression (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
+    : ASSERT_LINES_MATCH '(' expression ',' expression (',' (supplierExpression | expression))? ')' SEMI
     ;
 
 assertNotEqualsMethodCall
-    : ASSERT_NOT_EQUALS '(' expression ',' expression (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
+    : ASSERT_NOT_EQUALS '(' expression ',' expression (',' (supplierExpression | expression))? ')' SEMI
     | ASSERT_NOT_EQUALS '(' (STRING_LITERAL ',')? expression ',' expression ')' SEMI
     ;
 
 assertNotNullMethodCall
-    : ASSERT_NOT_NULL '(' expression (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
+    : ASSERT_NOT_NULL '(' expression (',' (supplierExpression | expression))? ')' SEMI
     | ASSERT_NOT_NULL '(' (STRING_LITERAL ',')? expression ')' SEMI
     ;
 
 assertNotSameMethodCall
-    : ASSERT_NOT_SAME '(' expression ',' expression (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
+    : ASSERT_NOT_SAME '(' expression ',' expression (',' (supplierExpression | expression))? ')' SEMI
     | ASSERT_NOT_SAME '(' (STRING_LITERAL ',')? expression ',' expression ')' SEMI
     ;
 
 assertNullMethodCall
-    : ASSERT_NULL '(' expression (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
+    : ASSERT_NULL '(' expression (',' (supplierExpression | expression))? ')' SEMI
     | ASSERT_NULL '(' (STRING_LITERAL ',')? expression ')' SEMI
     ;
 
 assertSameMethodCall
-    : ASSERT_SAME '(' expression ',' expression (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
+    : ASSERT_SAME '(' expression ',' expression (',' (supplierExpression | expression))? ')' SEMI
     | ASSERT_SAME '(' (STRING_LITERAL ',')? expression ',' expression ')' SEMI
     ;
 
 assertThrowsMethodCall
-    : ASSERT_THROWS '(' expression ',' executable (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
+    : ASSERT_THROWS '(' expression ',' executable (',' (supplierExpression | expression))? ')' SEMI
     | ASSERT_THROWS '(' (STRING_LITERAL ',')? expression ',' throwingRunnableExpression ')' SEMI
     ;
 
 assertTimeoutMethodCall
-    : ASSERT_TIMEOUT '(' expression ',' (executable | throwingSupplierExpression) (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
+    : ASSERT_TIMEOUT '(' expression ',' (executable | throwingSupplierExpression) (',' (supplierExpression | expression))? ')' SEMI
     ;
 
 assertTimeoutPreemptivelyMethodCall
-    : ASSERT_TIMEOUT_PREEMPTIVELY '(' expression ',' (executable | throwingSupplierExpression) (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
+    : ASSERT_TIMEOUT_PREEMPTIVELY '(' expression ',' (executable | throwingSupplierExpression) (',' (supplierExpression | expression))? ')' SEMI
     ;
 
 assertTrueMethodCall
-    : ASSERT_TRUE '(' (expression | booleanSupplierExpression) (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
+    : ASSERT_TRUE '(' (expression | booleanSupplierExpression) (',' (supplierExpression | expression))? ')' SEMI
     | ASSERT_TRUE '(' (STRING_LITERAL ',')? (expression | booleanSupplierExpression) ')' SEMI
     ;
 

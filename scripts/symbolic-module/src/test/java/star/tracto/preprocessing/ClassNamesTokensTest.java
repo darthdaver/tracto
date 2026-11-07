@@ -150,14 +150,7 @@ class ClassNamesTokensTest {
     void theClassesVisibleInTheTestClassAreOffered() throws IOException {
         fixture.generate();
 
-        // After `instanceof Shape`, the `)` is still missing: the partial oracle joins `clock` and `instanceof` without a
-        // space (the grammar step); the class after `instanceof` is checked by onlyTheClassesVisibleByTheirSimpleNameAreOffered
-        Map<String, List<String>> unexpected = new java.util.HashMap<>(fixture.unexpectedTokens());
-        assertEquals(List.of(
-                "Unexpected token: ) not found in the collected list of candidate tokens: assertTrue(clockinstanceof Shape",
-                "Unexpected token: ; not found in the collected list of candidate tokens: assertTrue(clockinstanceof Shape)"),
-                unexpected.remove("testSamePackageInterface_split_0"));
-        assertEquals(Map.of(), unexpected);
+        assertEquals(Map.of(), fixture.unexpectedTokens());
         assertEquals(List.of("testImportedNestedClass_split_0", "testJavaLangException_split_0",
                 "testJavaLangStaticMethod_split_0", "testJdkImport_split_0", "testNestedClassOfTheTestClass_split_0",
                 "testQualifiedNestedClass_split_0", "testSamePackageInterface_split_0", "testWildcardImport_split_0"),
@@ -182,7 +175,7 @@ class ClassNamesTokensTest {
             assertFalse(candidates.contains(name), name + " " + candidates);
         }
         // After `instanceof`: the classes visible in the test class (not the context of the expression tested)
-        candidates = candidatesAfter(fixture.tokensDatapoints().get("testSamePackageInterface_split_0"), "assertTrue(clockinstanceof ");
+        candidates = candidatesAfter(fixture.tokensDatapoints().get("testSamePackageInterface_split_0"), "assertTrue(clock instanceof ");
         assertTrue(candidates.contains("Shape"), candidates.toString());
         assertTrue(candidates.contains("Clock"), candidates.toString());
     }
