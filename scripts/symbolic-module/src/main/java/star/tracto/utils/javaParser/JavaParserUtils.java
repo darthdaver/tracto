@@ -1,6 +1,8 @@
 package star.tracto.utils.javaParser;
 
 import com.github.javaparser.JavaParser;
+import com.github.javaparser.ParseResult;
+import com.github.javaparser.Problem;
 import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.*;
@@ -2398,6 +2400,20 @@ public class JavaParserUtils {
                     .forEach(nameExpr -> nameExpr.setName(newName));
             vd.setName(newName);
         });
+    }
+
+    /**
+     * Checks that a text is a Java statement (with the language level of the module).
+     *
+     * @param statement the text of the statement
+     * @return the problems found by the parser, or an empty optional if the text is a statement
+     */
+    public static Optional<String> statementParseProblem(String statement) {
+        ParseResult<Statement> result = new JavaParser(new ParserConfiguration().setLanguageLevel(LANGUAGE_LEVEL)).parseStatement(statement);
+        if (result.isSuccessful() && result.getResult().isPresent()) {
+            return Optional.empty();
+        }
+        return Optional.of(result.getProblems().stream().map(Problem::getMessage).collect(Collectors.joining("; ")));
     }
 
     /**

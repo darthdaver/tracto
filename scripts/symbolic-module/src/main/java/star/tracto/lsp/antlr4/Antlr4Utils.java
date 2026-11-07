@@ -59,6 +59,9 @@ public class Antlr4Utils {
             case ASSERT_EQUALS:
                 ctx = Optional.of(parser.assertEqualsMethodCall());
                 break;
+            case ASSERT_DOES_NOT_THROW:
+                ctx = Optional.of(parser.assertDoesNotThrowMethodCall());
+                break;
             case ASSERT_FALSE:
                 ctx = Optional.of(parser.assertFalseMethodCall());
                 break;

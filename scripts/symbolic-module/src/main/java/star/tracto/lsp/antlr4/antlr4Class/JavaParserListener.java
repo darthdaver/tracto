@@ -1670,6 +1670,16 @@ public interface JavaParserListener extends ParseTreeListener {
 	 */
 	void exitAssertArrayEqualsMethodCall(JavaParser.AssertArrayEqualsMethodCallContext ctx);
 	/**
+	 * Enter a parse tree produced by {@link JavaParser#assertDoesNotThrowMethodCall}.
+	 * @param ctx the parse tree
+	 */
+	void enterAssertDoesNotThrowMethodCall(JavaParser.AssertDoesNotThrowMethodCallContext ctx);
+	/**
+	 * Exit a parse tree produced by {@link JavaParser#assertDoesNotThrowMethodCall}.
+	 * @param ctx the parse tree
+	 */
+	void exitAssertDoesNotThrowMethodCall(JavaParser.AssertDoesNotThrowMethodCallContext ctx);
+	/**
 	 * Enter a parse tree produced by {@link JavaParser#assertEqualsMethodCall}.
 	 * @param ctx the parse tree
 	 */

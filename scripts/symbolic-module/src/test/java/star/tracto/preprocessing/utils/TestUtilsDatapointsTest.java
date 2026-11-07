@@ -1,5 +1,6 @@
 package star.tracto.preprocessing.utils;
 
+import com.github.javaparser.StaticJavaParser;
 import org.javatuples.Pair;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,7 @@ import star.tracto.data.enums.SplitStrategyType;
 import star.tracto.data.enums.TargetStrategyType;
 import star.tracto.data.enums.TryCatchFinallyStrategyType;
 import star.tracto.data.records.OraclesDatasetConfig;
+import star.tracto.preprocessing.components.Assignment;
 import star.tracto.preprocessing.components.Callable;
 import star.tracto.preprocessing.components.OracleDatapoint;
 import star.tracto.preprocessing.components.TestClazzDatapoints;
@@ -313,10 +315,57 @@ class TestUtilsDatapointsTest {
                 }
                 """);
 
+        // The assertion is the target, the declaration of its variable is kept apart (Step 27)
         assertEquals(List.of(
-                "NumberFormatException e = assertThrows(NumberFormatException.class, () -> Integer.parseInt(\"x\"), \"should throw\");",
+                "assertThrows(NumberFormatException.class, () -> Integer.parseInt(\"x\"), \"should throw\");",
                 "assertNotNull(e.getMessage());"
         ), datapoints.stream().map(OracleDatapoint::target).toList());
+        assertEquals(new Assignment(List.of(), "NumberFormatException", "e"), datapoints.get(0).assignment());
+        assertNull(datapoints.get(1).assignment());
+        assertEquals("NumberFormatException e = assertThrows(NumberFormatException.class, () -> Integer.parseInt(\"x\"), \"should throw\");",
+                datapoints.get(0).statement(datapoints.get(0).target()));
+        // The later oracles see the variable: the prefix keeps the whole statement
+        assertEquals("{ Calc calc = new Calc(); NumberFormatException e = assertThrows(NumberFormatException.class, () -> Integer.parseInt(\"x\"), \"should throw\"); /*<MASK_PLACEHOLDER>*/ }",
+                prefixBody(datapoints.get(1)));
+    }
+
+    /**
+     * An assertion assigned to a variable (Step 27): the target is the assertion, the declaration is kept as written
+     * (modifiers, declared type, name), and joined with the target it gives back the statement of the test.
+     */
+    @Test
+    void assignedAssertionIsTheTargetWithItsDeclarationApart() throws IOException {
+        List<String> statements = List.of(
+                "final RuntimeException ex = Assertions.assertThrows(NumberFormatException.class, () -> Integer.parseInt(\"x\"));",
+                "Integer sum = assertDoesNotThrow(() -> calc.add(1, 2));",
+                // A block of one statement stays a block (the blocks of two statements or more are normalized)
+                """
+                IllegalStateException e = assertThrows(IllegalStateException.class, () -> {
+                    calc.accumulate(Integer.parseInt("x"));
+                });""");
+        List<OracleDatapoint> datapoints = datapoints(FixtureRepo.committedConfig(), """
+                @Test
+                public void testAssigned() {
+                    Calc calc = new Calc();
+                    %s
+                    assertEquals(3, sum);
+                }
+                """.formatted(String.join("\n", statements)));
+
+        assertEquals(4, datapoints.size(), datapoints.stream().map(OracleDatapoint::target).toList().toString());
+        assertEquals("assertThrows(NumberFormatException.class, () -> Integer.parseInt(\"x\"));", datapoints.get(0).target());
+        assertEquals(new Assignment(List.of("final"), "RuntimeException", "ex"), datapoints.get(0).assignment());
+        assertEquals("assertDoesNotThrow(() -> calc.add(1, 2));", datapoints.get(1).target());
+        assertEquals(new Assignment(List.of(), "Integer", "sum"), datapoints.get(1).assignment());
+        assertTrue(datapoints.get(2).target().startsWith("assertThrows(IllegalStateException.class, () -> {\n"), datapoints.get(2).target());
+        assertEquals(new Assignment(List.of(), "IllegalStateException", "e"), datapoints.get(2).assignment());
+        assertEquals("assertEquals(3, sum);", datapoints.get(3).target());
+        assertNull(datapoints.get(3).assignment());
+        // Joined with its declaration, the target gives back the statement of the test (the JUnit class qualifier removed)
+        for (int i = 0; i < statements.size(); i++) {
+            String original = StaticJavaParser.parseStatement(statements.get(i)).toString().replace("Assertions.", "");
+            assertEquals(original, datapoints.get(i).statement(datapoints.get(i).target()));
+        }
     }
 
     @Test

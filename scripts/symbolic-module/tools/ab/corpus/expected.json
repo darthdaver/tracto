@@ -119,6 +119,11 @@
    "date": "2026-11-06T15:27:01",
    "jar_sha256": "e165d4fba935ea9c366f0763d9397390f7ccae468bc035109eafe2eb9331578b",
    "reason": "Step 26 (class names): +62 complete (1009 -> 1071), 0 worse; java.lang offered, member types, imports of member types and records, package without subpackages with interfaces, no generated classes, classes after instanceof; removals checked (generated classes, subpackage classes)"
+  },
+  {
+   "date": "2026-11-06T18:22:58",
+   "jar_sha256": "d3a4b1c88273f91c8ea944c2aeb8602dcfd47b57fdd7958dab0221c3b9b7f1fd",
+   "reason": "Step 27: assigned assertions split (target = assertion, declaration in assignment), grammar rule for assertDoesNotThrow; 1,071 -> 1,089 complete, 0 worse; 17 renamed targets paired (15 dropped->complete, 2 still dropped: block lambdas), 4 plain assertDoesNotThrow dropped->complete/loses a step"
   }
  ],
  "oracles": {
@@ -665,9 +670,11 @@
     "status": "complete"
    },
    "CryptoFileSystemModuleTestSTARSplitTest|testEventConsumerIsDecorated_split_0|assertDoesNotThrow(() -> decoratedConsumer.accept(event));": {
-    "digest": null,
-    "missing": [],
-    "status": "dropped"
+    "digest": "0b0a2278c30149a6",
+    "missing": [
+     "accept"
+    ],
+    "status": "loses a step"
    },
    "CryptoFileSystemModuleTestSTARSplitTest|testInUseManagerIsStubOnReadOnly_split_0|assertInstanceOf(StubInUseManager.class, result);": {
     "digest": null,
@@ -771,7 +778,7 @@
     "missing": [],
     "status": "complete"
    },
-   "FilePathMigrationTestSTARSplitTest|testMalformedGetDecodedCiphertext_split_0|InvalidOldFilenameException e = assertThrows(InvalidOldFilenameException.class, () -> {\n    migration.getDecodedCiphertext();\n});": {
+   "FilePathMigrationTestSTARSplitTest|testMalformedGetDecodedCiphertext_split_0|assertThrows(InvalidOldFilenameException.class, () -> {\n    migration.getDecodedCiphertext();\n});": {
     "digest": null,
     "missing": [],
     "status": "dropped"
@@ -802,9 +809,9 @@
     "status": "complete"
    },
    "LongFileNameProviderTestSTARSplitTest|testDeflateMultipleTimes_split_0|assertDoesNotThrow(() -> prov.deflate(canonicalFileName));": {
-    "digest": null,
+    "digest": "b2ca6033fbefb09e",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "LongFileNameProviderTestSTARSplitTest|testInflateNonExisting_split_0|assertThrows(NoSuchFileException.class, () -> {\n    prov.inflate(Paths.get(\"/does/not/exist\"));\n});": {
     "digest": null,
@@ -831,7 +838,7 @@
     "missing": [],
     "status": "complete"
    },
-   "MigratorsTestSTARSplitTest|throwsExceptionIfNeitherMasterkeyNorVaultConfigExists_split_0|IOException thrown = assertThrows(IOException.class, () -> {\n    migrators.needsMigration(pathToVault, \"vault.cryptomator\", \"masterkey.cryptomator\");\n});": {
+   "MigratorsTestSTARSplitTest|throwsExceptionIfNeitherMasterkeyNorVaultConfigExists_split_0|assertThrows(IOException.class, () -> {\n    migrators.needsMigration(pathToVault, \"vault.cryptomator\", \"masterkey.cryptomator\");\n});": {
     "digest": null,
     "missing": [],
     "status": "dropped"
@@ -846,10 +853,10 @@
     "missing": [],
     "status": "complete"
    },
-   "MissingContentDirTestSTARSplitTest|testFix_split_0|var attr = assertDoesNotThrow(() -> Files.readAttributes(expectedPath, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS));": {
-    "digest": null,
+   "MissingContentDirTestSTARSplitTest|testFix_split_0|assertDoesNotThrow(() -> Files.readAttributes(expectedPath, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS));": {
+    "digest": "d0d12bcc4a42c723",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "MissingContentDirTestSTARSplitTest|testFix_split_1|assertTrue(attr.isDirectory());": {
     "digest": "de3308b0bb0b9707",
@@ -933,9 +940,9 @@
     "status": "loses a step"
    },
    "PathMatcherFactoryTestSTARSplitTest|testSyntaxAndPatternIgnoresCase_split_0|assertDoesNotThrow(() -> inTest.pathMatcherFrom(\"gLOb:a\"));": {
-    "digest": null,
+    "digest": "808578ee07f6f659",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "PathMatcherFactoryTestSTARSplitTest|testSyntaxAndPatternNotStartingWithGlobOrRegexThrowsUnsupportedOperationException_split_0|assertThrows(UnsupportedOperationException.class, () -> {\n    inTest.pathMatcherFrom(\"fail\");\n});": {
     "digest": null,
@@ -995,9 +1002,9 @@
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileContent_split_1|assertDoesNotThrow(() -> Instant.parse(props.getProperty(UseToken.LASTUPDATED_KEY)));": {
-    "digest": null,
+    "digest": "bfe4e73a5cfd9526",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileCreation_split_0|assertTrue(Files.exists(filePath));": {
     "digest": "042aa48fe4682b85",
@@ -2473,10 +2480,10 @@
     "missing": [],
     "status": "complete"
    },
-   "CryptoHelperTestSTARSplitTest|testIsValidKDFVersion_split_10|Exception e = assertThrows(\"Failed to CryptoHelper.isValidKDFVersion() failed to throw IllegalArgumentException.\", Exception.class, () -> CryptoHelper.isValidKDFVersion(77777777, true, true));": {
-    "digest": null,
+   "CryptoHelperTestSTARSplitTest|testIsValidKDFVersion_split_10|assertThrows(\"Failed to CryptoHelper.isValidKDFVersion() failed to throw IllegalArgumentException.\", Exception.class, () -> CryptoHelper.isValidKDFVersion(77777777, true, true));": {
+    "digest": "73d1ddccb3372a92",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "CryptoHelperTestSTARSplitTest|testIsValidKDFVersion_split_11|assertTrue(e instanceof IllegalArgumentException);": {
     "digest": "54701cad0e83405c",
@@ -4308,60 +4315,60 @@
     "missing": [],
     "status": "complete"
    },
-   "QueryParserTestSTARSplitTest|consecutiveCombinators_split_0|Selector.SelectorParseException exception1 = assertThrows(Selector.SelectorParseException.class, () -> QueryParser.parse(\"div>>p\"));": {
-    "digest": null,
+   "QueryParserTestSTARSplitTest|consecutiveCombinators_split_0|assertThrows(Selector.SelectorParseException.class, () -> QueryParser.parse(\"div>>p\"));": {
+    "digest": "80f69602922f1662",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "QueryParserTestSTARSplitTest|consecutiveCombinators_split_1|assertEquals(\"Could not parse query 'div>>p': unexpected token at '>p'\", exception1.getMessage());": {
     "digest": "ff50a644ac541906",
     "missing": [],
     "status": "complete"
    },
-   "QueryParserTestSTARSplitTest|consecutiveCombinators_split_2|Selector.SelectorParseException exception2 = assertThrows(Selector.SelectorParseException.class, () -> QueryParser.parse(\"+ + div\"));": {
-    "digest": null,
+   "QueryParserTestSTARSplitTest|consecutiveCombinators_split_2|assertThrows(Selector.SelectorParseException.class, () -> QueryParser.parse(\"+ + div\"));": {
+    "digest": "f38f3579d295b824",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "QueryParserTestSTARSplitTest|consecutiveCombinators_split_3|assertEquals(\"Could not parse query '+ + div': unexpected token at '+ div'\", exception2.getMessage());": {
     "digest": "fd96e1e30db864d2",
     "missing": [],
     "status": "complete"
    },
-   "QueryParserTestSTARSplitTest|exceptOnEmptySelector_split_0|SelectorParseException exception = assertThrows(SelectorParseException.class, () -> QueryParser.parse(\"\"));": {
-    "digest": null,
+   "QueryParserTestSTARSplitTest|exceptOnEmptySelector_split_0|assertThrows(SelectorParseException.class, () -> QueryParser.parse(\"\"));": {
+    "digest": "6aad1163d17b9e38",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "QueryParserTestSTARSplitTest|exceptOnEmptySelector_split_1|assertEquals(\"String must not be empty\", exception.getMessage());": {
     "digest": "41263ae5b01e7044",
     "missing": [],
     "status": "complete"
    },
-   "QueryParserTestSTARSplitTest|exceptOnNullSelector_split_0|SelectorParseException exception = assertThrows(SelectorParseException.class, () -> QueryParser.parse(null));": {
-    "digest": null,
+   "QueryParserTestSTARSplitTest|exceptOnNullSelector_split_0|assertThrows(SelectorParseException.class, () -> QueryParser.parse(null));": {
+    "digest": "1a0e2dfce1212136",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "QueryParserTestSTARSplitTest|exceptOnNullSelector_split_1|assertEquals(\"String must not be empty\", exception.getMessage());": {
     "digest": "7363e12271b27fd4",
     "missing": [],
     "status": "complete"
    },
-   "QueryParserTestSTARSplitTest|exceptOnUnhandledEvaluator_split_0|SelectorParseException exception = assertThrows(SelectorParseException.class, () -> QueryParser.parse(\"div / foo\"));": {
-    "digest": null,
+   "QueryParserTestSTARSplitTest|exceptOnUnhandledEvaluator_split_0|assertThrows(SelectorParseException.class, () -> QueryParser.parse(\"div / foo\"));": {
+    "digest": "6d590be45a3befeb",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "QueryParserTestSTARSplitTest|exceptOnUnhandledEvaluator_split_1|assertEquals(\"Could not parse query 'div / foo': unexpected token at '/ foo'\", exception.getMessage());": {
     "digest": "65336bd957837a86",
     "missing": [],
     "status": "complete"
    },
-   "QueryParserTestSTARSplitTest|exceptionOnUncloseAttribute_split_0|Selector.SelectorParseException exception = assertThrows(Selector.SelectorParseException.class, () -> QueryParser.parse(\"section > a[href=\\\"]\"));": {
-    "digest": null,
+   "QueryParserTestSTARSplitTest|exceptionOnUncloseAttribute_split_0|assertThrows(Selector.SelectorParseException.class, () -> QueryParser.parse(\"section > a[href=\\\"]\"));": {
+    "digest": "ded4c5597731f66b",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "QueryParserTestSTARSplitTest|exceptionOnUncloseAttribute_split_1|assertEquals(\"Did not find balanced marker at 'href=\\\"]'\", exception.getMessage());": {
     "digest": "f2f993eb42b7b816",
@@ -4498,20 +4505,20 @@
     "missing": [],
     "status": "complete"
    },
-   "QueryParserTestSTARSplitTest|testParsesSingleQuoteInContains_split_0|Selector.SelectorParseException exception = assertThrows(Selector.SelectorParseException.class, () -> QueryParser.parse(\"p:contains(One \\\" One)\"));": {
-    "digest": null,
+   "QueryParserTestSTARSplitTest|testParsesSingleQuoteInContains_split_0|assertThrows(Selector.SelectorParseException.class, () -> QueryParser.parse(\"p:contains(One \\\" One)\"));": {
+    "digest": "c0af65054ca578b4",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "QueryParserTestSTARSplitTest|testParsesSingleQuoteInContains_split_1|assertEquals(\"Did not find balanced marker at 'One \\\" One)'\", exception.getMessage());": {
     "digest": "0aa2fb949a8d9748",
     "missing": [],
     "status": "complete"
    },
-   "QueryParserTestSTARSplitTest|trailingParens_split_0|SelectorParseException exception = assertThrows(SelectorParseException.class, () -> QueryParser.parse(\"div:has(p))\"));": {
-    "digest": null,
+   "QueryParserTestSTARSplitTest|trailingParens_split_0|assertThrows(SelectorParseException.class, () -> QueryParser.parse(\"div:has(p))\"));": {
+    "digest": "1eeaa73671a6c507",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "QueryParserTestSTARSplitTest|trailingParens_split_1|assertEquals(\"Could not parse query 'div:has(p))': unexpected token at ')'\", exception.getMessage());": {
     "digest": "aa94604bb7e758d4",
@@ -4661,10 +4668,10 @@
     "missing": [],
     "status": "complete"
    },
-   "TokenQueueTestSTARSplitTest|chompBalancedThrowIllegalArgumentException_split_0|IllegalArgumentException expected = assertThrows(IllegalArgumentException.class, () -> tq.chompBalanced('(', '+'), \"should have thrown IllegalArgumentException\");": {
-    "digest": null,
+   "TokenQueueTestSTARSplitTest|chompBalancedThrowIllegalArgumentException_split_0|assertThrows(IllegalArgumentException.class, () -> tq.chompBalanced('(', '+'), \"should have thrown IllegalArgumentException\");": {
+    "digest": "e0e46c2c3076e4fe",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "TokenQueueTestSTARSplitTest|chompBalancedThrowIllegalArgumentException_split_1|assertEquals(\"Did not find balanced marker at 'something(or another)) else'\", expected.getMessage());": {
     "digest": "4d8ea9983ec9fc74",
@@ -4706,10 +4713,10 @@
     "missing": [],
     "status": "complete"
    },
-   "TokenQueueTestSTARSplitTest|consumeCssIdentifierWithEmptyInput_split_0|Exception exception = assertThrows(IllegalArgumentException.class, emptyQueue::consumeCssIdentifier);": {
-    "digest": null,
+   "TokenQueueTestSTARSplitTest|consumeCssIdentifierWithEmptyInput_split_0|assertThrows(IllegalArgumentException.class, emptyQueue::consumeCssIdentifier);": {
+    "digest": "502cfdccceaebbb0",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "TokenQueueTestSTARSplitTest|consumeCssIdentifierWithEmptyInput_split_1|assertEquals(\"CSS identifier expected, but end of input found\", exception.getMessage());": {
     "digest": "e84624fbcc16164f",
@@ -6566,10 +6573,10 @@
     "missing": [],
     "status": "complete"
    },
-   "LockedFileTestSTARSplitTest|constructor_canOnlyTakeAFile_shouldThrowFileNotFoundException_split_0|FileNotFoundException fileNotFoundException = assertThrows(FileNotFoundException.class, () -> new LockedFile(blankFolder), \"This should not succeed\");": {
-    "digest": null,
+   "LockedFileTestSTARSplitTest|constructor_canOnlyTakeAFile_shouldThrowFileNotFoundException_split_0|assertThrows(FileNotFoundException.class, () -> new LockedFile(blankFolder), \"This should not succeed\");": {
+    "digest": "bc818cdb0ecf5c74",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "LockedFileTestSTARSplitTest|constructor_canOnlyTakeAFile_shouldThrowFileNotFoundException_split_1|assertEquals(String.format(\"%s (Is a directory)\", blankFolder.getPath()), fileNotFoundException.getMessage());": {
     "digest": "21787fbece4e5fd4",
@@ -6646,10 +6653,10 @@
     "missing": [],
     "status": "complete"
    },
-   "LockedFileTestSTARSplitTest|writeStamp_givenNegativeTimestamps_shouldThrowIOException_split_0|IOException ioException = assertThrows(IOException.class, () -> lockedFile.writeStamp(Long.MIN_VALUE), \"This should throw an exception\");": {
-    "digest": null,
+   "LockedFileTestSTARSplitTest|writeStamp_givenNegativeTimestamps_shouldThrowIOException_split_0|assertThrows(IOException.class, () -> lockedFile.writeStamp(Long.MIN_VALUE), \"This should throw an exception\");": {
+    "digest": "7c3b48c55c58ab5c",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "LockedFileTestSTARSplitTest|writeStamp_givenNegativeTimestamps_shouldThrowIOException_split_1|assertTrue(ioException.getMessage().contains(\"trying to overwrite existing value\"));": {
     "digest": "52aa916d9ded24c8",
@@ -6661,10 +6668,10 @@
     "missing": [],
     "status": "complete"
    },
-   "LockedFileTestSTARSplitTest|writeStamp_givenNewerTimestampedFile_writeNegativeTimestamp_shouldThrowException_split_0|IOException ioException = assertThrows(IOException.class, () -> lockedFile.writeStamp(newTimestamp), \"This should throw an exception\");": {
-    "digest": null,
+   "LockedFileTestSTARSplitTest|writeStamp_givenNewerTimestampedFile_writeNegativeTimestamp_shouldThrowException_split_0|assertThrows(IOException.class, () -> lockedFile.writeStamp(newTimestamp), \"This should throw an exception\");": {
+    "digest": "29b29e08c0475a54",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "LockedFileTestSTARSplitTest|writeStamp_givenNewerTimestampedFile_writeNegativeTimestamp_shouldThrowException_split_1|assertTrue(ioException.getMessage().contains(\"trying to overwrite existing value\"));": {
     "digest": "d2c3cbaa581ad226",

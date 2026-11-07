@@ -1961,6 +1961,18 @@ public class JavaParserBaseListener implements JavaParserListener {
 	 *
 	 * <p>The default implementation does nothing.</p>
 	 */
+	@Override public void enterAssertDoesNotThrowMethodCall(JavaParser.AssertDoesNotThrowMethodCallContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void exitAssertDoesNotThrowMethodCall(JavaParser.AssertDoesNotThrowMethodCallContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
 	@Override public void enterAssertEqualsMethodCall(JavaParser.AssertEqualsMethodCallContext ctx) { }
 	/**
 	 * {@inheritDoc}

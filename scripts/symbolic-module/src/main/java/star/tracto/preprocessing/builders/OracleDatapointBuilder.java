@@ -6,11 +6,13 @@ public class OracleDatapointBuilder {
 
     private Callable testPrefix;
     private String target;
+    private Assignment assignment;
 
     public OracleDatapoint build() {
         return new OracleDatapoint(
             this.testPrefix,
-            this.target
+            this.target,
+            this.assignment
         );
     }
 
@@ -30,5 +32,14 @@ public class OracleDatapointBuilder {
      */
     public void setTarget(String target) {
         this.target = target;
+    }
+
+    /**
+     * Set the declaration of the variable assigned with the target assertion.
+     *
+     * @param assignment the assignment, or null if the assertion is a statement by itself
+     */
+    public void setAssignment(Assignment assignment) {
+        this.assignment = assignment;
     }
 }

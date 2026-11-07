@@ -59,6 +59,11 @@ final class TokensFixture {
 
     /** The messages of the targets missing from the candidates, by test prefix (only the prefixes with messages). */
     Map<String, List<String>> unexpectedTokens() throws IOException {
+        return messages(UNEXPECTED_TOKEN);
+    }
+
+    /** The messages of the tokens stage starting with a prefix, by test prefix (only the prefixes with messages). */
+    Map<String, List<String>> messages(String start) throws IOException {
         Map<String, List<String>> unexpected = new LinkedHashMap<>();
         try (var files = Files.list(outputPath.resolve("statistics-tokens-dataset-training"))) {
             for (Path file : files.toList()) {
@@ -67,7 +72,7 @@ final class TokensFixture {
                     List<String> messages = new ArrayList<>();
                     testCase.getValue().fields().forEachRemaining(target -> target.getValue()
                             .forEach(message -> {
-                                if (message.asText().startsWith(UNEXPECTED_TOKEN)) {
+                                if (message.asText().startsWith(start)) {
                                     messages.add(message.asText());
                                 }
                             }));

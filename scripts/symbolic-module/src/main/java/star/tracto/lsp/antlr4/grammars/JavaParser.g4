@@ -869,6 +869,10 @@ assertArrayEqualsMethodCall
     | ASSERT_ARRAY_EQUALS '(' (STRING_LITERAL ',')? expression ',' expression (',' expression)? ')' SEMI
     ;
 
+assertDoesNotThrowMethodCall
+    : ASSERT_DOES_NOT_THROW '(' (executable | throwingSupplierExpression) (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
+    ;
+
 assertEqualsMethodCall
     : ASSERT_EQUALS '(' expression ',' expression (',' expression)? (',' (supplierExpression | STRING_LITERAL))? ')' SEMI
     | ASSERT_EQUALS '(' (STRING_LITERAL ',')? expression ',' expression (',' expression)? ')' SEMI

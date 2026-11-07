@@ -1,6 +1,7 @@
 package star.tracto;
 
 import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.MappingIterator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.javatuples.Pair;
 import org.slf4j.Logger;
@@ -59,36 +60,40 @@ public class Client {
         // Set up Jackson type for reading input JSON
         ObjectMapper mapper = new ObjectMapper();
         JavaType innerType = mapper.getTypeFactory().constructParametricType(TestClazzDatapoints.class, OracleDatapoint.class);
-        JavaType listType = mapper.getTypeFactory().constructCollectionType(List.class, innerType);
         // Walk through the directory and process files recursively
         Files.walk(inputDatasetPath)
                 .filter(Files::isRegularFile) // Only process files, not directories
                 .filter(path -> filePattern.matcher(path.getFileName().toString()).matches()) // Match pattern
                 .filter(path -> path.getFileName().toString().startsWith("oracles-datapoints-" + projectIdentifier))
                 .forEach(filePath -> {
-                    List<TestClazzDatapoints<OracleDatapoint>> testClazzOraclesDatapoints = FilesUtils.readJSONList(filePath, listType);
-                    for (TestClazzDatapoints testClazzDatapoint : testClazzOraclesDatapoints) {
-                        try {
-                            Pair<List<List<String>>,HashMap<String, HashMap<String, List<String>>>> result = TokensUtils.generateInference(repoRootPath, nextTokenPath, mlModelAPIUrl, testClazzDatapoint);
-                            List<List<String>> rows = result.getValue0();
-                            HashMap<String, HashMap<String, List<String>>> errorsStats = result.getValue1();
-                            for (List<String> row : rows) {
-                                try {
-                                    csvWriter.addRow(row);
-                                } catch (IOException e) {
-                                    logger.error(e.getMessage());
-                                }
-                            }
-                            // Save statistics about errors
-                            Path statsOutFile = projectOutputPath.resolve("stats.json");
+                    // Each test class is read one at a time, instead of the whole file at once
+                    try (MappingIterator<TestClazzDatapoints<OracleDatapoint>> testClazzOraclesDatapoints = FilesUtils.readJSONArray(filePath, innerType)) {
+                        while (testClazzOraclesDatapoints.hasNextValue()) {
+                            TestClazzDatapoints<OracleDatapoint> testClazzDatapoint = testClazzOraclesDatapoints.nextValue();
                             try {
-                                objectMapper.writerWithDefaultPrettyPrinter().writeValue(statsOutFile.toFile(), errorsStats);
-                            } catch (IOException e) {
-                                throw new RuntimeException("Error writing JSON to file", e);
+                                Pair<List<List<String>>,HashMap<String, HashMap<String, List<String>>>> result = TokensUtils.generateInference(repoRootPath, nextTokenPath, mlModelAPIUrl, testClazzDatapoint);
+                                List<List<String>> rows = result.getValue0();
+                                HashMap<String, HashMap<String, List<String>>> errorsStats = result.getValue1();
+                                for (List<String> row : rows) {
+                                    try {
+                                        csvWriter.addRow(row);
+                                    } catch (IOException e) {
+                                        logger.error(e.getMessage());
+                                    }
+                                }
+                                // Save statistics about errors
+                                Path statsOutFile = projectOutputPath.resolve("stats.json");
+                                try {
+                                    objectMapper.writerWithDefaultPrettyPrinter().writeValue(statsOutFile.toFile(), errorsStats);
+                                } catch (IOException e) {
+                                    throw new RuntimeException("Error writing JSON to file", e);
+                                }
+                            } catch (IllegalStateException e) {
+                                logger.error(e.getMessage());
                             }
-                        } catch (IllegalStateException e) {
-                            logger.error(e.getMessage());
                         }
+                    } catch (IOException e) {
+                        throw new UncheckedIOException("Error when reading file " + filePath, e);
                     }
                 });
     }

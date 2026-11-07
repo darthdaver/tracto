@@ -577,6 +577,27 @@ public class TokensUtils {
         return false;
     }
 
+    /**
+     * The generated oracle, the status and the message of a generation that ended with {@code ;} (Step 27): when the
+     * target assertion is assigned to a variable, the declaration of the variable is joined with the generated
+     * assertion (the generated text is kept as it is), and the statement must parse.
+     *
+     * @param datapoint the oracle datapoint
+     * @param generatedAssertion the assertion generated
+     * @return the generated oracle, its status ({@code OK} or {@code ERROR}) and the message (empty if {@code OK})
+     */
+    static List<String> completedInference(OracleDatapoint datapoint, String generatedAssertion) {
+        String generated = datapoint.statement(generatedAssertion);
+        if (datapoint.assignment() != null) {
+            Optional<String> problem = JavaParserUtils.statementParseProblem(generated);
+            if (problem.isPresent()) {
+                return List.of(generated, "ERROR", "The generated assertion with the declaration of its variable is not a statement: "
+                        + generated + " - " + problem.get());
+            }
+        }
+        return List.of(generated, "OK", "");
+    }
+
     public static Pair<List<List<String>>,HashMap<String, HashMap<String, List<String>>>> generateInference(
             Path repoRootPath,
             Path nextTokenPath,
@@ -632,7 +653,8 @@ public class TokensUtils {
                 oracleInference.add(datapoint.testPrefix().identifier());
                 oracleInference.add(datapoint.testPrefix().signature());
                 oracleInference.add(datapoint.testPrefix().body());
-                oracleInference.add(datapoint.target());
+                // The target statement as written in the test (with the declaration of its variable, if assigned)
+                oracleInference.add(datapoint.statement(datapoint.target()));
                 // Get the test prefix from the datapoint
                 Callable targetTestPrefix = datapoint.testPrefix();
                 // Set flag to check if the prefix has been found
@@ -830,10 +852,15 @@ public class TokensUtils {
                             if (partialSnippet.endsWith(";")) {
                                 long endTime = System.currentTimeMillis();
                                 long duration = endTime - startTime;
-                                oracleInference.add(partialSnippet);
-                                oracleInference.add("OK");
+                                List<String> completed = completedInference(datapoint, partialSnippet);
+                                if (!completed.get(2).isEmpty()) {
+                                    logger.error(completed.get(2));
+                                    clazzDatapointsErrors.get(testPrefix.getNameAsString()).get(targetAssertion).add(completed.get(2));
+                                }
+                                oracleInference.add(completed.get(0));
+                                oracleInference.add(completed.get(1));
                                 oracleInference.add(Long.toString(duration));
-                                oracleInference.add("");
+                                oracleInference.add(completed.get(2));
                             }
                         } catch (Exception e) {
                             long endTime = System.currentTimeMillis();

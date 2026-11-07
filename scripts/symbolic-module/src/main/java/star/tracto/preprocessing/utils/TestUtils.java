@@ -1585,16 +1585,24 @@ public class TestUtils {
                     tgtStatement.getComment().ifPresent(Node::remove);
 
                     String target = config.noAssertionTarget();
+                    // The declaration of the variable assigned with the target assertion, if any
+                    Assignment assignment = null;
 
                     if (config.targetStrategy() == TargetStrategyType.ASSERTION) {
+                        // An assigned assertion (`Exception e = assertThrows(...)`): the target is the assertion only,
+                        // the declaration is kept apart and added back after the generation (Step 27)
+                        Optional<AssignedAssertions.Split> assigned = AssignedAssertions.split(tgtStatement);
+                        Statement tgtAssertion = assigned.map(AssignedAssertions.Split::assertion).orElse(tgtStatement);
                         if (config.splitStrategy() == SplitStrategyType.ASSERTION) {
                             // A `fail(...)` is a target like any other assertion
-                            target = tgtStatement.toString().replaceAll("(?<![a-zA-Z0-9])Assert\\.", "").replaceAll("(?<![a-zA-Z0-9])Assertions\\.", "");
+                            target = tgtAssertion.toString().replaceAll("(?<![a-zA-Z0-9])Assert\\.", "").replaceAll("(?<![a-zA-Z0-9])Assertions\\.", "");
+                            assignment = assigned.map(AssignedAssertions.Split::assignment).orElse(null);
                         } else if (config.splitStrategy() == SplitStrategyType.STATEMENT) {
                             Optional<Statement> lastAssertion = JavaParserUtils.getLastAssertionInMethodDeclaration(testCase);
                             if (lastAssertion.isPresent()) {
                                 if (lastAssertion.get().equals(tgtStatement)) {
-                                    target = tgtStatement.toString().replaceAll("(?<![a-zA-Z0-9])Assert\\.", "").replaceAll("(?<![a-zA-Z0-9])Assertions\\.", "");
+                                    target = tgtAssertion.toString().replaceAll("(?<![a-zA-Z0-9])Assert\\.", "").replaceAll("(?<![a-zA-Z0-9])Assertions\\.", "");
+                                    assignment = assigned.map(AssignedAssertions.Split::assignment).orElse(null);
                                 }
                             }
                         }
@@ -1655,7 +1663,7 @@ public class TestUtils {
                     Callable testPrefix = processCallable(testClass, testCase, invokedMethods);
                     // TODO: Check id the last statement in the test case is an assertion or not
                     // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
-                    oracleDatapoints.add(new OracleDatapoint(testPrefix, target));
+                    oracleDatapoints.add(new OracleDatapoint(testPrefix, target, assignment));
                 } catch (RuntimeException e) {
                     String message = "Error processing split test case " + testCase.getNameAsString() + ": " + e.getMessage();
                     logger.error(message);
