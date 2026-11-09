@@ -56,6 +56,10 @@ DEFAULT_TOKENS_PROJECTS = {'crawler'}
 print_lock = threading.Lock()
 
 
+# The error of the JVM, qualified: the bare class name is also printed among the candidates of the token steps (Step 26)
+OUT_OF_MEMORY = 'java.lang.OutOfMemoryError'
+
+
 def log(message):
     with print_lock:
         print(f'{time.strftime("%H:%M:%S")} {message}', flush=True)
@@ -129,7 +133,7 @@ def run_project(label, jar, config, project_id, relative_path, tokens, jvm_optio
         problems.append('no statistics')
     if 'Oracles datapoints generated' not in log_text:
         problems.append('the log does not end the generation')
-    if 'OutOfMemoryError' in log_text:
+    if OUT_OF_MEMORY in log_text:
         problems.append('OutOfMemoryError')
     if os.path.exists(statistics):
         result['datapoints'] = json.load(open(statistics)).get('oracleDatapoints')
@@ -142,7 +146,7 @@ def run_project(label, jar, config, project_id, relative_path, tokens, jvm_optio
             problems.append(f'tokens exit status {result["tokens"]["exit"]}')
         if not os.path.isdir(tokens_dir) or not os.listdir(tokens_dir):
             problems.append('no tokens dataset')
-        if 'OutOfMemoryError' in tokens_log:
+        if OUT_OF_MEMORY in tokens_log:
             problems.append('OutOfMemoryError in the tokens stage')
     result['problems'] = problems
     json.dump(result, open(os.path.join(base, 'run.json'), 'w'), indent=2)

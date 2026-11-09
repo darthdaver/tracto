@@ -170,7 +170,8 @@ regular expressions on the partial oracle and on the split test prefix (not the 
   commit only when the author asks.
 - The fixes follow the order of section 9, one step at a time (2026-11-03).
 - Only JUnit assertions are in scope: Hamcrest `MatcherAssert.assertThat` and AssertJ are out of scope, and their
-  oracles are counted apart from the lost ones (2026-11-04).
+  oracles are counted apart from the lost ones (2026-11-04). **Changed on 2026-11-09:** Hamcrest `assertThat` is in
+  scope (grammar rule, oracles accepted); AssertJ stays out.
 - The A/B may stop early while a fix is developed (a run on the test classes concerned, then the small projects first,
   stopped at the first regression); each step still ends with the complete A/B on the nine projects (2026-11-04).
 - **2026-11-05, replaces the complete A/B after each step:** the development moves to a 16 GB laptop; each step is
@@ -252,6 +253,13 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
   (`assertTimeoutPreemptively(d, () -> {...})`, an anonymous class) produces no datapoint; whitespace and comments are
   never target tokens (corpus: +9 complete, 0 worse).
 
+**Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
+counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles
+by cause: member of a chain 451 (436 alone; jsoup 287), Hamcrest `assertThat` 314 (ffmpeg 312, cryptofs 2),
+`MatcherAssert.assertThat` ("Assertion do not start with JUnit api") 110 (cryptofs), dependency 91 (87), class name 66
+(57; eec 41), member of a known type 55 (49; cryptofs 29), test class member 12, nested-block variable 10,
+`assertInstanceOf` 7 (jsoup 5, cryptofs 2), other 4, static import 2, `Range [N, N) out of bounds` 1.
+
 **Lost oracles by cause after Step 21** (oracles recovered by fixing that cause alone, of 9,049; an oracle can have
 several causes):
 
@@ -283,9 +291,10 @@ several causes):
    are in the test prefix or only in other methods, then normalize to the unqualified form.
 5. **Grammar** (101), done (Step 28): the spacing of `instanceof`, the `)` after a string concatenation.
 6. **Block lambdas** (52), done (Step 29).
-7. **Type inference of the chains** (426, the largest but the hardest).
-8. **Dependencies** (85): design (section 6) with the answer of the author on the inference setting.
-9. **Pre-existing defects**, each its own step: candidates depending on the processing history (state across
+7. **Hamcrest `assertThat`** (424 dropped in v1; asked by the author on 2026-11-09): grammar rule, oracles accepted.
+8. **Type inference of the chains** (451 in v1, 436 alone; the largest but the hardest).
+9. **Dependencies** (85): design (section 6) with the answer of the author on the inference setting.
+10. **Pre-existing defects**, each its own step: candidates depending on the processing history (state across
    datapoints and classes: static `unsolvableTokens`, the shallow `cloneRootTokenReferences`); the protected-member
    filter (`String.contains` on package names); a substring of an error message holding an identity hash; the test methods annotated `@ParameterizedTest` (or other test annotations than `@Test`)
    offered as candidates; the private members of the JDK classes offered after a value of that type (`String.isMalformed3`); the `LAMBDA_PARAM` placeholder offered outside lambdas (`assertEquals(hot.toString(`).
