@@ -38,6 +38,10 @@ class AssertionLambdaBlockClassifierTest {
                 // A return before the last statement belongs to the lambda only if it is not nested in another lambda
                 // or in an anonymous class
                 Arguments.of(AssertionLambdaBlockShape.LAST_CALL, "assertThrows(IllegalStateException.class, () -> { Runnable r = () -> { return; }; calc.explode(); });"),
+                // A block of one statement (Step 29)
+                Arguments.of(AssertionLambdaBlockShape.LAST_CALL, "assertThrows(IllegalStateException.class, () -> { calc.explode(); });"),
+                Arguments.of(AssertionLambdaBlockShape.LAST_ASSERTION, "assertDoesNotThrow(() -> { assertEquals(0, calc.total()); });"),
+                Arguments.of(AssertionLambdaBlockShape.LAST_THROW, "assertThrows(IllegalStateException.class, () -> { throw new IllegalStateException(); });"),
                 Arguments.of(AssertionLambdaBlockShape.LAST_CALL, "assertThrows(IllegalStateException.class, () -> { Runnable r = new Runnable() { public void run() { return; } }; calc.explode(); });"),
                 // The statements that produce no datapoint (or that unwrap an assertDoesNotThrow)
                 Arguments.of(AssertionLambdaBlockShape.LAST_ASSERTION, "assertThrows(ArithmeticException.class, () -> { calc.reset(); assertEquals(0, calc.divide(1, 0)); });"),
@@ -55,7 +59,6 @@ class AssertionLambdaBlockClassifierTest {
                 Arguments.of(AssertionLambdaBlockShape.EARLY_RETURN, "assertThrows(IllegalStateException.class, () -> { if (strict) { return; } calc.explode(); });"),
                 // The statements out of scope
                 Arguments.of(null, "assertThrows(IllegalStateException.class, () -> calc.explode());"),
-                Arguments.of(null, "assertThrows(IllegalStateException.class, () -> { calc.explode(); });"),
                 Arguments.of(null, "assertThrows(IllegalStateException.class, calc::explode);"),
                 Arguments.of(null, "assertAll(() -> { calc.reset(); assertEquals(0, calc.total()); });"),
                 Arguments.of(null, "assertTimeout(Duration.ofSeconds(1), () -> { calc.reset(); calc.add(1, 2); });"),
@@ -93,5 +96,28 @@ class AssertionLambdaBlockClassifierTest {
         AssertionLambdaBlockClassifier.AssertionLambdaBlock block = AssertionLambdaBlockClassifier.find(StaticJavaParser.parseStatement(statement)).orElseThrow();
 
         assertEquals(expectedOutcome, AssertionLambdaBlockClassifier.outcome(block, strategy));
+    }
+
+    static Stream<Arguments> datapoints() {
+        return Stream.of(
+                // A target is a single statement (Step 29)
+                Arguments.of(false, "assertThrows(IllegalStateException.class, () -> calc.explode());"),
+                Arguments.of(false, "assertTimeout(Duration.ofSeconds(1), () -> calc.add(1, 2));"),
+                Arguments.of(false, "assertThrows(IllegalStateException.class, () -> { calc.explode(); });"),
+                Arguments.of(true, "assertThrows(IllegalStateException.class, () -> { throw new IllegalStateException(); });"),
+                Arguments.of(true, "assertTimeoutPreemptively(Duration.ofSeconds(1), () -> { calc.reset(); calc.add(1, 2); });"),
+                Arguments.of(true, "assertTimeout(Duration.ofSeconds(1), () -> { calc.add(1, 2); });"),
+                Arguments.of(true, "assertAll(() -> { calc.reset(); assertEquals(0, calc.total()); });"),
+                Arguments.of(true, "assertTrue(values.stream().allMatch(v -> { return v > 0; }));"),
+                Arguments.of(true, "assertNotNull(new Runnable() { public void run() { } });"),
+                // Not an assertion: its blocks are split, not targets
+                Arguments.of(false, "values.forEach(v -> { calc.accumulate(v); });")
+        );
+    }
+
+    @ParameterizedTest(name = "{0}: {1}")
+    @MethodSource("datapoints")
+    void anAssertionContainingABlockOfStatementsProducesNoDatapoint(boolean expectedNoDatapoint, String statement) {
+        assertEquals(expectedNoDatapoint, AssertionLambdaBlockClassifier.producesNoDatapoint(StaticJavaParser.parseStatement(statement), AssertionLambdaBlocksStrategyType.MOVE_TO_PREFIX));
     }
 }

@@ -165,6 +165,10 @@ public class Antlr4Utils {
 
     /**
      * Tokenizes a Java snippet and returns a list of tokens.
+     * <p>
+     * Only the tokens of the language are returned: the whitespace and the comments (the hidden channel of the lexer)
+     * are skipped. A target printed on several lines (a block lambda) has line breaks and indentation, and a target
+     * can keep a comment: none of them is a token the model generates (Step 29).
      *
      * @param snippet The Java code snippet to tokenize.
      * @return A list of token strings.
@@ -181,7 +185,9 @@ public class Antlr4Utils {
         // Tokenize the snippet
         Token token;
         while ((token = lexer.nextToken()).getType() != Token.EOF) {
-            tokens.add(token.getText());
+            if (token.getChannel() == Token.DEFAULT_CHANNEL) {
+                tokens.add(token.getText());
+            }
         }
 
         return tokens;

@@ -91,6 +91,18 @@ class TestUtilsAssertionLambdaBlocksTest {
                 Arguments.of("a variable hiding a field is renamed",
                         "assertThrows(NumberFormatException.class, () -> { String count = \"x\"; Integer.parseInt(count); }); count++;",
                         "String count2 = \"x\"; assertThrows(NumberFormatException.class, () -> Integer.parseInt(count2)); count++;"),
+                Arguments.of("a block of one call becomes an expression",
+                        "assertThrows(IndexOutOfBoundsException.class, () -> { values.get(5); });",
+                        "assertThrows(IndexOutOfBoundsException.class, () -> values.get(5));"),
+                Arguments.of("a block of one declaration keeps its initializer",
+                        "assertThrows(NumberFormatException.class, () -> { int v = Integer.parseInt(\"x\"); });",
+                        "assertThrows(NumberFormatException.class, () -> Integer.parseInt(\"x\"));"),
+                Arguments.of("a block of one return keeps its value",
+                        "int first = assertDoesNotThrow(() -> { return values.get(0); }); assertEquals(1, first);",
+                        "int first = assertDoesNotThrow(() -> values.get(0)); assertEquals(1, first);"),
+                Arguments.of("an assertDoesNotThrow of one assertion is unwrapped",
+                        "assertDoesNotThrow(() -> { assertEquals(0, values.size()); });",
+                        "assertEquals(0, values.size());"),
                 Arguments.of("an auxiliary method called within the block is inlined",
                         "assertThrows(IndexOutOfBoundsException.class, () -> { fill(); values.get(5); });",
                         "values.add(1); values.add(2); assertThrows(IndexOutOfBoundsException.class, () -> values.get(5));")
@@ -107,7 +119,7 @@ class TestUtilsAssertionLambdaBlocksTest {
 
     static Stream<Arguments> unchangedBlocks() {
         return Stream.of(
-                Arguments.of("a single statement", "assertThrows(IndexOutOfBoundsException.class, () -> { values.get(5); });"),
+                Arguments.of("a single throw", "assertThrows(IllegalStateException.class, () -> { throw new IllegalStateException(); });"),
                 Arguments.of("assertThrows ending with an assertion", "assertThrows(ArithmeticException.class, () -> { values.add(0); assertEquals(0, 1 / values.get(0)); });"),
                 Arguments.of("a try statement at the end", "assertThrows(IndexOutOfBoundsException.class, () -> { values.add(1); try { values.get(5); } finally { values.clear(); } });"),
                 Arguments.of("a loop at the end", "assertDoesNotThrow(() -> { values.add(1); for (int v : values) { values.get(0); } });"),
@@ -134,7 +146,10 @@ class TestUtilsAssertionLambdaBlocksTest {
                         "// the scenario\nvalues.add(1); assertEquals(1, values.size());"),
                 Arguments.of("a first statement with its own comment",
                         "// the scenario\nassertThrows(IndexOutOfBoundsException.class, () -> {\n// one value\nvalues.add(1); values.get(5); });",
-                        "// one value\nvalues.add(1);\n// the scenario\nassertThrows(IndexOutOfBoundsException.class, () -> values.get(5));")
+                        "// one value\nvalues.add(1);\n// the scenario\nassertThrows(IndexOutOfBoundsException.class, () -> values.get(5));"),
+                Arguments.of("a block of one call",
+                        "// the scenario\nassertThrows(IndexOutOfBoundsException.class, () -> { values.get(5); });",
+                        "// the scenario\nassertThrows(IndexOutOfBoundsException.class, () -> values.get(5));")
         );
     }
 
@@ -190,9 +205,9 @@ class TestUtilsAssertionLambdaBlocksTest {
         List<TestStats> moved = normalize(MOVE_TO_PREFIX, testCase("testBlocks", "", statements)).getValue1();
         List<TestStats> skipped = normalize(SKIP, testCase("testBlocks", "", statements)).getValue1();
 
-        assertEquals(Map.of("moved-to-prefix", 1, "unwrapped", 1, "skipped-last-statement-assertion", 1, "skipped-last-statement-throw", 1),
+        assertEquals(Map.of("moved-to-prefix", 1, "unwrapped", 1, "skipped-last-statement-assertion", 1, "skipped-last-statement-throw", 1, "expression-lambda", 1),
                 moved.get(0).assertionLambdaBlocks());
-        assertEquals(Map.of("skipped-last-statement-call", 1, "skipped-last-statement-assertion", 2, "skipped-last-statement-throw", 1),
+        assertEquals(Map.of("skipped-last-statement-call", 2, "skipped-last-statement-assertion", 2, "skipped-last-statement-throw", 1),
                 skipped.get(0).assertionLambdaBlocks());
     }
 
@@ -320,6 +335,53 @@ class TestUtilsAssertionLambdaBlocksTest {
                 """);
 
         assertEquals(List.of("assertEquals(3, calc.add(1, 2));", "assertEquals(1, calc.total());"), datapoints.stream().map(OracleDatapoint::target).toList());
+    }
+
+    @Test
+    void blockOfOneCallIsATargetOnOneLine() throws IOException {
+        List<OracleDatapoint> datapoints = datapoints(MOVE_TO_PREFIX, """
+                @Test
+                public void testThrows() {
+                    Calc calc = new Calc();
+                    assertThrows(ArithmeticException.class, () -> {
+                        calc.divide(1, 0);
+                    });
+                }
+                """);
+
+        assertEquals(List.of("assertThrows(ArithmeticException.class, () -> calc.divide(1, 0));"), datapoints.stream().map(OracleDatapoint::target).toList());
+    }
+
+    static Stream<Arguments> assertionsWithAStatementBlock() {
+        return Stream.of(
+                Arguments.of("a lambda block of another assertion",
+                        "assertTimeoutPreemptively(java.time.Duration.ofSeconds(1), () -> { calc.accumulate(1); assertEquals(1, calc.total()); });"),
+                Arguments.of("a lambda block of one statement of another assertion",
+                        "assertTimeoutPreemptively(java.time.Duration.ofSeconds(1), () -> { assertEquals(0, calc.total()); });"),
+                Arguments.of("a lambda block nested in an argument",
+                        "assertEquals(0, java.util.stream.Stream.of(1).filter(v -> { return v > 1; }).count());"),
+                Arguments.of("an anonymous class",
+                        "assertEquals(\"x\", new Object() { public String toString() { return \"x\"; } }.toString());"),
+                Arguments.of("a lambda block left by the normalization", "assertThrows(IllegalStateException.class, () -> { throw new IllegalStateException(); });")
+        );
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("assertionsWithAStatementBlock")
+    void assertionContainingAStatementBlockIsNotATarget(String description, String assertion) throws IOException {
+        List<OracleDatapoint> datapoints = datapoints(MOVE_TO_PREFIX, """
+                @Test
+                public void testBlock() {
+                    Calc calc = new Calc();
+                    assertEquals(3, calc.add(1, 2));
+                    %s
+                    assertTimeout(java.time.Duration.ofSeconds(1), () -> calc.accumulate(2));
+                }
+                """.formatted(assertion));
+
+        assertEquals(List.of("assertEquals(3, calc.add(1, 2));", "assertTimeout(java.time.Duration.ofSeconds(1), () -> calc.accumulate(2));"),
+                datapoints.stream().map(OracleDatapoint::target).toList());
+        datapoints.forEach(datapoint -> assertTrue(!datapoint.target().contains("\n"), datapoint.target()));
     }
 
     // Behaviour of the normalized code

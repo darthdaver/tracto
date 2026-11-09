@@ -129,6 +129,16 @@
    "date": "2026-11-07T01:06:14",
    "jar_sha256": "050a0eb259575b428d6e1bcfc40eca60fd396912ecdc77d256446c528d9d8f87",
    "reason": "Step 28: grammar (message = any expression, constructor references of types/arrays, typeType no longer a suffix of an expression) and the shared token joining (instanceof spaced, same in training and inference); 1,089 -> 1,110 complete, 0 worse; removed candidates (primitive types, contextual keywords, project identifiers) only after a complete expression"
+  },
+  {
+   "date": "2026-11-07T12:00:37",
+   "jar_sha256": "1f6eb61a5858d760f928f36d51739c43eff378709cb2844baabf3cfdeb6a2f61",
+   "reason": "Step 29: whitespace and comments are not target tokens (block lambdas): +9 complete, 0 worse"
+  },
+  {
+   "date": "2026-11-09T11:10:47",
+   "jar_sha256": "5cf73793cfe8a14ad35e7f5c1d01d2f2242c17830978d1ed63d3afde65a98c33",
+   "reason": "Step 29: one-statement block lambdas normalized to one line, assertions with statement blocks produce no datapoint: +9 complete vs Step 28, 0 worse"
   }
  ],
  "oracles": {
@@ -654,10 +664,10 @@
     ],
     "status": "loses a step"
    },
-   "CleartextFileChannelTestSTARSplitTest|testMapThrowsUnsupportedOperationException_split_0|assertThrows(UnsupportedOperationException.class, () -> {\n    inTest.map(MapMode.PRIVATE, 3727L, 3727L);\n});": {
-    "digest": null,
+   "CleartextFileChannelTestSTARSplitTest|testMapThrowsUnsupportedOperationException_split_0|assertThrows(UnsupportedOperationException.class, () -> inTest.map(MapMode.PRIVATE, 3727L, 3727L));": {
+    "digest": "b30a1b345b201989",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "CleartextFileChannelTestSTARSplitTest|testSize_split_0|assertEquals(100, inTest.size());": {
     "digest": "c5ad7e2ec284fdbf",
@@ -733,10 +743,10 @@
     "missing": [],
     "status": "complete"
    },
-   "DirectoryStreamFactoryTestSTARSplitTest|testNewDirectoryStreamAfterClosedThrowsClosedFileSystemException_split_0|assertThrows(ClosedFileSystemException.class, () -> {\n    inTest.newDirectoryStream(path, filter);\n});": {
-    "digest": null,
+   "DirectoryStreamFactoryTestSTARSplitTest|testNewDirectoryStreamAfterClosedThrowsClosedFileSystemException_split_0|assertThrows(ClosedFileSystemException.class, () -> inTest.newDirectoryStream(path, filter));": {
+    "digest": "024a6f7d4640ef90",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "DirectoryStreamFactoryTestSTARSplitTest|testNewDirectoryStreamCreatesDirectoryStream_split_0|assertNotNull(directoryStream);": {
     "digest": "bf073582770d963c",
@@ -744,47 +754,47 @@
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testGetDecodedCiphertext_split_0|assertArrayEquals(expected, migration.getDecodedCiphertext());": {
-    "digest": "09195ea04a787341",
+    "digest": "5e28a8a74c3ef98a",
     "missing": [],
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testGetNewDeflatedName_split_0|assertEquals(expectedResult, migration.getNewDeflatedName());": {
-    "digest": "a07d659e45116679",
+    "digest": "5560518ec4509f69",
     "missing": [],
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testGetNewInflatedName_split_0|assertEquals(expectedResult, migration.getNewInflatedName());": {
-    "digest": "8b59b70b0f5463ef",
+    "digest": "326f3c675de8051d",
     "missing": [],
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testGetOldCanonicalNameWithoutTypePrefix_split_0|assertEquals(expectedResult, migration.getOldCanonicalNameWithoutTypePrefix());": {
-    "digest": "4c0d1cb7bf5e6469",
+    "digest": "90c6f03e078f4d2f",
     "missing": [],
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testGetTargetPath_split_0|assertEquals(old.resolveSibling(expected), result);": {
-    "digest": "a62751620b539510",
+    "digest": "bbd6033d622a43f4",
     "missing": [],
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testIsDirectory_split_0|assertEquals(expectedResult, migration.isDirectory());": {
-    "digest": "b7f7884d21057453",
+    "digest": "276e2cec5f6d6a24",
     "missing": [],
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testIsSymlink_split_0|assertEquals(expectedResult, migration.isSymlink());": {
-    "digest": "083e5a4c6793bca7",
+    "digest": "58ce0383cd119bd7",
     "missing": [],
     "status": "complete"
    },
-   "FilePathMigrationTestSTARSplitTest|testMalformedGetDecodedCiphertext_split_0|assertThrows(InvalidOldFilenameException.class, () -> {\n    migration.getDecodedCiphertext();\n});": {
-    "digest": null,
+   "FilePathMigrationTestSTARSplitTest|testMalformedGetDecodedCiphertext_split_0|assertThrows(InvalidOldFilenameException.class, () -> migration.getDecodedCiphertext());": {
+    "digest": "f5fbb8a3008da24c",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testMalformedGetDecodedCiphertext_split_1|assertTrue(e.getMessage().contains(oldPath.toString()));": {
-    "digest": "3c37b32e424fac22",
+    "digest": "32c12da1f979b24f",
     "missing": [],
     "status": "complete"
    },
@@ -813,10 +823,10 @@
     "missing": [],
     "status": "complete"
    },
-   "LongFileNameProviderTestSTARSplitTest|testInflateNonExisting_split_0|assertThrows(NoSuchFileException.class, () -> {\n    prov.inflate(Paths.get(\"/does/not/exist\"));\n});": {
-    "digest": null,
+   "LongFileNameProviderTestSTARSplitTest|testInflateNonExisting_split_0|assertThrows(NoSuchFileException.class, () -> prov.inflate(Paths.get(\"/does/not/exist\")));": {
+    "digest": "4b321e6049985f77",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "LongFileNameProviderTestSTARSplitTest|testIsDeflated_split_0|assertTrue(new LongFileNameProvider(readonlyFlag).isDeflated(\"foo.c9s\"));": {
     "digest": "ac3c56a46dacb61f",
@@ -828,20 +838,20 @@
     "missing": [],
     "status": "complete"
    },
-   "LongFileNameProviderTestSTARSplitTest|testPersistCachedFailsOnReadOnlyFileSystems_split_0|assertThrows(ReadOnlyFileSystemException.class, () -> {\n    deflated.persist();\n});": {
-    "digest": null,
+   "LongFileNameProviderTestSTARSplitTest|testPersistCachedFailsOnReadOnlyFileSystems_split_0|assertThrows(ReadOnlyFileSystemException.class, () -> deflated.persist());": {
+    "digest": "e1fc1c1768cdb661",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "LongFileNameProviderTestSTARSplitTest|testPersistedStringEqualsLongName_split_0|assertEquals(Files.readString(deflated.c9sPath.resolve(\"name.c9s\"), StandardCharsets.UTF_8), deflated.longName);": {
     "digest": "9fb9fea4105495ca",
     "missing": [],
     "status": "complete"
    },
-   "MigratorsTestSTARSplitTest|throwsExceptionIfNeitherMasterkeyNorVaultConfigExists_split_0|assertThrows(IOException.class, () -> {\n    migrators.needsMigration(pathToVault, \"vault.cryptomator\", \"masterkey.cryptomator\");\n});": {
-    "digest": null,
+   "MigratorsTestSTARSplitTest|throwsExceptionIfNeitherMasterkeyNorVaultConfigExists_split_0|assertThrows(IOException.class, () -> migrators.needsMigration(pathToVault, \"vault.cryptomator\", \"masterkey.cryptomator\"));": {
+    "digest": "7e7edd0f4b6622ab",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "MigratorsTestSTARSplitTest|throwsExceptionIfNeitherMasterkeyNorVaultConfigExists_split_1|MatcherAssert.assertThat(thrown.getMessage(), CoreMatchers.containsString(\"Did not find vault.cryptomator nor masterkey.cryptomator\"));": {
     "digest": null,
@@ -944,10 +954,10 @@
     "missing": [],
     "status": "complete"
    },
-   "PathMatcherFactoryTestSTARSplitTest|testSyntaxAndPatternNotStartingWithGlobOrRegexThrowsUnsupportedOperationException_split_0|assertThrows(UnsupportedOperationException.class, () -> {\n    inTest.pathMatcherFrom(\"fail\");\n});": {
-    "digest": null,
+   "PathMatcherFactoryTestSTARSplitTest|testSyntaxAndPatternNotStartingWithGlobOrRegexThrowsUnsupportedOperationException_split_0|assertThrows(UnsupportedOperationException.class, () -> inTest.pathMatcherFrom(\"fail\"));": {
+    "digest": "ad663476f3768f98",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "PathMatcherFactoryTestSTARSplitTest|testSyntaxAndPatternStartingWithGlobCreatesPatternPathMatcherWithCorrectPattern_split_0|assertTrue(pathMatcher instanceof PatternPathMatcher);": {
     "digest": "a807240c4b2d8706",
@@ -975,18 +985,18 @@
     ],
     "status": "loses a step"
    },
-   "ReadonlyFlagTestSTARSplitTest|testAssertWritable_split_0|assertThrows(ReadOnlyFileSystemException.class, () -> {\n    inTest.assertWritable();\n});": {
-    "digest": null,
+   "ReadonlyFlagTestSTARSplitTest|testAssertWritable_split_0|assertThrows(ReadOnlyFileSystemException.class, () -> inTest.assertWritable());": {
+    "digest": "9883b13b061e0e7a",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
-   "ReadonlyFlagTestSTARSplitTest|testAssertWritable_split_1|assertDoesNotThrow(() -> {\n    inTest.assertWritable();\n});": {
-    "digest": null,
+   "ReadonlyFlagTestSTARSplitTest|testAssertWritable_split_1|assertDoesNotThrow(() -> inTest.assertWritable());": {
+    "digest": "19ec598193e7f9e4",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "ReadonlyFlagTestSTARSplitTest|testIsSet_split_0|assertEquals(readonly, result);": {
-    "digest": "bbb67c140c6e12c1",
+    "digest": "dac0981b8d2cc90b",
     "missing": [],
     "status": "complete"
    },

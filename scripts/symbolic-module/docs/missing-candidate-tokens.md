@@ -247,6 +247,10 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
   in `assignment` and added back at inference; the grammar rule of `assertDoesNotThrow` (corpus: +18 complete, 0 worse).
 - Step 28: the grammar (the message of an assertion is any expression; `Type::new`, `String[]::new`) and the partial
   oracle joined the same way in the dataset and at inference (`x instanceof T`) (corpus: +21 complete, 0 worse).
+- Step 29: a target is always a single statement: a block lambda of one statement is written as an expression by the
+  normalization (`() -> { a(); }` becomes `() -> a()`), an assertion still containing a block of statements
+  (`assertTimeoutPreemptively(d, () -> {...})`, an anonymous class) produces no datapoint; whitespace and comments are
+  never target tokens (corpus: +9 complete, 0 worse).
 
 **Lost oracles by cause after Step 21** (oracles recovered by fixing that cause alone, of 9,049; an oracle can have
 several causes):
@@ -278,7 +282,7 @@ several causes):
    model input): the split prefix files of cryptofs still contain `Assertions.assertX(...)`; first check whether they
    are in the test prefix or only in other methods, then normalize to the unqualified form.
 5. **Grammar** (101), done (Step 28): the spacing of `instanceof`, the `)` after a string concatenation.
-6. **Block lambdas** (52).
+6. **Block lambdas** (52), done (Step 29).
 7. **Type inference of the chains** (426, the largest but the hardest).
 8. **Dependencies** (85): design (section 6) with the answer of the author on the inference setting.
 9. **Pre-existing defects**, each its own step: candidates depending on the processing history (state across

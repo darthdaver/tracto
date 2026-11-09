@@ -180,10 +180,10 @@ Read in `TestUtils.parseNormalizeTestStatementsBlock` and `TestCaseSplitter.spli
 `docs/fixes/step-19-assertion-lambda-blocks.md`). The key is required.
 
 It applies to an `assertThrows`, `assertThrowsExactly` or `assertDoesNotThrow` written as a statement (or as the
-initializer of a variable, `E e = assertThrows(...)`) whose lambda expression is a block of **at least two**
-statements. A single-statement block, an expression lambda, a method reference, the other assertions taking a lambda
-(`assertAll`, `assertTimeout`) and an assertion nested in another call are left as they are. Each assertion in scope is
-classified by the last statement of its block (`AssertionLambdaBlockClassifier`):
+initializer of a variable, `E e = assertThrows(...)`) whose lambda expression is a block of **at least one**
+statement (since Step 29; before, a block of one statement was left as it was and the target was printed on several
+lines). An expression lambda, a method reference and an assertion nested in another call are left as they are. Each
+assertion in scope is classified by the last statement of its block (`AssertionLambdaBlockClassifier`):
 
 | Shape | Last statement | `move-to-prefix`: `assertThrows`, `assertThrowsExactly` | `move-to-prefix`: `assertDoesNotThrow` |
 |-------|----------------|----------------------------------------------------------|-----------------------------------------|
@@ -196,15 +196,23 @@ classified by the last statement of its block (`AssertionLambdaBlockClassifier`)
 
 | Value | Meaning |
 |-------|---------|
-| `move-to-prefix` (committed config) | As in the table. Example: `assertThrows(E.class, () -> { a(); b(); })` becomes `a(); assertThrows(E.class, () -> b());`, so `a()` is part of the test prefix and the target is the short assertion. The moved statements are normalized like the others (helpers inlined, try statements converted, nested lambda blocks moved in turn); a variable of the block hiding a field is renamed (`count2`), a reassigned variable used by the remaining call gets a final copy (`finalI`), and the test case declares `throws Exception` (unless it declares `Exception` or `Throwable`), since the lambda absorbed the checked exceptions of the moved statements. |
+| `move-to-prefix` (committed config) | As in the table. Example: `assertThrows(E.class, () -> { a(); b(); })` becomes `a(); assertThrows(E.class, () -> b());`, and a block of one call `assertThrows(E.class, () -> { b(); })` becomes `assertThrows(E.class, () -> b());` (nothing moves, no `throws` added), so `a()` is part of the test prefix and the target is the short assertion. The moved statements are normalized like the others (helpers inlined, try statements converted, nested lambda blocks moved in turn); a variable of the block hiding a field is renamed (`count2`), a reassigned variable used by the remaining call gets a final copy (`finalI`), and the test case declares `throws Exception` (unless it declares `Exception` or `Throwable`), since the lambda absorbed the checked exceptions of the moved statements. |
 | `skip` | Conservative: no assertion in scope produces a datapoint, whatever its shape, since the statement that throws (or must not throw) is not known. The test case is not changed. |
 
 "No datapoint" means that the assertion is not a split point (with both `split` values); it stays in the prefixes of the
 following assertions as an ordinary statement, it is not counted by `num-assertions-match`, and it does not end the
 extra split test case of `keep-statements-after-last-assertion`. The other datapoints of the test case are kept. The
 outcome of each assertion is counted in the statistics: `assertionLambdaBlocks` in `test-stats-<project>.json` (per test
-case) and in `statistics-<project>.json` (total), with the keys `moved-to-prefix`, `unwrapped` and
-`skipped-<shape>` (for example `skipped-last-statement-assertion`).
+case) and in `statistics-<project>.json` (total), with the keys `moved-to-prefix`, `expression-lambda` (a block of one
+call, Step 29), `unwrapped` and `skipped-<shape>` (for example `skipped-last-statement-assertion`).
+
+**A target is always a single statement** (Step 29, whatever the strategy): the model never generates a block of
+statements. Besides the assertions in scope above, any assertion that still contains a block of statements after the
+normalization (a lambda block, as in `assertTimeoutPreemptively(d, () -> { ... })`, `assertAll(() -> { ... })` or
+`allMatch(v -> { return ...; })`, or the body of an anonymous class) produces no datapoint, with the same meaning as
+above (`AssertionLambdaBlockClassifier.producesNoDatapoint`). These assertions are not counted in `assertionLambdaBlocks`.
+`assertTimeout`/`assertTimeoutPreemptively` are not normalized like `assertThrows`: moving statements out of their
+block would change what the timeout measures.
 
 The move rests on the same assumption as the conversion of try/catch/fail: in a passing test the statements after the
 one that throws never run, so the last statement is the one that throws (unless the test contains dead code). For

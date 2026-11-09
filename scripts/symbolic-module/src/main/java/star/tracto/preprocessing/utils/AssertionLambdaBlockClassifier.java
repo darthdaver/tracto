@@ -6,6 +6,7 @@ import com.github.javaparser.ast.body.BodyDeclaration;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.expr.VariableDeclarationExpr;
 import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.ReturnStmt;
@@ -19,11 +20,15 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Classifies the assertions whose lambda expression is a block of at least two statements ({@code assertThrows},
+ * Classifies the assertions whose lambda expression is a block of statements ({@code assertThrows},
  * {@code assertThrowsExactly} and {@code assertDoesNotThrow}) into the shapes defined by
  * {@link AssertionLambdaBlockShape}, and decides what the normalization and the split do with them ({@link Outcome}).
  * The decision depends only on the source code of the statement, so that the normalization and the split (which reads
  * the normalized test class again) agree on it.
+ * <p>
+ * A target is always a single statement: the model never generates a block of statements. Any other assertion that
+ * contains a block of statements (a lambda block, as in {@code assertTimeoutPreemptively(d, () -> { ... })}, or the
+ * body of an anonymous class) produces no datapoint ({@link #containsAStatementBlock}, Step 29).
  */
 final class AssertionLambdaBlockClassifier {
 
@@ -53,7 +58,7 @@ final class AssertionLambdaBlockClassifier {
     }
 
     /**
-     * An assertion statement with a lambda block of at least two statements.
+     * An assertion statement with a lambda block of at least one statement.
      *
      * @param statement the assertion statement ({@code assertThrows(...);} or {@code E e = assertThrows(...);})
      * @param assertion the call to the assertion
@@ -67,7 +72,8 @@ final class AssertionLambdaBlockClassifier {
      * Returns the assertion with a lambda block of a statement: a call to {@code assertThrows},
      * {@code assertThrowsExactly} or {@code assertDoesNotThrow}, as an expression statement or as the initializer of the
      * only variable declared by the statement, whose first lambda argument (the executable: a message supplier follows
-     * it) is a block of at least two statements.
+     * it) is a block of at least one statement. A block of one statement is normalized as a longer one (Step 29): with
+     * nothing to move, {@code () -> { a(); }} becomes {@code () -> a()}.
      *
      * @param statement the statement to check
      * @return the assertion with its lambda block, or an empty optional if the statement is not such an assertion
@@ -92,7 +98,7 @@ final class AssertionLambdaBlockClassifier {
                 .filter(Expression::isLambdaExpr)
                 .map(Expression::asLambdaExpr)
                 .findFirst();
-        if (lambda.isEmpty() || !lambda.get().getBody().isBlockStmt() || lambda.get().getBody().asBlockStmt().getStatements().size() < 2) {
+        if (lambda.isEmpty() || !lambda.get().getBody().isBlockStmt() || lambda.get().getBody().asBlockStmt().getStatements().isEmpty()) {
             return Optional.empty();
         }
         BlockStmt block = lambda.get().getBody().asBlockStmt();
@@ -125,15 +131,32 @@ final class AssertionLambdaBlockClassifier {
     }
 
     /**
-     * Checks if a statement is an assertion with a lambda block that produces no datapoint: the split does not make it
-     * a split point.
+     * Checks if a statement is an assertion that produces no datapoint: an assertion with a lambda block whose outcome
+     * is {@link Outcome#SKIP}, or any other assertion containing a block of statements ({@link #containsAStatementBlock}).
+     * The split does not make it a split point.
      *
      * @param statement the statement to check
      * @param strategy the strategy of the configuration
      * @return {@code true} if the statement is an assertion with a lambda block that produces no datapoint
      */
     static boolean producesNoDatapoint(Statement statement, AssertionLambdaBlocksStrategyType strategy) {
-        return find(statement).map(lambdaBlock -> outcome(lambdaBlock, strategy) == Outcome.SKIP).orElse(false);
+        Optional<AssertionLambdaBlock> lambdaBlock = find(statement);
+        if (lambdaBlock.isPresent()) {
+            return outcome(lambdaBlock.get(), strategy) == Outcome.SKIP;
+        }
+        return JavaParserUtils.isAssertionStatement(statement) && containsAStatementBlock(statement);
+    }
+
+    /**
+     * Checks if a statement contains a block of statements: a lambda expression whose body is a block, or the body of
+     * an anonymous class. An assertion containing one is not a target: the model generates a single statement.
+     *
+     * @param statement the statement to check
+     * @return {@code true} if the statement contains a lambda block or an anonymous class body
+     */
+    static boolean containsAStatementBlock(Statement statement) {
+        return !statement.findAll(LambdaExpr.class, lambdaExpr -> lambdaExpr.getBody().isBlockStmt()).isEmpty()
+                || !statement.findAll(ObjectCreationExpr.class, creation -> creation.getAnonymousClassBody().isPresent()).isEmpty();
     }
 
     /**

@@ -30,6 +30,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 26 | on the corpus: 1,009 → 1,071 complete (+62, 0 worse) |
 | After Step 27 | on the corpus: 1,071 → 1,089 complete (+18, 0 worse; dropped 57 → 38) |
 | After Step 28 | on the corpus: 1,089 → 1,110 complete (+21, 0 worse) |
+| After Step 29 | on the corpus: 1,110 → 1,119 complete (+9, 0 worse) |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -68,6 +69,12 @@ This is what makes the fast checks of section 4 exact.
 - **2026-11-07, dataset v1 (decided by the author):** after Step 27, do steps 4-6 (qualified assertions in the
   prefixes, grammar, block lambdas), then cut the first training dataset with the full test (section 7); steps 7-9 go
   to the second version.
+- **2026-11-09, a target is always a single statement (asked by the author; design chosen by Claude, Step 29):** the
+  model never generates a block of statements. A block lambda of one statement in `assertThrows`/`assertThrowsExactly`/
+  `assertDoesNotThrow` is normalized as the longer blocks (Step 19; nothing moves: `() -> { a(); }` becomes `() -> a()`);
+  any other assertion containing a block of statements (`assertTimeoutPreemptively(d, () -> {...})`, `assertAll(() ->
+  {...})`, an anonymous class) produces no datapoint for now (a timeout block cannot be split without changing what is
+  timed). Fixed at normalization, not at token generation, so that the target text (`tgt`) is one line too.
 
 ## 3. Setting up the laptop
 
@@ -181,7 +188,7 @@ examples to start from.
    defect, added to step 9.
 5. **Done: Step 28** (`docs/fixes/step-28-grammar.md`). **Grammar** (101; 172 in the full run with the other causes): the spacing of `instanceof`, the `)` after a string concatenation. The grammar has no rule for `assertThrowsExactly`
    and `assertInstanceOf` (their lexer tokens exist; Step 27 added `assertDoesNotThrow`): check how many targets use them.
-6. **Block lambdas** (52 dropped; `No enum constant for symbol: EOF`, cryptofs 49). The other 110 targets with the
+6. **Done: Step 29** (`docs/fixes/step-29-block-lambdas.md`). **Block lambdas** (52 dropped; `No enum constant for symbol: EOF`, cryptofs 49). The other 110 targets with the
    message "Assertion do not start with JUnit api" are Hamcrest `MatcherAssert.assertThat` (out of scope).
 7. **Type inference of the chains** (causes `member of a chain`, `member of a known type`).
 8. **Dependencies** (cause `dependency`): needs a design decision of the author on the inference setting

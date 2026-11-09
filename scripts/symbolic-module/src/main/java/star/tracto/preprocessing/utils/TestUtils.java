@@ -1272,7 +1272,8 @@ public class TestUtils {
      *     <li>{@code MOVE_TO_PREFIX}: the statements before the last one are normalized and added to the current block,
      *     followed by the final copies of the reassigned variables captured by the lambda expression, and by the
      *     assertion with only the call of the last statement within the lambda expression
-     *     ({@code a(); assertThrows(E.class, () -> b());});</li>
+     *     ({@code a(); assertThrows(E.class, () -> b());}); a block of one statement only becomes an expression
+     *     ({@code assertThrows(E.class, () -> { b(); })} becomes {@code assertThrows(E.class, () -> b())});</li>
      *     <li>{@code UNWRAP}: the statements of the block are normalized and added to the current block, in place of the
      *     {@code assertDoesNotThrow};</li>
      *     <li>{@code SKIP}: the assertion is added unchanged (it produces no datapoint: the split does not make it a
@@ -1296,9 +1297,10 @@ public class TestUtils {
         renameVariablesHidingFields(lambdaBlock.block(), context);
         List<Statement> statements = new ArrayList<>(lambdaBlock.block().getStatements());
         // The comment of the assertion introduces the statements of its block: it moves to the first of them, unless
-        // that one has its own comment
+        // that one has its own comment, or it stays within the assertion (a block of one call: nothing moves)
         Optional<Comment> comment = lambdaBlock.statement().getComment();
-        boolean commentMoved = comment.isPresent() && statements.get(0).getComment().isEmpty();
+        boolean nothingMoves = outcome == AssertionLambdaBlockClassifier.Outcome.MOVE_TO_PREFIX && statements.size() == 1;
+        boolean commentMoved = comment.isPresent() && statements.get(0).getComment().isEmpty() && !nothingMoves;
         if (commentMoved) {
             statements.get(0).setComment(comment.get().clone());
         }
@@ -1320,6 +1322,12 @@ public class TestUtils {
             thrownedException = parseNormalizeTestStatementsBlock(statements.subList(0, statements.size() - 1), currentBlockStmt, context);
             finalCopies.forEach(currentBlockStmt::addStatement);
             currentBlockStmt.addStatement(assertion);
+            if (statements.size() == 1) {
+                // A block of one statement: nothing moves, the lambda expression is only written as an expression
+                // (Step 29), so no checked exception leaves the lambda
+                context.assertionLambdaBlocks().merge("expression-lambda", 1, Integer::sum);
+                return thrownedException;
+            }
             context.assertionLambdaBlocks().merge("moved-to-prefix", 1, Integer::sum);
         }
         context.statementsLeftALambda().set(true);

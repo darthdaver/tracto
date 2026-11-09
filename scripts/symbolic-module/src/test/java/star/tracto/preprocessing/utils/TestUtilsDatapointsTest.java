@@ -338,7 +338,7 @@ class TestUtilsDatapointsTest {
         List<String> statements = List.of(
                 "final RuntimeException ex = Assertions.assertThrows(NumberFormatException.class, () -> Integer.parseInt(\"x\"));",
                 "Integer sum = assertDoesNotThrow(() -> calc.add(1, 2));",
-                // A block of one statement stays a block (the blocks of two statements or more are normalized)
+                // A block of one statement is written as an expression by the normalization (Step 29)
                 """
                 IllegalStateException e = assertThrows(IllegalStateException.class, () -> {
                     calc.accumulate(Integer.parseInt("x"));
@@ -357,15 +357,17 @@ class TestUtilsDatapointsTest {
         assertEquals(new Assignment(List.of("final"), "RuntimeException", "ex"), datapoints.get(0).assignment());
         assertEquals("assertDoesNotThrow(() -> calc.add(1, 2));", datapoints.get(1).target());
         assertEquals(new Assignment(List.of(), "Integer", "sum"), datapoints.get(1).assignment());
-        assertTrue(datapoints.get(2).target().startsWith("assertThrows(IllegalStateException.class, () -> {\n"), datapoints.get(2).target());
+        assertEquals("assertThrows(IllegalStateException.class, () -> calc.accumulate(Integer.parseInt(\"x\")));", datapoints.get(2).target());
         assertEquals(new Assignment(List.of(), "IllegalStateException", "e"), datapoints.get(2).assignment());
         assertEquals("assertEquals(3, sum);", datapoints.get(3).target());
         assertNull(datapoints.get(3).assignment());
         // Joined with its declaration, the target gives back the statement of the test (the JUnit class qualifier removed)
-        for (int i = 0; i < statements.size(); i++) {
+        for (int i = 0; i < 2; i++) {
             String original = StaticJavaParser.parseStatement(statements.get(i)).toString().replace("Assertions.", "");
             assertEquals(original, datapoints.get(i).statement(datapoints.get(i).target()));
         }
+        assertEquals("IllegalStateException e = assertThrows(IllegalStateException.class, () -> calc.accumulate(Integer.parseInt(\"x\")));",
+                datapoints.get(2).statement(datapoints.get(2).target()));
     }
 
     @Test

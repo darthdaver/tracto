@@ -340,10 +340,9 @@ public class TokensUtils {
                             List<TokenStep> tokenSteps = new ArrayList<>();
                             // Split the target assertion into tokens
                             List<String> tokens = Antlr4Utils.tokenizeSnippet(targetAssertion);
-                            // Remove spurious tokens and check that the first token is a valid JUnit assertion method
+                            // Check that the first token is a valid JUnit assertion method
                             try {
-                                tokens.removeIf(t -> t.equals(" "));
-                                JUnitAssertionType.fromString(tokens.get(0));
+                                    JUnitAssertionType.fromString(tokens.get(0));
                             } catch (IllegalArgumentException e) {
                                 String message = "Assertion do not start with JUnit api (do not implemented yet): " + targetAssertion + " - " + e.getMessage();
                                 logger.error(message);
@@ -755,10 +754,9 @@ public class TokensUtils {
                                 }
                                 List<String> tokens = Antlr4Utils.tokenizeSnippet(partialSnippet);
 
-                                // Remove spurious tokens and check that the first token is a valid JUnit assertion method
+                                // Check that the first token is a valid JUnit assertion method
                                 try {
-                                    tokens.removeIf(t -> t.equals(" "));
-                                    JUnitAssertionType.fromString(tokens.get(0));
+                                            JUnitAssertionType.fromString(tokens.get(0));
                                 } catch (IllegalArgumentException e) {
                                     String message = "Assertion do not start with JUnit api (do not implemented yet): " + targetAssertion + " - " + e.getMessage();
                                     logger.error(message);
