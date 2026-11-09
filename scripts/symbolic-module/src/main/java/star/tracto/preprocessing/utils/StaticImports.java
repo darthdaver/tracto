@@ -28,8 +28,9 @@ import java.util.function.Predicate;
  * the test class following the access rules of Java (public, or without the {@code private} modifier when declared in
  * the package of the test class; the static methods of an interface are not inherited by the types implementing it).
  *
- * <p>Only the classes with a declaration are read (the classes of the project and the JDK sources): the static imports
- * of the libraries (JUnit, Hamcrest, Mockito) are not offered, as the other classes of the dependencies. The members
+ * <p>Only the classes with a declaration are read (the classes of the project, the JDK sources and, since Step 30, the
+ * sources of Hamcrest, part of the assertion API known by the module): the static imports of the other libraries
+ * (JUnit, Mockito) are not offered, as the other classes of the dependencies. The members
  * come in the order of the imports, the methods of an import in the fixed order of {@link MemberOrder}.</p>
  */
 final class StaticImports {

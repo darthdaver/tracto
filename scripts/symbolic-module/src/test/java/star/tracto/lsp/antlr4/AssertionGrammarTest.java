@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * The Java tokens offered by the grammar of the assertions after a partial oracle (Step 28): the message of an
  * assertion is any expression of type {@code String} (not only a string literal), and the constructor references of
- * the classes and the arrays ({@code Foo::new}, {@code String[]::new}).
+ * the classes and the arrays ({@code Foo::new}, {@code String[]::new}). The {@code assertThat} of Hamcrest (Step 30).
  */
 class AssertionGrammarTest {
 
@@ -42,5 +42,22 @@ class AssertionGrammarTest {
     void instanceofIsFollowedByATypeAndTheRestOfTheAssertion() throws Exception {
         assertTrue(next(JUnitAssertionType.ASSERT_TRUE, "assertTrue(node instanceof Comment").contains(")"));
         assertTrue(next(JUnitAssertionType.ASSERT_TRUE, "assertTrue(node instanceof Comment").contains(","));
+    }
+
+    /** {@code assertThat(actual, matcher)}, {@code assertThat(reason, actual, matcher)}, {@code assertThat(reason, boolean)} (Step 30). */
+    @Test
+    void assertThatOfHamcrestHasARule() throws Exception {
+        assertTrue(next(JUnitAssertionType.ASSERT_THAT, "assertThat(").contains("IDENTIFIER"));
+        // After the actual value, the matcher
+        assertTrue(next(JUnitAssertionType.ASSERT_THAT, "assertThat(clock.now()").contains(","));
+        // After two arguments, the end or a third one
+        List<String> afterTwo = next(JUnitAssertionType.ASSERT_THAT, "assertThat(clock.now(),is(1L)");
+        assertTrue(afterTwo.contains(")"), afterTwo.toString());
+        assertTrue(afterTwo.contains(","), afterTwo.toString());
+        // After three arguments, the end only
+        List<String> afterThree = next(JUnitAssertionType.ASSERT_THAT, "assertThat(\"now\",clock.now(),is(1L)");
+        assertTrue(afterThree.contains(")"), afterThree.toString());
+        assertFalse(afterThree.contains(","), afterThree.toString());
+        assertTrue(next(JUnitAssertionType.ASSERT_THAT, "assertThat(clock.now(),is(1L))").contains(";"));
     }
 }

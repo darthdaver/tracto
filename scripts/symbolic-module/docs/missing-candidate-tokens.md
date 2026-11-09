@@ -252,6 +252,10 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
   normalization (`() -> { a(); }` becomes `() -> a()`), an assertion still containing a block of statements
   (`assertTimeoutPreemptively(d, () -> {...})`, an anonymous class) produces no datapoint; whitespace and comments are
   never target tokens (corpus: +9 complete, 0 worse).
+- Step 30: the `assertThat` of Hamcrest: a grammar rule, `MatcherAssert.` removed from the targets and the model input,
+  the targets printed without comments, the sources of Hamcrest 2.2 given to the symbol solver as part of the assertion
+  API known by the module (`assertion-api/`), so that the matchers are candidates (corpus: +20 complete, dropped 28 → 3,
+  0 worse).
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles
@@ -291,7 +295,8 @@ several causes):
    are in the test prefix or only in other methods, then normalize to the unqualified form.
 5. **Grammar** (101), done (Step 28): the spacing of `instanceof`, the `)` after a string concatenation.
 6. **Block lambdas** (52), done (Step 29).
-7. **Hamcrest `assertThat`** (424 dropped in v1; asked by the author on 2026-11-09): grammar rule, oracles accepted.
+7. **Hamcrest `assertThat`** (424 dropped in v1; asked by the author on 2026-11-09), done (Step 30): grammar rule,
+   `MatcherAssert.` removed, the sources of Hamcrest given to the solver (`assertion-api/`).
 8. **Type inference of the chains** (451 in v1, 436 alone; the largest but the hardest).
 9. **Dependencies** (85): design (section 6) with the answer of the author on the inference setting.
 10. **Pre-existing defects**, each its own step: candidates depending on the processing history (state across

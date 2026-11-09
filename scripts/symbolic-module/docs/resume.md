@@ -32,6 +32,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 28 | on the corpus: 1,089 → 1,110 complete (+21, 0 worse) |
 | After Step 29 | on the corpus: 1,110 → 1,119 complete (+9, 0 worse) |
 | **Dataset v1** (full test, 2026-11-09, Step 29 `1981c0a`) | **12.2%** on the nine projects (7,937 complete of 9,043; 7,170 after Step 21: +767, 0 regressions) |
+| After Step 30 | on the corpus: 1,119 → 1,139 complete (+20, 0 worse; dropped 28 → 3) |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -56,7 +57,7 @@ This is what makes the fast checks of section 4 exact.
 - Each fix is a step: tests first, a document `docs/fixes/step-NN-*.md`, a commit only when the author asks (one per
   step). Git identity of the commits: `darthdaver <davide.molinelli@uusi.ch>` (as the earlier commits).
 - Only JUnit assertions are in scope (Hamcrest `MatcherAssert.assertThat` and AssertJ are out, counted apart).
-  **Changed on 2026-11-09:** Hamcrest `assertThat` is in scope (see below); AssertJ stays out.
+  **Changed on 2026-11-09:** Hamcrest `assertThat` is in scope (see below; done in Step 30); AssertJ stays out.
 - The fixes follow the order of section 9 of `missing-candidate-tokens.md` (summarized in section 6 below).
 - **2026-11-05, new loop:** development on the laptop (16 GB). No full A/B per step: each step is checked with the
   unit tests and the regression corpus (section 4); the full nine-project test runs on a large server only before the
@@ -195,9 +196,10 @@ examples to start from.
    and `assertInstanceOf` (their lexer tokens exist; Step 27 added `assertDoesNotThrow`): check how many targets use them.
 6. **Done: Step 29** (`docs/fixes/step-29-block-lambdas.md`). **Block lambdas** (52 dropped; `No enum constant for symbol: EOF`, cryptofs 49). The other 110 targets with the
    message "Assertion do not start with JUnit api" are Hamcrest `MatcherAssert.assertThat` (out of scope).
-7. **Next (asked by the author on 2026-11-09): Hamcrest `assertThat`** (424 dropped in dataset v1: ffmpeg 312 `assertThat`
-   unsupported, cryptofs 110 `MatcherAssert.assertThat` with "Assertion do not start with JUnit api" and 2 more):
-   a grammar rule and the oracles accepted.
+7. **Done: Step 30** (`docs/fixes/step-30-hamcrest-assert-that.md`; asked by the author on 2026-11-09). **Hamcrest
+   `assertThat`** (424 dropped in dataset v1: ffmpeg 312, cryptofs 112): a grammar rule; `MatcherAssert.` removed as
+   `Assertions.`; targets printed without comments; the sources of Hamcrest 2.2 (`assertion-api/`) given to the symbol
+   solver as part of the assertion API known by the module, so that the matchers are candidates.
 8. **Type inference of the chains** (causes `member of a chain`, 451 lost in v1, jsoup 287; `member of a known type`, 55).
 9. **Dependencies** (cause `dependency`, 91 in v1): needs a design decision of the author on the inference setting
    (section 6 of `missing-candidate-tokens.md`).
@@ -225,6 +227,9 @@ examples to start from.
      library named `Assert` loses its name (Spring `Assert.notNull(...)` in steve's main code). No datapoint of the
      nine projects is affected today (esapi `AccessControllerTest`, the only fully qualified calls, has no datapoint;
      steve's calls are not in an invoked method). Fix: an AST rewrite of the calls to the JUnit classes only;
+   - the comments of the arguments of a target, moved before the statement by the printing of the normalization and of
+     the split, stay in the test prefix where the target was (`// // /*<MASK_PLACEHOLDER>*/`; Step 30, cryptofs
+     `CryptoFileSystemPropertiesTest`);
    - the `LAMBDA_PARAM` placeholder (added when the token after `(` is missing in a stream context,
      `TokensUtils` ~line 412) is offered outside lambdas (eec `CacheTest`: `assertEquals(hot.toString(`); probably the
      stream flag is kept across datapoints (not verified).

@@ -2482,6 +2482,8 @@ public class JavaParserUtils {
         List<Path> candidatePrefixPaths = new ArrayList<>();
         candidatePrefixPaths.add(repoSourcePath);
         candidatePrefixPaths.addAll(JavaUtils.getPathToJavaLibClassFromFqn(fqnPath, true));
+        // The sources of the assertion libraries known by the module (Hamcrest, Step 30)
+        candidatePrefixPaths.addAll(JavaUtils.assertionLibraryFolders());
         boolean hasLibFolder = FilesUtils.hasChildDirectory(referencePath, NamingConvention.LIB_FOLDER.getConventionName());
         while(!hasLibFolder && !(referencePath.getParent() == null)) {
             referencePath = referencePath.getParent();
@@ -2526,6 +2528,8 @@ public class JavaParserUtils {
         List<Path> candidatePrefixPaths = new ArrayList<>();
         candidatePrefixPaths.add(repoSourcePath);
         candidatePrefixPaths.addAll(JavaUtils.getPathToJavaLibClassFromFqn(fqnPath, true));
+        // The sources of the assertion libraries known by the module (Hamcrest, Step 30)
+        candidatePrefixPaths.addAll(JavaUtils.assertionLibraryFolders());
         boolean hasLibFolder = FilesUtils.hasChildDirectory(referencePath, NamingConvention.LIB_FOLDER.getConventionName());
         while(!hasLibFolder && !(referencePath.getParent() == null)) {
             referencePath = referencePath.getParent();
@@ -2570,6 +2574,8 @@ public class JavaParserUtils {
         List<Path> candidatePrefixPaths = new ArrayList<>();
         candidatePrefixPaths.add(repoSourcePath);
         candidatePrefixPaths.addAll(JavaUtils.getPathsToJavaLibClassesFromPackage(packageNamePath, true));
+        // The sources of the assertion libraries known by the module (Hamcrest, Step 30)
+        candidatePrefixPaths.addAll(JavaUtils.assertionLibraryFolders());
         boolean hasLibFolder = FilesUtils.hasChildDirectory(referencePath, NamingConvention.LIB_FOLDER.getConventionName());
         while(!hasLibFolder) {
             referencePath = referencePath.getParent();
@@ -2628,6 +2634,8 @@ public class JavaParserUtils {
         List<Path> candidatePrefixPaths = new ArrayList<>();
         candidatePrefixPaths.add(repoSourcePath);
         candidatePrefixPaths.addAll(JavaUtils.getPathsToJavaLibClassesFromPackage(packageNamePath, true));
+        // The sources of the assertion libraries known by the module (Hamcrest, Step 30)
+        candidatePrefixPaths.addAll(JavaUtils.assertionLibraryFolders());
         boolean hasLibFolder = FilesUtils.hasChildDirectory(referencePath, NamingConvention.LIB_FOLDER.getConventionName());
         while(!hasLibFolder) {
             referencePath = referencePath.getParent();

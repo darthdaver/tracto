@@ -139,6 +139,11 @@
    "date": "2026-11-09T11:10:47",
    "jar_sha256": "5cf73793cfe8a14ad35e7f5c1d01d2f2242c17830978d1ed63d3afde65a98c33",
    "reason": "Step 29: one-statement block lambdas normalized to one line, assertions with statement blocks produce no datapoint: +9 complete vs Step 28, 0 worse"
+  },
+  {
+   "date": "2026-11-09T18:30:11",
+   "jar_sha256": "bc79d088f2164a47d09904caea3e380bf072800c07bd42c6f56f6e4c088adba3",
+   "reason": "Step 30: Hamcrest assertThat (grammar rule, MatcherAssert removed, targets without comments, Hamcrest sources given to the solver): 1,119 -> 1,139 complete, dropped 28 -> 3, 0 worse"
   }
  ],
  "oracles": {
@@ -606,71 +611,71 @@
     "status": "complete"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadReturnsDecryptedDataInsideFile_split_0|assertThat(data, contains(decryptedData.get()));": {
-    "digest": null,
+    "digest": "5d7aabd684f9e371",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadReturnsDecryptedDataInsideFile_split_1|assertEquals(CLEARTEXT_CHUNK_SIZE, data.remaining());": {
-    "digest": "b73a987ef0986f9a",
+    "digest": "fb7d4514b40c025a",
     "missing": [
      "remaining"
     ],
     "status": "loses a step"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadReturnsDecryptedDataInsideFile_split_2|assertEquals(CLEARTEXT_CHUNK_SIZE, data.capacity());": {
-    "digest": "6a3d7f70f22843b3",
+    "digest": "c905189d172ef0fd",
     "missing": [
      "capacity"
     ],
     "status": "loses a step"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadReturnsDecrytedDataNearEOF_split_0|assertThat(data, contains(decryptedData.get()));": {
-    "digest": null,
+    "digest": "9b70dce77f6b955e",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadReturnsDecrytedDataNearEOF_split_1|assertEquals(CLEARTEXT_CHUNK_SIZE - 3, data.remaining());": {
-    "digest": "889e69c7ffdb8f2e",
+    "digest": "7c94acf5c90f6e13",
     "missing": [
      "remaining"
     ],
     "status": "loses a step"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadReturnsDecrytedDataNearEOF_split_2|assertEquals(CLEARTEXT_CHUNK_SIZE, data.capacity());": {
-    "digest": "a42b2214a85a03ab",
+    "digest": "cafd827d37f9f89a",
     "missing": [
      "capacity"
     ],
     "status": "loses a step"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadReturnsEmptyChunkAfterEOF_split_0|assertEquals(0, data.remaining());": {
-    "digest": "344a722eed6dc452",
+    "digest": "996abe4718b95f54",
     "missing": [
      "remaining"
     ],
     "status": "loses a step"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadReturnsEmptyChunkAfterEOF_split_1|assertEquals(CLEARTEXT_CHUNK_SIZE, data.capacity());": {
-    "digest": "a7ef1a5d8bca0752",
+    "digest": "45008cddc8035fb6",
     "missing": [
      "capacity"
     ],
     "status": "loses a step"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadThrowsAndNotifiesOnFailedDecryption_split_0|assertThrows(AuthenticationFailedException.class, () -> inTest.load(chunkIndex));": {
-    "digest": "1204b987acc5646d",
+    "digest": "1b69541b7ccfa4b1",
     "missing": [
      "AuthenticationFailedException"
     ],
     "status": "loses a step"
    },
    "CleartextFileChannelTestSTARSplitTest|testMapThrowsUnsupportedOperationException_split_0|assertThrows(UnsupportedOperationException.class, () -> inTest.map(MapMode.PRIVATE, 3727L, 3727L));": {
-    "digest": "b30a1b345b201989",
+    "digest": "b9b430336bad0a57",
     "missing": [],
     "status": "complete"
    },
    "CleartextFileChannelTestSTARSplitTest|testSize_split_0|assertEquals(100, inTest.size());": {
-    "digest": "c5ad7e2ec284fdbf",
+    "digest": "2211c820572ed17d",
     "missing": [],
     "status": "complete"
    },
@@ -754,47 +759,47 @@
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testGetDecodedCiphertext_split_0|assertArrayEquals(expected, migration.getDecodedCiphertext());": {
-    "digest": "5e28a8a74c3ef98a",
+    "digest": "492ef625229225bf",
     "missing": [],
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testGetNewDeflatedName_split_0|assertEquals(expectedResult, migration.getNewDeflatedName());": {
-    "digest": "5560518ec4509f69",
+    "digest": "4ec3dc24f27047bb",
     "missing": [],
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testGetNewInflatedName_split_0|assertEquals(expectedResult, migration.getNewInflatedName());": {
-    "digest": "326f3c675de8051d",
+    "digest": "49a3b31982a80460",
     "missing": [],
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testGetOldCanonicalNameWithoutTypePrefix_split_0|assertEquals(expectedResult, migration.getOldCanonicalNameWithoutTypePrefix());": {
-    "digest": "90c6f03e078f4d2f",
+    "digest": "f6c16450274356a0",
     "missing": [],
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testGetTargetPath_split_0|assertEquals(old.resolveSibling(expected), result);": {
-    "digest": "bbd6033d622a43f4",
+    "digest": "e3fff21641ee1133",
     "missing": [],
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testIsDirectory_split_0|assertEquals(expectedResult, migration.isDirectory());": {
-    "digest": "276e2cec5f6d6a24",
+    "digest": "acac85c2616beae1",
     "missing": [],
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testIsSymlink_split_0|assertEquals(expectedResult, migration.isSymlink());": {
-    "digest": "58ce0383cd119bd7",
+    "digest": "194e2ee48fc3465e",
     "missing": [],
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testMalformedGetDecodedCiphertext_split_0|assertThrows(InvalidOldFilenameException.class, () -> migration.getDecodedCiphertext());": {
-    "digest": "f5fbb8a3008da24c",
+    "digest": "cf6cd8087ab4cef0",
     "missing": [],
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testMalformedGetDecodedCiphertext_split_1|assertTrue(e.getMessage().contains(oldPath.toString()));": {
-    "digest": "32c12da1f979b24f",
+    "digest": "210ff6f87b14a732",
     "missing": [],
     "status": "complete"
    },
@@ -849,14 +854,14 @@
     "status": "complete"
    },
    "MigratorsTestSTARSplitTest|throwsExceptionIfNeitherMasterkeyNorVaultConfigExists_split_0|assertThrows(IOException.class, () -> migrators.needsMigration(pathToVault, \"vault.cryptomator\", \"masterkey.cryptomator\"));": {
-    "digest": "7e7edd0f4b6622ab",
+    "digest": "91e46719ca466af3",
     "missing": [],
     "status": "complete"
    },
-   "MigratorsTestSTARSplitTest|throwsExceptionIfNeitherMasterkeyNorVaultConfigExists_split_1|MatcherAssert.assertThat(thrown.getMessage(), CoreMatchers.containsString(\"Did not find vault.cryptomator nor masterkey.cryptomator\"));": {
-    "digest": null,
+   "MigratorsTestSTARSplitTest|throwsExceptionIfNeitherMasterkeyNorVaultConfigExists_split_1|assertThat(thrown.getMessage(), CoreMatchers.containsString(\"Did not find vault.cryptomator nor masterkey.cryptomator\"));": {
+    "digest": "b2ba502560412009",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "MissingContentDirTestSTARSplitTest|testFixFailsOnFailingDirIdFile_split_0|assertThrows(IOException.class, () -> result.fix(pathToVault, cryptor));": {
     "digest": "347222bba0e431fe",
@@ -1001,200 +1006,200 @@
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileContent_split_0|assertEquals(\"test3000\", props.getProperty(UseToken.OWNER_KEY));": {
-    "digest": "54cad22385ffe2e4",
+    "digest": "18ce4c6c715a5032",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileContent_split_1|assertDoesNotThrow(() -> Instant.parse(props.getProperty(UseToken.LASTUPDATED_KEY)));": {
-    "digest": "e447b293931e0c81",
+    "digest": "0764b335f4d3f438",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileCreation_split_0|assertTrue(Files.exists(filePath));": {
-    "digest": "228a4068664c633a",
+    "digest": "d41fb8536bf298ae",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileCreation_split_1|assertTrue(Files.notExists(filePath));": {
-    "digest": "ee33e5dfa2534f1a",
+    "digest": "fd20bcf7e78e4ade",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileRefreshWrongLastModified_split_0|assertTrue(token.isClosed());": {
-    "digest": "97c4841f4da9bafa",
+    "digest": "4c9e2f324b5fb288",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileRefreshWrongLastModified_split_1|assertTrue(Files.exists(filePath));": {
-    "digest": "228a4068664c633a",
+    "digest": "d41fb8536bf298ae",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileRefreshWrongLastModified_split_2|assertTrue(Files.exists(filePath));": {
-    "digest": "228a4068664c633a",
+    "digest": "d41fb8536bf298ae",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileRefresh_split_0|assertEquals(\"test3000\", props2.getProperty(UseToken.OWNER_KEY));": {
-    "digest": "45746a3a592b6db6",
+    "digest": "5aeca08baef3930a",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileRefresh_split_1|assertTrue(newLastUpdated.isAfter(oldLastUpdated));": {
-    "digest": "cb0e7edfffff6356",
+    "digest": "2a4ca871737090ff",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileStealFails_split_0|assertTrue(Files.notExists(filePath));": {
-    "digest": "c89bba42510c827e",
+    "digest": "fc6891e0ff1db930",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileStealFails_split_1|assertTrue(token.isClosed());": {
-    "digest": "b7d95d703328efb3",
+    "digest": "f700a8aa0e32a897",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileStealFails_split_2|assertNull(useTokens.get(filePath));": {
-    "digest": "6ccf4c0ffd3f530c",
+    "digest": "74f4927e269e0d15",
     "missing": [],
     "status": "complete"
    },
-   "RealUseTokenTestSTARSplitTest|testFileStealFails_split_3|MatcherAssert.assertThat(watchKey.pollEvents(), Matchers.empty());": {
-    "digest": null,
+   "RealUseTokenTestSTARSplitTest|testFileStealFails_split_3|assertThat(watchKey.pollEvents(), Matchers.empty());": {
+    "digest": "e0259071abf5ec01",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileSteal_split_0|assertTrue(createEvent.isPresent());": {
-    "digest": "6d955d1ff7aa6df4",
+    "digest": "3fba36f50d4c0bfc",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileSteal_split_1|assertTrue(filePath.endsWith((Path) e2.context()));": {
-    "digest": "932f9bb1b8565c8e",
+    "digest": "8a103d007adab3b8",
     "missing": [
      "context"
     ],
     "status": "loses a step"
    },
    "RealUseTokenTestSTARSplitTest|testFileSteal_split_2|assertTrue(Files.notExists(filePath));": {
-    "digest": "2cbfea5d8091c0ec",
+    "digest": "b28010364fa9f2a7",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileSteal_split_3|assertNull(useTokens.get(filePath));": {
-    "digest": "039d5410e3282ee9",
+    "digest": "e0084165d4ad86d4",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToAfter_split_0|assertTrue(Files.notExists(filePath), \"inUse.file still exists after move\");": {
-    "digest": "1cd48ce662eef81b",
+    "digest": "18d59790fe09f94c",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToAfter_split_1|assertTrue(Files.exists(targetPath), \"inUse2.file does not exist after move\");": {
-    "digest": "cbee03764f6d44b8",
+    "digest": "6a005443b9d30afa",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToAfter_split_2|assertNull(useTokens.get(filePath));": {
-    "digest": "ac3b096e462ace91",
+    "digest": "d7ec6441988aa63a",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToAfter_split_3|assertNotNull(useTokens.get(targetPath));": {
-    "digest": "387b3b2dca9c8a16",
+    "digest": "936426bd04818a45",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToAfter_split_4|assertNull(useTokens.get(filePath));": {
-    "digest": "ac3b096e462ace91",
+    "digest": "d7ec6441988aa63a",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToAfter_split_5|assertNull(useTokens.get(targetPath));": {
-    "digest": "7bee361f76062bcc",
+    "digest": "8909d43f1649015c",
     "missing": [],
     "status": "complete"
    },
-   "RealUseTokenTestSTARSplitTest|testMoveToBefore_split_0|MatcherAssert.assertThat(watchKey.pollEvents(), Matchers.empty());": {
-    "digest": null,
+   "RealUseTokenTestSTARSplitTest|testMoveToBefore_split_0|assertThat(watchKey.pollEvents(), Matchers.empty());": {
+    "digest": "823c01e8a47cbead",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToBefore_split_1|assertTrue(Files.notExists(filePath));": {
-    "digest": "1ff460409a6e4b0d",
+    "digest": "f012b2337c9c79e6",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToBefore_split_2|assertTrue(Files.exists(targetPath));": {
-    "digest": "5ca7e1962f8e498a",
+    "digest": "297e1f96f91c226c",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToBefore_split_3|assertTrue(createEvent.isPresent());": {
-    "digest": "560a24a97631f499",
+    "digest": "ec6a8e201bb5417c",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToBefore_split_4|assertEquals(1, e2.count());": {
-    "digest": "e4a72cd2a72b064b",
+    "digest": "0457b14d8cd89b42",
     "missing": [
      "count"
     ],
     "status": "loses a step"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToBefore_split_5|assertTrue(targetPath.endsWith((Path) e2.context()));": {
-    "digest": "6a57e15edc87c637",
+    "digest": "b162ce6557cdecea",
     "missing": [
      "context"
     ],
     "status": "loses a step"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToBefore_split_6|assertNull(useTokens.get(filePath));": {
-    "digest": "253312d644b2dbf9",
+    "digest": "4ea80222f7fd2a24",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToBefore_split_7|assertNull(useTokens.get(targetPath));": {
-    "digest": "9613558ebd324009",
+    "digest": "c69a45b0fb73a349",
     "missing": [],
     "status": "complete"
    },
-   "RealUseTokenTestSTARSplitTest|testMoveToClosed_split_0|MatcherAssert.assertThat(watchKey.pollEvents(), Matchers.empty());": {
-    "digest": null,
+   "RealUseTokenTestSTARSplitTest|testMoveToClosed_split_0|assertThat(watchKey.pollEvents(), Matchers.empty());": {
+    "digest": "823c01e8a47cbead",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToClosed_split_1|assertNull(useTokens.get(filePath));": {
-    "digest": "1ede5e71a9600546",
+    "digest": "e515096b67f8e46b",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToClosed_split_2|assertNull(useTokens.get(targetPath));": {
-    "digest": "2ab65828337637d6",
+    "digest": "55df000d5cc7ab02",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testTokenCloseBeforeFileOperation_split_0|assertTrue(Files.notExists(filePath));": {
-    "digest": "c89bba42510c827e",
+    "digest": "fc6891e0ff1db930",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testTokenCloseBeforeFileOperation_split_1|assertTrue(Files.notExists(filePath));": {
-    "digest": "c89bba42510c827e",
+    "digest": "fc6891e0ff1db930",
     "missing": [],
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testTokenCloseBeforeFileOperation_split_2|assertNull(useTokens.get(filePath));": {
-    "digest": "6ccf4c0ffd3f530c",
+    "digest": "74f4927e269e0d15",
     "missing": [],
     "status": "complete"
    },
-   "RealUseTokenTestSTARSplitTest|testTokenCloseBeforeFileOperation_split_3|MatcherAssert.assertThat(watchKey.pollEvents(), Matchers.empty());": {
-    "digest": null,
+   "RealUseTokenTestSTARSplitTest|testTokenCloseBeforeFileOperation_split_3|assertThat(watchKey.pollEvents(), Matchers.empty());": {
+    "digest": "e0259071abf5ec01",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "StringUtilsTestSTARSplitTest|testRemoveEndMatching_split_0|assertEquals(\"White\", result);": {
     "digest": "0d998fd291a70ffd",
@@ -2552,92 +2557,92 @@
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testCtrSetDateFormat_split_0|assertEquals(testFormat, uitFormat);": {
-    "digest": "5e0d933c9d2f29b6",
+    "digest": "89c2e9de18c77523",
     "missing": [],
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testGetValidDateWithCruft_split_0|assertEquals(testDate, date);": {
-    "digest": "89184431185dba1b",
+    "digest": "eb9685f45409c8d1",
     "missing": [],
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testGetValidHappyPath_split_0|assertEquals(testDate, date);": {
-    "digest": "9aacb9902229080a",
+    "digest": "9019bb4aeb742301",
     "missing": [],
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testGetValidNullInputAllowed_split_0|assertNull(vDate);": {
-    "digest": "92176bfdee5b36f3",
+    "digest": "7ea8d74b5d962f18",
     "missing": [],
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testGithubIssue299_split_0|assertEquals(\"calls to getValid should not change the parsed date regardless of cruft\", testDate, lenientValidDate);": {
-    "digest": "1ac8e08d82559492",
+    "digest": "0f27b413942f9e66",
     "missing": [],
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testGithubIssue299_split_1|assertEquals(\"calls to sanitize should return default date if cruft exists in input string\", 0, lenientSanitizedDate.getTime());": {
-    "digest": "3e87cc1d188feff3",
+    "digest": "a84630a5f534d002",
     "missing": [],
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testGithubIssue299_split_2|assertEquals(\"calls to getValid should not change the parsed date regardless of cruft\", testDate, strictValidDate);": {
-    "digest": "e07bb14f994ba0d1",
+    "digest": "533abe103c742e76",
     "missing": [],
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testGithubIssue299_split_3|assertEquals(\"calls to sanitize should return default date if cruft exists in input string\", 0, strictSanitizedDate.getTime());": {
-    "digest": "e9d26563aa3fb347",
+    "digest": "229b27f0d1da5a87",
     "missing": [],
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testSanitizeBadDateReturnsDefault_split_0|assertEquals(0, date.getTime());": {
-    "digest": "1ffca845658ee38c",
+    "digest": "5254be29d293c11b",
     "missing": [],
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testSanitizeDateWithCruft_split_0|assertEquals(0, date.getTime());": {
-    "digest": "6f696dad384ed416",
+    "digest": "43c44002cb013ebe",
     "missing": [],
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testSanitizeErrorListContainsError_split_0|assertEquals(0, date.getTime());": {
-    "digest": "15ca8479043fddb5",
+    "digest": "33627aef21620876",
     "missing": [],
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testSanitizeErrorListContainsError_split_1|assertEquals(1, vel.size());": {
-    "digest": "94b02f2009e23596",
+    "digest": "686b71f86762dd17",
     "missing": [],
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testSanitizeErrorListContainsError_split_2|assertEquals(testParseEx, wrapper.getCause());": {
-    "digest": "ee3ecee7544cfca5",
+    "digest": "bf37266119a40caa",
     "missing": [],
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testSanitizeHappyPath_split_0|assertEquals(testDate, date);": {
-    "digest": "f57a16cdb0b8ddb3",
+    "digest": "c8ce974c0c26aa74",
     "missing": [],
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testSanitizeNullInputAllowed_split_0|assertNull(vDate);": {
-    "digest": "eb45ea07b6f04f98",
+    "digest": "fca858b2e4ea9d44",
     "missing": [],
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testSanitizeNullInputNotAllowedEmptyString_split_0|assertEquals(0, date.getTime());": {
-    "digest": "0887cf1782b070c0",
+    "digest": "9927b0a5eb495ff4",
     "missing": [],
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testSanitizeNullInputNotAllowed_split_0|assertEquals(0, date.getTime());": {
-    "digest": "5fc1d7055468d2bb",
+    "digest": "b4559ace8a1a0cda",
     "missing": [],
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testsetDateFormat_split_0|assertEquals(newFormat, uitFormat);": {
-    "digest": "2675777dc4ed7f67",
+    "digest": "59be56a74c2ffb43",
     "missing": [],
     "status": "complete"
    },
@@ -3231,69 +3236,69 @@
   },
   "ffmpeg": {
    "FFmpegExecutorTestSTARSplitTest|testFilter_split_0|assertEquals(FFmpegJob.State.FINISHED, job.getState());": {
-    "digest": "34c1f3a31acb464d",
+    "digest": "cd655153169a5de9",
     "missing": [],
     "status": "complete"
    },
    "FFmpegExecutorTestSTARSplitTest|testMetaTags_split_0|assertEquals(FFmpegJob.State.FINISHED, job.getState());": {
-    "digest": "011264d3aca0704f",
+    "digest": "616a22757fb635ac",
     "missing": [],
     "status": "complete"
    },
    "FFmpegExecutorTestSTARSplitTest|testNormal_split_0|assertEquals(FFmpegJob.State.FINISHED, job.getState());": {
-    "digest": "0faf1756698e3636",
+    "digest": "d2c1ad44831801d7",
     "missing": [],
     "status": "complete"
    },
    "FFmpegExecutorTestSTARSplitTest|testProgress_split_0|assertFalse(in.hasError());": {
-    "digest": "c76f6e665bab8daf",
+    "digest": "b5227572734e0ef4",
     "missing": [],
     "status": "complete"
    },
    "FFmpegExecutorTestSTARSplitTest|testProgress_split_1|assertEquals(FFmpegJob.State.FINISHED, job.getState());": {
-    "digest": "5bd6cbed20bc2477",
+    "digest": "12cdccd619089c6e",
     "missing": [],
     "status": "complete"
    },
    "FFmpegExecutorTestSTARSplitTest|testProgress_split_2|assertThat(progesses, hasSize(greaterThanOrEqualTo(2)));": {
-    "digest": null,
+    "digest": "ab85a339d0bb019c",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "FFmpegExecutorTestSTARSplitTest|testProgress_split_3|assertThat(progesses.get(0).status, is(Progress.Status.CONTINUE));": {
-    "digest": null,
+    "digest": "6dd048d9b3c5b48a",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "FFmpegExecutorTestSTARSplitTest|testProgress_split_4|assertThat(progesses.get(progesses.size() - 1).status, is(Progress.Status.END));": {
-    "digest": null,
+    "digest": "a6b7ec1d5368fed3",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "FFmpegExecutorTestSTARSplitTest|testStdout_split_0|assertEquals(0, p.waitFor());": {
-    "digest": "bae0bfc57bb824e4",
+    "digest": "cf7d675243efc395",
     "missing": [],
     "status": "complete"
    },
    "FFmpegExecutorTestSTARSplitTest|testStdout_split_1|assertEquals(254976, out.getCount());": {
-    "digest": "a07ded1267bfbd37",
+    "digest": "08eca2de0290f771",
     "missing": [
      "getCount"
     ],
     "status": "loses a step"
    },
    "FFmpegExecutorTestSTARSplitTest|testTwoPass_split_0|assertFalse(in.hasError());": {
-    "digest": "c76f6e665bab8daf",
+    "digest": "b5227572734e0ef4",
     "missing": [],
     "status": "complete"
    },
    "FFmpegExecutorTestSTARSplitTest|testTwoPass_split_1|assertEquals(FFmpegJob.State.FINISHED, job.getState());": {
-    "digest": "65cefa513733f57b",
+    "digest": "9443d4204274c143",
     "missing": [],
     "status": "complete"
    },
    "FFmpegHlsOutputBuilderTestSTARSplitTest|mixedHlsAndDefault_split_0|assertEquals(ImmutableList.of(\"-y\", \"-v\", \"error\", \"-i\", \"input\", \"-f\", \"hls\", \"-b:v\", \"3\", \"-vf\", \"TEST\", \"-hls_time\", \"00:00:00.005\", \"-hls_segment_filename\", \"file%03d.ts\", \"-hls_init_time\", \"00:00:00.003\", \"-hls_list_size\", \"3\", \"-hls_base_url\", \"test1234/\", \"output.m3u8\"), args);": {
-    "digest": "037d2d5be7adefd3",
+    "digest": "8be9e8877af545a5",
     "missing": [
      "ImmutableList",
      "of"
@@ -3301,7 +3306,7 @@
     "status": "loses a step"
    },
    "FFmpegHlsOutputBuilderTestSTARSplitTest|testAddHlsOutput_split_0|assertEquals(ImmutableList.of(\"-y\", \"-v\", \"error\", \"-i\", \"input\", \"-f\", \"hls\", \"-hls_time\", \"00:00:00.005\", \"-hls_segment_filename\", \"file%03d.ts\", \"-hls_init_time\", \"00:00:00.003\", \"-hls_list_size\", \"3\", \"-hls_base_url\", \"test1234/\", \"output.m3u8\"), args);": {
-    "digest": "0c4ecdc9790e6843",
+    "digest": "6948330bc4992d86",
     "missing": [
      "ImmutableList",
      "of"
@@ -3309,129 +3314,144 @@
     "status": "loses a step"
    },
    "FFmpegHlsOutputBuilderTestSTARSplitTest|testConvertVideoToHlsSetHlsInitTime_split_0|assertTrue(Files.exists(manifestFilePath));": {
-    "digest": "fce820d02f969883",
+    "digest": "f107a46c128b61ab",
     "missing": [],
     "status": "complete"
    },
    "FFmpegHlsOutputBuilderTestSTARSplitTest|testConvertVideoToHlsSetHlsInitTime_split_1|assertTrue(Files.exists(segmentFilePath));": {
-    "digest": "c2336bf5c88bc342",
+    "digest": "be7b28df91f4f68d",
     "missing": [],
     "status": "complete"
    },
    "FFmpegHlsOutputBuilderTestSTARSplitTest|testConvertVideoToHlsSetHlsTime_split_0|assertTrue(Files.exists(manifestFilePath));": {
-    "digest": "3aa87aef566bf98e",
+    "digest": "3c70069002f44218",
     "missing": [],
     "status": "complete"
    },
    "FFmpegHlsOutputBuilderTestSTARSplitTest|testConvertVideoToHlsSetHlsTime_split_1|assertTrue(Files.exists(segmentFilePath));": {
-    "digest": "61c256bbe1b297e0",
+    "digest": "e0384d8488a91f9d",
     "missing": [],
     "status": "complete"
    },
    "FFmpegHlsOutputBuilderTestSTARSplitTest|testConvertVideoToHls_split_0|assertTrue(Files.exists(manifestFilePath));": {
-    "digest": "c530a5ca793ba46d",
+    "digest": "6af1ffd237fcf7c3",
     "missing": [],
     "status": "complete"
    },
    "FFmpegHlsOutputBuilderTestSTARSplitTest|testConvertVideoToHls_split_1|assertTrue(Files.exists(segmentFilePath));": {
-    "digest": "964aa0f08b4604fb",
+    "digest": "692d840ee31effca",
     "missing": [],
     "status": "complete"
    },
    "FFmpegHlsOutputBuilderTestSTARSplitTest|testHlsBaseUrl_split_0|assertThat(command, is(ImmutableList.of(\"-f\", \"hls\", \"-hls_base_url\", \"/base\", \"output.m3u8\")));": {
-    "digest": null,
-    "missing": [],
-    "status": "dropped"
+    "digest": "9d1929dfb140a341",
+    "missing": [
+     "ImmutableList",
+     "of"
+    ],
+    "status": "loses a step"
    },
    "FFmpegHlsOutputBuilderTestSTARSplitTest|testHlsInitTime_split_0|assertThat(command, is(ImmutableList.of(\"-f\", \"hls\", \"-hls_init_time\", \"00:00:00.01\", \"output.m3u8\")));": {
-    "digest": null,
-    "missing": [],
-    "status": "dropped"
+    "digest": "fc7a47510972218a",
+    "missing": [
+     "ImmutableList",
+     "of"
+    ],
+    "status": "loses a step"
    },
    "FFmpegHlsOutputBuilderTestSTARSplitTest|testHlsListSize_split_0|assertThat(command, is(ImmutableList.of(\"-f\", \"hls\", \"-hls_list_size\", \"3\", \"output.m3u8\")));": {
-    "digest": null,
-    "missing": [],
-    "status": "dropped"
+    "digest": "b80b1c1e21efc682",
+    "missing": [
+     "ImmutableList",
+     "of"
+    ],
+    "status": "loses a step"
    },
    "FFmpegHlsOutputBuilderTestSTARSplitTest|testHlsSegmentFileName_split_0|assertThat(command, is(ImmutableList.of(\"-f\", \"hls\", \"-hls_segment_filename\", \"segment%03d.ts\", \"output.m3u8\")));": {
-    "digest": null,
-    "missing": [],
-    "status": "dropped"
+    "digest": "7ce83af40a15ebf4",
+    "missing": [
+     "ImmutableList",
+     "of"
+    ],
+    "status": "loses a step"
    },
    "FFmpegHlsOutputBuilderTestSTARSplitTest|testHlsTime_split_0|assertThat(command, is(ImmutableList.of(\"-f\", \"hls\", \"-hls_time\", \"00:00:05\", \"output.m3u8\")));": {
-    "digest": null,
-    "missing": [],
-    "status": "dropped"
+    "digest": "6e957de722437eb7",
+    "missing": [
+     "ImmutableList",
+     "of"
+    ],
+    "status": "loses a step"
    },
    "FFmpegHlsOutputBuilderTestSTARSplitTest|testSetFormat_split_0|assertEquals(removeCommon(command).size(), 0);": {
-    "digest": "b1e8f8be83f466a4",
+    "digest": "ffde8e3b205dea4e",
     "missing": [],
     "status": "complete"
    },
    "FFmpegTestSTARSplitTest|testCodecs_split_0|assertEquals(Codecs.CODECS, ffmpeg.codecs());": {
-    "digest": "d726edc9a5655d3a",
+    "digest": "91cd71142484758d",
     "missing": [],
     "status": "complete"
    },
    "FFmpegTestSTARSplitTest|testCodecs_split_1|assertEquals(Codecs.CODECS, ffmpeg.codecs());": {
-    "digest": "d726edc9a5655d3a",
+    "digest": "91cd71142484758d",
     "missing": [],
     "status": "complete"
    },
    "FFmpegTestSTARSplitTest|testFilters_split_0|assertEquals(Filters.FILTERS.get(i), filters.get(i));": {
-    "digest": "68e77d8dc76e3746",
+    "digest": "f7d55b1197ef4543",
     "missing": [
      "get"
     ],
     "status": "loses a step"
    },
    "FFmpegTestSTARSplitTest|testFilters_split_1|assertEquals(Filters.FILTERS, ffmpeg.filters());": {
-    "digest": "8a5273149c142a6e",
+    "digest": "e601cd15404b64ed",
     "missing": [],
     "status": "complete"
    },
    "FFmpegTestSTARSplitTest|testFilters_split_2|assertEquals(Filters.FILTERS, ffmpeg.filters());": {
-    "digest": "8a5273149c142a6e",
+    "digest": "e601cd15404b64ed",
     "missing": [],
     "status": "complete"
    },
    "FFmpegTestSTARSplitTest|testFormats_split_0|assertEquals(Formats.FORMATS, ffmpeg.formats());": {
-    "digest": "70807d8fc547aee9",
+    "digest": "431f2be1f139ee3b",
     "missing": [],
     "status": "complete"
    },
    "FFmpegTestSTARSplitTest|testFormats_split_1|assertEquals(Formats.FORMATS, ffmpeg.formats());": {
-    "digest": "70807d8fc547aee9",
+    "digest": "431f2be1f139ee3b",
     "missing": [],
     "status": "complete"
    },
    "FFmpegTestSTARSplitTest|testLayouts_split_0|assertEquals(ChannelLayouts.CHANNEL_LAYOUTS, ffmpeg.channelLayouts());": {
-    "digest": "c1ba74eafb80ab65",
+    "digest": "bb81d5f64bd03bc3",
     "missing": [],
     "status": "complete"
    },
    "FFmpegTestSTARSplitTest|testLayouts_split_1|assertEquals(ChannelLayouts.CHANNEL_LAYOUTS, ffmpeg.channelLayouts());": {
-    "digest": "c1ba74eafb80ab65",
+    "digest": "bb81d5f64bd03bc3",
     "missing": [],
     "status": "complete"
    },
    "FFmpegTestSTARSplitTest|testPixelFormat_split_0|assertEquals(PixelFormats.PIXEL_FORMATS, ffmpeg.pixelFormats());": {
-    "digest": "5377f8935c35b57d",
+    "digest": "f54a662701364615",
     "missing": [],
     "status": "complete"
    },
    "FFmpegTestSTARSplitTest|testPixelFormat_split_1|assertEquals(PixelFormats.PIXEL_FORMATS, ffmpeg.pixelFormats());": {
-    "digest": "5377f8935c35b57d",
+    "digest": "f54a662701364615",
     "missing": [],
     "status": "complete"
    },
    "FFmpegTestSTARSplitTest|testVersion_split_0|assertEquals(\"ffmpeg version 0.10.9-7:0.10.9-1~raring1\", ffmpeg.version());": {
-    "digest": "b1fce3d83df054d2",
+    "digest": "27c050bc88c3b3eb",
     "missing": [],
     "status": "complete"
    },
    "FFmpegTestSTARSplitTest|testVersion_split_1|assertEquals(\"ffmpeg version 0.10.9-7:0.10.9-1~raring1\", ffmpeg.version());": {
-    "digest": "b1fce3d83df054d2",
+    "digest": "27c050bc88c3b3eb",
     "missing": [],
     "status": "complete"
    },
@@ -3578,69 +3598,69 @@
     "status": "complete"
    },
    "FractionAdapterTestSTARSplitTest|testRead_split_0|assertThat(f, equalTo(test.f));": {
-    "digest": null,
+    "digest": "1f5915a41c1abd8e",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "FractionAdapterTestSTARSplitTest|testWriteNull_split_0|assertThat(json, equalTo(\"null\"));": {
-    "digest": null,
+    "digest": "3ec34afa5638b4a1",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "FractionAdapterTestSTARSplitTest|testWrites_split_0|assertThat(json, equalTo('\"' + test.s + '\"'));": {
-    "digest": null,
+    "digest": "9d7793fe8bc82403",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "FractionAdapterTestSTARSplitTest|testZerosRead_split_0|assertThat(f, equalTo(test.f));": {
-    "digest": null,
+    "digest": "1f5915a41c1abd8e",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "TcpProgressParserTestSTARSplitTest|testNaProgressPackets_split_0|assertTrue(\"Socket is connected\", client.isConnected());": {
-    "digest": "751ace9be934e21c",
+    "digest": "8d2cda69f6e4987d",
     "missing": [],
     "status": "complete"
    },
    "TcpProgressParserTestSTARSplitTest|testNaProgressPackets_split_1|assertThat(bytes, greaterThan(0L));": {
-    "digest": null,
+    "digest": "743bf41cdd64d5bb",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "TcpProgressParserTestSTARSplitTest|testNaProgressPackets_split_2|assertThat(progesses, equalTo(Progresses.naProgresses));": {
-    "digest": null,
+    "digest": "70782a9f41d3ae2a",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "TcpProgressParserTestSTARSplitTest|testNormal_split_0|assertTrue(\"Socket is connected\", client.isConnected());": {
-    "digest": "751ace9be934e21c",
+    "digest": "8d2cda69f6e4987d",
     "missing": [],
     "status": "complete"
    },
    "TcpProgressParserTestSTARSplitTest|testNormal_split_1|assertThat(bytes, greaterThan(0L));": {
-    "digest": null,
+    "digest": "89857d0308a5e929",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "TcpProgressParserTestSTARSplitTest|testNormal_split_2|assertThat(progesses, equalTo(Progresses.allProgresses));": {
-    "digest": null,
+    "digest": "2516c0dc7d5ed472",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "TcpProgressParserTestSTARSplitTest|testPrematureDisconnect_split_0|assertTrue(progesses.isEmpty());": {
-    "digest": "a7bf8cb1ec55dbe3",
+    "digest": "59c2e2ca063abcba",
     "missing": [],
     "status": "complete"
    },
    "UdpProgressParserTestSTARSplitTest|testNaProgressPackets_split_0|assertThat(progesses, equalTo(Progresses.naProgresses));": {
-    "digest": null,
+    "digest": "5c26229b710251f6",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    },
    "UdpProgressParserTestSTARSplitTest|testNormal_split_0|assertThat(progesses, equalTo(Progresses.allProgresses));": {
-    "digest": null,
+    "digest": "e427726fb7f7e206",
     "missing": [],
-    "status": "dropped"
+    "status": "complete"
    }
   },
   "jsoup": {
@@ -6359,47 +6379,47 @@
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test19_split_0|assertEquals(capturedForm.getExpired(), BooleanType.FALSE);": {
-    "digest": "63b50b673a02daf6",
+    "digest": "a3652b59b4200144",
     "missing": [],
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test19_split_1|assertEquals(capturedForm.getInTransaction(), BooleanType.ALL);": {
-    "digest": "2937ff1020845b10",
+    "digest": "9368ef61ed0120e7",
     "missing": [],
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test19_split_2|assertEquals(capturedForm.getBlocked(), BooleanType.ALL);": {
-    "digest": "1bd563d46644fb0f",
+    "digest": "505c4a3efb9c50ac",
     "missing": [],
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test20_split_0|assertEquals(capturedForm.getExpired(), BooleanType.ALL);": {
-    "digest": "bfac313f21b75565",
+    "digest": "4b6f806dee12e215",
     "missing": [],
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test20_split_1|assertEquals(capturedForm.getInTransaction(), BooleanType.TRUE);": {
-    "digest": "936f40e060f9cd15",
+    "digest": "e9a49fe511e8f634",
     "missing": [],
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test20_split_2|assertEquals(capturedForm.getBlocked(), BooleanType.ALL);": {
-    "digest": "1bd563d46644fb0f",
+    "digest": "505c4a3efb9c50ac",
     "missing": [],
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test21_split_0|assertEquals(capturedForm.getExpired(), BooleanType.ALL);": {
-    "digest": "bfac313f21b75565",
+    "digest": "4b6f806dee12e215",
     "missing": [],
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test21_split_1|assertEquals(capturedForm.getInTransaction(), BooleanType.ALL);": {
-    "digest": "2937ff1020845b10",
+    "digest": "9368ef61ed0120e7",
     "missing": [],
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test21_split_2|assertEquals(capturedForm.getBlocked(), BooleanType.FALSE);": {
-    "digest": "ec1f7120c689f01b",
+    "digest": "e23fd894fee2a2ae",
     "missing": [],
     "status": "complete"
    },

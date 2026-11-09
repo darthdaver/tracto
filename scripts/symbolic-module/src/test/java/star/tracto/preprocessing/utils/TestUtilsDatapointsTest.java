@@ -370,6 +370,36 @@ class TestUtilsDatapointsTest {
                 datapoints.get(2).statement(datapoints.get(2).target()));
     }
 
+    /**
+     * The {@code assertThat} of Hamcrest is a target like the JUnit assertions (Step 30): without the class
+     * {@code MatcherAssert} (as {@code Assertions.}), and on one line even when its arguments end with line comments.
+     */
+    @Test
+    void hamcrestAssertThatIsATargetWithoutItsClassOnOneLine() throws IOException {
+        List<OracleDatapoint> datapoints = datapoints(FixtureRepo.committedConfig(), """
+                @Test
+                public void testMatchers() {
+                    Calc calc = new Calc();
+                    MatcherAssert.assertThat(calc.add(1, 2), is(3));
+                    org.hamcrest.MatcherAssert.assertThat("total", calc.total(), is(0));
+                    assertThat(java.util.List.of(calc.add(1, 1), calc.total()),
+                            contains( //
+                                    2, //
+                                    0));
+                }
+                """);
+
+        assertEquals(List.of(
+                "assertThat(calc.add(1, 2), is(3));",
+                "assertThat(\"total\", calc.total(), is(0));",
+                "assertThat(java.util.List.of(calc.add(1, 1), calc.total()), contains(2, 0));"
+        ), datapoints.stream().map(OracleDatapoint::target).toList());
+        // The model input is unqualified as well
+        assertEquals("{ Calc calc = new Calc(); assertThat(calc.add(1, 2), is(3)); /*<MASK_PLACEHOLDER>*/ }",
+                prefixBody(datapoints.get(1)));
+        assertFalse(prefixBody(datapoints.get(2)).contains("MatcherAssert"), prefixBody(datapoints.get(2)));
+    }
+
     @Test
     void failIsTheTargetAsItIsWritten() throws IOException {
         List<OracleDatapoint> datapoints = datapoints(FixtureRepo.committedConfig(), """

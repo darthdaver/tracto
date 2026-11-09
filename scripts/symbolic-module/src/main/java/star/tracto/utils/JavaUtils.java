@@ -29,6 +29,12 @@ public class JavaUtils {
     public static final String AUTO_JAVA_VERSION = "auto";
     /** The base path of the module, containing the {@code lib} folder (null if not set). */
     private static Path javaLibPath;
+
+    /** The folder of the sources of the assertion libraries, in the base path of the module (as {@code lib}). */
+    static final String ASSERTION_API_FOLDER = "assertion-api";
+
+    /** The assertion libraries given to the symbol solver for every repository (folders of {@link #ASSERTION_API_FOLDER}). */
+    static final List<String> ASSERTION_LIBRARIES = List.of("hamcrest-2.2");
     /** The source folders of the JDKs in {@code lib}, by major version, in ascending order of version. */
     private static Map<Integer, List<String>> jdkSourceFolders = Map.of();
     /**
@@ -142,12 +148,32 @@ public class JavaUtils {
 
     /**
      * Returns the classpath of the symbol solver (paths separated by ":"): the sources of the JDKs of the repository,
-     * then those of the JDK of the running JVM, if older (see {@link #setJavaLibPath(Path, Optional)}).
+     * then those of the JDK of the running JVM, if older (see {@link #setJavaLibPath(Path, Optional)}), then the
+     * sources of the assertion libraries known by the module (Hamcrest, Step 30; {@code assertion-api/README.md}).
      */
     public static String initializeJavaClassPath() {
         List<Integer> symbolSolverJdkVersions = new ArrayList<>(jdkVersions);
         runtimeJdkVersion.ifPresent(symbolSolverJdkVersions::add);
-        return sourceFolders(symbolSolverJdkVersions).stream().map(Path::toString).collect(Collectors.joining(":"));
+        List<Path> classpath = new ArrayList<>(sourceFolders(symbolSolverJdkVersions));
+        classpath.addAll(assertionLibraryFolders());
+        return classpath.stream().map(Path::toString).collect(Collectors.joining(":"));
+    }
+
+    /**
+     * The source folders of the assertion libraries known by the module (Step 30), in the base path of the module: given
+     * to the symbol solver, and searched for the classes by name as the JDK sources.
+     */
+    public static List<Path> assertionLibraryFolders() {
+        List<Path> folders = new ArrayList<>();
+        for (String library : ASSERTION_LIBRARIES) {
+            Path libraryPath = javaLibPath.resolve(ASSERTION_API_FOLDER).resolve(library);
+            if (Files.isDirectory(libraryPath)) {
+                folders.add(libraryPath);
+            } else {
+                logger.error("Sources of the assertion library {} not found in {}", library, libraryPath);
+            }
+        }
+        return folders;
     }
 
     public static List<Path> getPathsToJavaLibClassesFromPackage(Path packageName, boolean onlyPrefix) {

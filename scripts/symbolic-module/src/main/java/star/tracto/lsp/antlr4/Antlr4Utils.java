@@ -86,6 +86,9 @@ public class Antlr4Utils {
             case ASSERT_SAME:
                 ctx = Optional.of(parser.assertSameMethodCall());
                 break;
+            case ASSERT_THAT:
+                ctx = Optional.of(parser.assertThatMethodCall());
+                break;
             case ASSERT_THROWS:
                 ctx = Optional.of(parser.assertThrowsMethodCall());
                 break;

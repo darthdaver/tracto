@@ -918,6 +918,11 @@ assertSameMethodCall
     | ASSERT_SAME '(' (STRING_LITERAL ',')? expression ',' expression ')' SEMI
     ;
 
+// The assertThat of Hamcrest (MatcherAssert): (actual, matcher), (reason, actual, matcher), (reason, boolean) (Step 30)
+assertThatMethodCall
+    : ASSERT_THAT '(' expression ',' expression (',' expression)? ')' SEMI
+    ;
+
 assertThrowsMethodCall
     : ASSERT_THROWS '(' expression ',' executable (',' (supplierExpression | expression))? ')' SEMI
     | ASSERT_THROWS '(' (STRING_LITERAL ',')? expression ',' throwingRunnableExpression ')' SEMI

@@ -14,6 +14,9 @@ import com.github.javaparser.resolution.declarations.*;
 import com.github.javaparser.resolution.types.*;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserClassDeclaration;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserInterfaceDeclaration;
+import com.github.javaparser.printer.DefaultPrettyPrinter;
+import com.github.javaparser.printer.configuration.DefaultConfigurationOption;
+import com.github.javaparser.printer.configuration.DefaultPrinterConfiguration;
 import org.javatuples.Pair;
 import org.javatuples.Triplet;
 import org.slf4j.Logger;
@@ -51,6 +54,31 @@ import java.util.stream.Collectors;
  * generate Oracles Datapoints.
  */
 public class TestUtils {
+
+    /** Prints the statements without their comments: a target is one statement on one line (Steps 29, 30). */
+    private static final DefaultPrettyPrinter TARGET_PRINTER = new DefaultPrettyPrinter(
+            new DefaultPrinterConfiguration().removeOption(new DefaultConfigurationOption(DefaultPrinterConfiguration.ConfigOption.PRINT_COMMENTS)));
+
+    /**
+     * Prints a target assertion: without its comments (a line comment within the arguments, {@code contains( //},
+     * would print the target on several lines, and the printing of the previous phases moves such comments from node
+     * to node) and without the class of the assertion ({@link #withoutAssertionClasses(String)}).
+     */
+    static String printTarget(Statement assertion) {
+        return withoutAssertionClasses(TARGET_PRINTER.print(assertion));
+    }
+
+    /**
+     * Removes the class qualifying the assertions: {@code Assert.} and {@code Assertions.} of JUnit, {@code MatcherAssert.}
+     * of Hamcrest before {@code assertThat} (also fully qualified, Step 30). The model generates the assertions without
+     * their class. A text replacement (a known defect for {@code Assert.} and {@code Assertions.}: section 6, step 9 of
+     * {@code docs/resume.md}).
+     */
+    static String withoutAssertionClasses(String source) {
+        return source.replaceAll("(?<![a-zA-Z0-9])Assert\\.", "")
+                .replaceAll("(?<![a-zA-Z0-9])Assertions\\.", "")
+                .replaceAll("(?<![\\w.])(?:org\\.hamcrest\\.)?MatcherAssert\\.(?=assertThat\\b)", "");
+    }
 
     /* The logger for the class. */
     private static final Logger logger = LoggerFactory.getLogger(TestUtils.class);
@@ -1603,13 +1631,13 @@ public class TestUtils {
                         Statement tgtAssertion = assigned.map(AssignedAssertions.Split::assertion).orElse(tgtStatement);
                         if (config.splitStrategy() == SplitStrategyType.ASSERTION) {
                             // A `fail(...)` is a target like any other assertion
-                            target = tgtAssertion.toString().replaceAll("(?<![a-zA-Z0-9])Assert\\.", "").replaceAll("(?<![a-zA-Z0-9])Assertions\\.", "");
+                            target = printTarget(tgtAssertion);
                             assignment = assigned.map(AssignedAssertions.Split::assignment).orElse(null);
                         } else if (config.splitStrategy() == SplitStrategyType.STATEMENT) {
                             Optional<Statement> lastAssertion = JavaParserUtils.getLastAssertionInMethodDeclaration(testCase);
                             if (lastAssertion.isPresent()) {
                                 if (lastAssertion.get().equals(tgtStatement)) {
-                                    target = tgtAssertion.toString().replaceAll("(?<![a-zA-Z0-9])Assert\\.", "").replaceAll("(?<![a-zA-Z0-9])Assertions\\.", "");
+                                    target = printTarget(tgtAssertion);
                                     assignment = assigned.map(AssignedAssertions.Split::assignment).orElse(null);
                                 }
                             }
@@ -2626,7 +2654,7 @@ public class TestUtils {
         callableBuilder.setThrownExceptions(JavaParserUtils.getExceptionsAsString(callableDeclaration.getThrownExceptions()));
         callableBuilder.setJavadoc(JavaParserUtils.getCallableJavadoc(callableDeclaration));
         // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
-        callableBuilder.setBody(JavaParserUtils.getCallableSourceCode(callableDeclaration).replaceAll("(?<![a-zA-Z0-9])Assert\\.", "").replaceAll("(?<![a-zA-Z0-9])Assertions\\.", ""));
+        callableBuilder.setBody(withoutAssertionClasses(JavaParserUtils.getCallableSourceCode(callableDeclaration)));
         // TODO: Manage invoked methods recursion in the improved version of the dataset
         callableBuilder.setInvokedMethods(invokedMethods); // avoid recursion in the first version of the dataset
         if (callableDeclaration instanceof MethodDeclaration && !contextualInfo) {
@@ -2671,7 +2699,7 @@ public class TestUtils {
             callableBuilder.setThrownExceptions(JavaParserUtils.getExceptionsAsString(callableDeclaration.getThrownExceptions()));
             callableBuilder.setJavadoc(JavaParserUtils.getCallableJavadoc(callableDeclaration));
             // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
-            callableBuilder.setBody(JavaParserUtils.getCallableSourceCode(callableDeclaration).replaceAll("(?<![a-zA-Z0-9])Assert\\.", "").replaceAll("(?<![a-zA-Z0-9])Assertions\\.", ""));
+            callableBuilder.setBody(withoutAssertionClasses(JavaParserUtils.getCallableSourceCode(callableDeclaration)));
             // TODO: Manage invoked methods recursion in the improved version of the dataset
             callableBuilder.setInvokedMethods(new ArrayList<>()); // avoid recursion in the first version of the dataset
             if (callableDeclaration instanceof MethodDeclaration) {
@@ -2722,7 +2750,7 @@ public class TestUtils {
             callableBuilder.setThrownExceptions(JavaParserUtils.getExceptionsAsString(callableDeclaration.getThrownExceptions()));
             callableBuilder.setJavadoc(JavaParserUtils.getCallableJavadoc(callableDeclaration));
             // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
-            callableBuilder.setBody(JavaParserUtils.getCallableSourceCode(callableDeclaration).replaceAll("(?<![a-zA-Z0-9])Assert\\.", "").replaceAll("(?<![a-zA-Z0-9])Assertions\\.", ""));
+            callableBuilder.setBody(withoutAssertionClasses(JavaParserUtils.getCallableSourceCode(callableDeclaration)));
             // TODO: Manage invoked methods recursion in the improved version of the dataset
             callableBuilder.setInvokedMethods(new ArrayList<>()); // avoid recursion in the first version of the dataset
             callableBuilder.setReturnType(null);

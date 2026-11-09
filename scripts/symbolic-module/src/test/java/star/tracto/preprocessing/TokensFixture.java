@@ -20,8 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 /**
  * A small repository on which the oracles stage (with the configuration committed in the module) and then the tokens
  * stage run, end to end, as the command line runs them on the reference projects in the A/B: the symbol solver gets the
- * sources of a JDK of the {@code lib} folder (Java 21), and no library (the types of the dependencies, JUnit included,
- * are not resolved).
+ * sources of a JDK of the {@code lib} folder (Java 21) and of the assertion libraries of {@code assertion-api}
+ * (Hamcrest, Step 30), and no other library (the types of the dependencies, JUnit included, are not resolved).
  */
 final class TokensFixture {
 

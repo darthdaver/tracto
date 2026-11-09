@@ -95,7 +95,7 @@ Read in `TestUtils.processSplitTestClass` and `processInvokedMethods`.
 
 | Value | Meaning |
 |-------|---------|
-| `assertion` | The target is the assertion (with the `Assert.` / `Assertions.` qualifiers removed). With `split = statement`, a split test case whose last statement is not an assertion gets the target `no-assertion-target-placeholder`: the model must learn *whether* an assertion goes here. |
+| `assertion` | The target is the assertion (with the `Assert.` / `Assertions.` qualifiers removed, and `MatcherAssert.` before the `assertThat` of Hamcrest, Step 30; printed without comments, on one line). With `split = statement`, a split test case whose last statement is not an assertion gets the target `no-assertion-target-placeholder`: the model must learn *whether* an assertion goes here. |
 | `statement` | The target is the last statement, whatever it is (qualifiers are not removed). |
 
 A `fail(...)` is a target like any other assertion, as it is written (`fail("negative sum");`). Until Step 14 a target
@@ -212,7 +212,8 @@ normalization (a lambda block, as in `assertTimeoutPreemptively(d, () -> { ... }
 `allMatch(v -> { return ...; })`, or the body of an anonymous class) produces no datapoint, with the same meaning as
 above (`AssertionLambdaBlockClassifier.producesNoDatapoint`). These assertions are not counted in `assertionLambdaBlocks`.
 `assertTimeout`/`assertTimeoutPreemptively` are not normalized like `assertThrows`: moving statements out of their
-block would change what the timeout measures.
+block would change what the timeout measures. The target is printed without its comments (Step 30): a line comment
+within its arguments (`contains( //`) would otherwise print it on several lines.
 
 The move rests on the same assumption as the conversion of try/catch/fail: in a passing test the statements after the
 one that throws never run, so the last statement is the one that throws (unless the test contains dead code). For
