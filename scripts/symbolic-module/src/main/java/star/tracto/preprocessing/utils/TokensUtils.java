@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.javaparser.ast.*;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.type.Type;
+import com.github.javaparser.ast.type.PrimitiveType;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.resolution.MethodUsage;
 import com.github.javaparser.resolution.declarations.ResolvedConstructorDeclaration;
@@ -2177,6 +2178,11 @@ public class TokensUtils {
                         // parameter, not for the first one (Step 21)
                         List<ResolvedType> memberTypes = new ArrayList<>();
                         for (ResolvedType resolvedType: resolvedTypes) {
+                            if (resolvedType.isArray()) {
+                                // The field `length` of an array (Step 31). The members of the component type stay
+                                // offered: the access to an element (`values[0].`) is not tracked
+                                addArrayLength(fieldIdentifiers);
+                            }
                             while (resolvedType.isArray()) {
                                 resolvedType = resolvedType.asArrayType().getComponentType();
                             }
@@ -2225,7 +2231,10 @@ public class TokensUtils {
                                 List<ResolvedReferenceType> ancestors = new ArrayList<>();
 
                                 try {
-                                    resolvedType.asReferenceType().getAllAncestors();
+                                    // The values of the type parameters of the ancestors too (Step 31: the result was
+                                    // discarded, so `E` of `ArrayList<E>` was unknown after a variable of a class
+                                    // extending `ArrayList<Node>`)
+                                    ancestors = resolvedType.asReferenceType().getAllAncestors();
                                 } catch (Exception e) {
                                     String message = "Error resolving ancestors of reference type: " + resolvedType.asReferenceType().getQualifiedName();
                                     logger.error(message);
@@ -2359,6 +2368,17 @@ public class TokensUtils {
                 logger.error("\tat " + ste.toString());
             }
             logger.error("********************************************************************");
+        }
+    }
+
+    /** The field {@code length} of the arrays ({@code int length}, JLS 10.7), with no declaring class. */
+    private static final VariableDeclarator ARRAY_LENGTH = new VariableDeclarator(PrimitiveType.intType(), "length");
+
+    /** Adds the field {@code length} of the arrays to the field identifiers (Step 31). */
+    static void addArrayLength(HashMap<String, List<Pair<VariableDeclarator, Type>>> fieldIdentifiers) {
+        List<Pair<VariableDeclarator, Type>> fields = fieldIdentifiers.computeIfAbsent(ARRAY_LENGTH.getNameAsString(), name -> new ArrayList<>());
+        if (fields.stream().noneMatch(field -> field.getValue0() == ARRAY_LENGTH)) {
+            fields.add(new Pair<>(ARRAY_LENGTH, ARRAY_LENGTH.getType()));
         }
     }
 
