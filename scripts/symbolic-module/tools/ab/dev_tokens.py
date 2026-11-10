@@ -89,6 +89,10 @@ RANK = {'complete': 0, 'loses a step': 1, 'dropped': 2}
 
 def report(project, source, run_a, run_b):
     (exit_a, out_a, oracles), (exit_b, out_b, _) = run_a, run_b
+    if exit_a != 0 or exit_b != 0:
+        # A JVM that failed or was killed (by the RAM watchdog, for instance) leaves its outputs empty or cut off
+        print(f'== {project}: exit status A {exit_a}, B {exit_b}: no report (run the project again)')
+        return False
     status_a, _ = statuses(out_a, project, oracles)
     status_b, unexpected_b = statuses(out_b, project, oracles)
     print(f'== {project}: exit status A {exit_a}, B {exit_b}; {len(oracles)} oracles')

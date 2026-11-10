@@ -2382,6 +2382,18 @@ public class TokensUtils {
                         String message = "Error resolving reference type: " + resolvedType + " - " + e.getMessage();
                         logger.error(message);
                         clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
+                        // The methods whose signatures can be resolved, inherited ones included, with their return
+                        // types (Step 33; before, the names of the declared methods only), then the names of the others
+                        try {
+                            collectMethodUsages(
+                                    methodIdentifiers,
+                                    resolvableMethods(resolvedType.asReferenceType().getTypeDeclaration().get()),
+                                    modifiers,
+                                    List.of(new Pair("Test", Boolean.valueOf(false)))
+                            );
+                        } catch (Exception resolvableMethodsException) {
+                            logger.error("Unable to collect the resolvable methods of " + resolvedType + " - " + resolvableMethodsException.getMessage());
+                        }
                         collectResolvedMethodDeclaration(
                                 methodIdentifiers,
                                 resolvedType.asReferenceType().getTypeDeclaration().get().getDeclaredMethods(),
@@ -2812,7 +2824,6 @@ public class TokensUtils {
             Set<MethodUsage> methodUsages = typeDeclaration.resolve().getAllMethods();
             collectMethodUsages(methodUsageIdentifiers, methodUsages, modifiersRules, annotations);
         } catch (Exception e) {
-            unsolvableTokens.add(typeDeclaration.getNameAsString());
             logger.error("Unable to resolve type declaration " + (typeDeclaration.getFullyQualifiedName().isPresent() ? typeDeclaration.getFullyQualifiedName().get() : typeDeclaration.getNameAsString()) + " and collect methods from it: " + e.getMessage() /*+ " - " + e.getStackTrace()*/);
             logger.error("********************************************************************");
             logger.error("Stack trace:");
@@ -2820,6 +2831,74 @@ public class TokensUtils {
                 logger.error("\tat " + ste.toString());
             }
             logger.error("********************************************************************");
+            // Often a type of a dependency in the signature of one method: the lookup of all the methods fails as a
+            // whole. The methods whose signatures can be resolved, with their return types, then the names of the
+            // others, as for the members of an instance (Step 33; before, no method at all)
+            ResolvedReferenceTypeDeclaration resolvedTypeDeclaration;
+            try {
+                resolvedTypeDeclaration = typeDeclaration.resolve();
+            } catch (Exception resolutionException) {
+                unsolvableTokens.add(typeDeclaration.getNameAsString());
+                return;
+            }
+            try {
+                collectMethodUsages(methodUsageIdentifiers, resolvableMethods(resolvedTypeDeclaration), modifiersRules, annotations);
+            } catch (Exception resolvableMethodsException) {
+                logger.error("Unable to collect the resolvable methods of " + resolvedTypeDeclaration.getQualifiedName() + " - " + resolvableMethodsException.getMessage());
+            }
+            try {
+                collectResolvedMethodDeclaration(methodUsageIdentifiers, resolvedTypeDeclaration.getDeclaredMethods(), modifiersRules, annotations);
+            } catch (Exception declaredMethodsException) {
+                unsolvableTokens.add(typeDeclaration.getNameAsString());
+            }
+        }
+    }
+
+    /**
+     * The methods of a type and of its ancestors whose signatures can be resolved, one by one (Step 33): the lookup of
+     * all the methods ({@code getAllMethods()}) fails as a whole when one signature holds a type that cannot be resolved
+     * (a type of a dependency). A method of an ancestor overridden by a method collected is left out (same signature).
+     * The type parameters of the ancestors are not replaced by their values: a type variable returned stands for the
+     * values recorded for its type parameter (Step 21).
+     */
+    static Set<MethodUsage> resolvableMethods(ResolvedReferenceTypeDeclaration type) {
+        Set<MethodUsage> methods = new HashSet<>();
+        collectResolvableMethods(type, methods, new HashSet<>(), new HashSet<>());
+        return methods;
+    }
+
+    private static void collectResolvableMethods(
+            ResolvedReferenceTypeDeclaration type,
+            Set<MethodUsage> methods,
+            Set<String> signatures,
+            Set<String> visitedTypes
+    ) {
+        if (!visitedTypes.add(type.getQualifiedName())) {
+            return;
+        }
+        try {
+            for (ResolvedMethodDeclaration declaration : MemberOrder.methodDeclarations(type.getDeclaredMethods())) {
+                try {
+                    MethodUsage usage = new MethodUsage(declaration);
+                    if (signatures.add(usage.getSignature())) {
+                        methods.add(usage);
+                    }
+                } catch (Exception e) {
+                    // A type of its signature cannot be resolved: left out
+                }
+            }
+        } catch (Exception e) {
+            return;
+        }
+        List<ResolvedReferenceType> ancestors;
+        try {
+            // The ancestors that can be resolved
+            ancestors = type.getAncestors(true);
+        } catch (Exception e) {
+            return;
+        }
+        for (ResolvedReferenceType ancestor : ancestors) {
+            ancestor.getTypeDeclaration().ifPresent(declaration -> collectResolvableMethods(declaration, methods, signatures, visitedTypes));
         }
     }
 

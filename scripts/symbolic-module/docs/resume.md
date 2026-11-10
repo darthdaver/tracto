@@ -35,6 +35,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 30 | on the corpus: 1,119 → 1,139 complete (+20, 0 worse; dropped 28 → 3) |
 | After Step 31 | on the corpus: 1,139 → 1,172 complete (+33, 0 worse) |
 | After Step 32 | on the corpus: 1,172 → 1,178 complete (+6, 0 worse); the v1 classes with a cast: +22 |
+| After Step 33 | on the corpus: 1,178 → 1,199 complete (+21, 0 worse); the 52 v1 classes with chain causes, v1 → Step 32: +594, 0 worse |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -206,7 +207,13 @@ examples to start from.
    **Step 31 done** (`docs/fixes/step-31-chain-ancestors-array-length.md`): the type parameters of the ancestors (the
    result of `getAllAncestors()` was discarded: `els.get(0).` after `Elements extends ArrayList<Element>`), the
    `length` of the arrays. **Step 32 done** (`docs/fixes/step-32-casts.md`): the members of the type of a cast
-   (`((SimpleRobotRules) rules).`, 44 steps in v1). Next: the remaining chain and known-type causes, re-measured.
+   (`((SimpleRobotRules) rules).`, 44 steps in v1). **Step 33 done** (`docs/fixes/step-33-unresolvable-signatures.md`):
+   re-measured on the 52 v1 classes with these causes (v1 jar → Step 32 jar: +594 oracles, 0 worse; 257 missing
+   steps left); then the methods of a type whose lookup failed as a whole (a type of a dependency in one signature:
+   eec `Styles.toColor`, esapi `ESAPI.securityConfiguration`, steve, ffmpeg, cryptofs; the accessors of the records).
+   Remaining shapes, causes to be examined (Step 33 doc): lambda bodies `()->x.` (cryptofs), parenthesized expressions `(new X()).` (esapi), arrays
+   returned through a type variable (`strings.get(0).length`, eec), the members of an interface's `Object`
+   (`data.get(0).toString`), fields of other classes (`structEval.threadMemo`, jsoup).
 9. **Dependencies** (cause `dependency`, 91 in v1): needs a design decision of the author on the inference setting
    (section 6 of `missing-candidate-tokens.md`).
 10. **Pre-existing defects**, each its own step:
@@ -225,7 +232,9 @@ examples to start from.
      rules of `collectMethodUsages` let them through for the classes read from the JDK sources (not verified further);
    - `java.lang` and the JDK classes come from the newest and the oldest JDK of `lib` when the Java version of the
      repository is not pinned to one JDK (`JavaUtils`): classes of both are offered (`Compiler`, `IO`);
-   - after the name of a class (`String.`), its instance and protected methods are offered too (`clone`, `finalize`);
+   - after the name of a class (`String.`), its instance and protected methods are offered too (`clone`, `finalize`):
+     the modifier rules are combined with OR and the rule "not private" alone accepts them
+     (`JavaParserUtils.checkModifiersRules`, found in Step 33);
    - the imports and the package of the focal class are added to the classes of the test class (not visible there
      unless imported in the test class too);
    - the qualifiers `Assert.`/`Assertions.` are removed with a text replacement (`TestUtils`, targets and bodies):

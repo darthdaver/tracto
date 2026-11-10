@@ -296,7 +296,23 @@ public class JavaParserUtils {
         Matcher reflectionMatcher = REFLECTION_METHOD_DECLARATION.matcher(methodDeclaration.toString());
         Matcher javassistMatcher = JAVASSIST_METHOD_DECLARATION.matcher(methodDeclaration.toString());
         if (!reflectionMatcher.find() && !javassistMatcher.find()) {
-            throw new IllegalStateException("Could not parse method signature: " + methodDeclaration);
+            // Neither in a class file nor in a source (the accessors of a record, Step 33; before, an exception that
+            // stopped the collection of all the methods of the type and dropped the datapoints offering them): the
+            // modifiers of the resolved declaration
+            List<String> modifiers = new ArrayList<>();
+            switch (methodDeclaration.accessSpecifier()) {
+                case PUBLIC -> modifiers.add("public");
+                case PRIVATE -> modifiers.add("private");
+                case PROTECTED -> modifiers.add("protected");
+                default -> { }
+            }
+            if (methodDeclaration.isStatic()) {
+                modifiers.add("static");
+            }
+            if (methodDeclaration.isAbstract()) {
+                modifiers.add("abstract");
+            }
+            return modifiers;
         }
         String methodModifiers;
         if (methodDeclaration instanceof ReflectionMethodDeclaration) {
