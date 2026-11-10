@@ -34,6 +34,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | **Dataset v1** (full test, 2026-11-09, Step 29 `1981c0a`) | **12.2%** on the nine projects (7,937 complete of 9,043; 7,170 after Step 21: +767, 0 regressions) |
 | After Step 30 | on the corpus: 1,119 → 1,139 complete (+20, 0 worse; dropped 28 → 3) |
 | After Step 31 | on the corpus: 1,139 → 1,172 complete (+33, 0 worse) |
+| After Step 32 | on the corpus: 1,172 → 1,178 complete (+6, 0 worse); the v1 classes with a cast: +22 |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -204,8 +205,8 @@ examples to start from.
 8. **Type inference of the chains** (causes `member of a chain`, 451 lost in v1, jsoup 287; `member of a known type`, 55).
    **Step 31 done** (`docs/fixes/step-31-chain-ancestors-array-length.md`): the type parameters of the ancestors (the
    result of `getAllAncestors()` was discarded: `els.get(0).` after `Elements extends ArrayList<Element>`), the
-   `length` of the arrays. Next: the casts (`((SimpleRobotRules) rules).`, 44 steps in v1), then the remaining chain
-   and known-type causes, re-measured.
+   `length` of the arrays. **Step 32 done** (`docs/fixes/step-32-casts.md`): the members of the type of a cast
+   (`((SimpleRobotRules) rules).`, 44 steps in v1). Next: the remaining chain and known-type causes, re-measured.
 9. **Dependencies** (cause `dependency`, 91 in v1): needs a design decision of the author on the inference setting
    (section 6 of `missing-candidate-tokens.md`).
 10. **Pre-existing defects**, each its own step:

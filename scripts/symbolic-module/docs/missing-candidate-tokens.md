@@ -258,6 +258,8 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
   0 worse).
 - Step 31: chains, first part: the values of the type parameters of the ancestors of a type (the result of
   `getAllAncestors()` was discarded), the field `length` of the arrays (corpus: +33 complete, 0 worse).
+- Step 32: chains, second part: the members of the type of a cast, `((T) expression).` (corpus: +6 complete, 0 worse;
+  the v1 classes with a cast: +22).
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles

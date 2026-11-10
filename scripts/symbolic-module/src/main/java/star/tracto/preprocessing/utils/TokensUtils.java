@@ -11,6 +11,7 @@ import com.github.javaparser.resolution.declarations.ResolvedConstructorDeclarat
 import com.github.javaparser.resolution.declarations.ResolvedMethodDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedTypeParameterDeclaration;
+import com.github.javaparser.resolution.types.ResolvedPrimitiveType;
 import com.github.javaparser.resolution.types.ResolvedReferenceType;
 import com.github.javaparser.resolution.types.ResolvedType;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserMethodDeclaration;
@@ -167,6 +168,13 @@ public class TokensUtils {
         HashMap<String, List<MethodUsage>> methods;
         HashMap<String, List<ResolvedConstructorDeclaration>> constructors;
         HashMap<String, List<EnumConstantDeclaration>> enums;
+        // The casts (Step 32). A frame opened by a parenthesis that is not the one of a call or of a statement (`if`,
+        // `while`, ...): a parenthesized expression, or the type of a cast
+        boolean parenthesizedExpression = false;
+        // The tokens of the frame since it was opened (a nested group counts as its opening token)
+        List<String> groupTokens = new ArrayList<>();
+        // The classes of the cast that starts the parenthesized expression of the frame, `((T) expression)`
+        HashMap<String, List<Path>> castClasses = new HashMap<>();
 
 
         public TokenReferencesCollector(
@@ -1444,6 +1452,10 @@ public class TokensUtils {
         HashMap<String, List<EnumConstantDeclaration>> enumReferences = new HashMap<>();
         TokenIdentifiersCollector newTokenIdentifiersCollector = cloneRootTokenIdentifiers();
         TokenReferencesCollector newTokenReferencesCollector = cloneRootTokenReferences();
+        // The tokens of the current frame, to recognize the type of a cast when it is closed (Step 32)
+        if (tokenAction != AntlrTokenAction.REMOVE_CURRENT) {
+            tokenReferences.groupTokens.add(token);
+        }
         // Update the token identifiers and references collectors based on the action associated with the current token
         switch (tokenAction) {
             case ADD_ROOT:
@@ -1466,6 +1478,7 @@ public class TokensUtils {
                     newTokenReferencesCollector.setLambdaReferences(tokenReferences.lambdaReferences);
                     newTokenReferencesCollector.setTypeParameterReferences(tokenReferences.typeParametersReferences);
                 }
+                newTokenReferencesCollector.parenthesizedExpression = tokenType == AntlrToken.LPAREN && !OPENS_A_CALL_OR_A_STATEMENT.contains(previousTokenType);
                 tokenIdentifiersStack.add(new Triplet<>(newTokenIdentifiersCollector, newTokenReferencesCollector, new HashSet<>(rootUnsolvableTokens)));
                 break;
             case SET_TO_ROOT:
@@ -1512,7 +1525,16 @@ public class TokensUtils {
                 // Pop the current token identifiers and references collectors from the stack
                 tokenIdentifiersStack.remove(currentTokenIdentifiersAndReferences);
                 if (tokenType == AntlrToken.RPAREN) {
+                    TokenReferencesCollector closedReferences = tokenReferences;
                     tokenReferences = tokenIdentifiersStack.get(tokenIdentifiersStack.size() - 1).getValue1();
+                    if (isCastType(closedReferences)) {
+                        // `(T)`: the type of a cast, kept by the enclosing frame until it is closed (Step 32)
+                        tokenReferences.castClasses = new HashMap<>(closedReferences.currentClasses);
+                    } else if (closedReferences.parenthesizedExpression && !closedReferences.castClasses.isEmpty()) {
+                        // `((T) expression)`: the members of T follow (Step 32)
+                        applyCast(closedReferences.castClasses, tokenIdentifiersStack.get(tokenIdentifiersStack.size() - 1), tc, testPrefixName, targetAssertion);
+                        break;
+                    }
                     if (tokenReferences.contextualInfoType == ContextualInfoType.CONSTRUCTOR_CALL) {
                         tokenReferences.setContextualInfoType(ContextualInfoType.CONSTRUCTOR_RETURN);
                         tokenReferences.setConstructors(new HashMap<>());
@@ -2057,7 +2079,8 @@ public class TokensUtils {
                                     try {
                                         VariableDeclarator variableDeclarator = field.getValue0();
                                         Type varType = field.getValue1();
-                                        ResolvedType resolvedType = varType.resolve();
+                                        // The field `length` of the arrays has no parent to resolve its type (Step 32)
+                                        ResolvedType resolvedType = variableDeclarator == ARRAY_LENGTH ? ResolvedPrimitiveType.INT : varType.resolve();
                                         resolvedTypes.add(resolvedType);
                                         Optional<Node> parentNode = variableDeclarator.getParentNode();
                                         Optional<TypeDeclaration> declaringTypeDeclaration = Optional.empty();
@@ -2188,126 +2211,7 @@ public class TokensUtils {
                             }
                             memberTypes.addAll(TypeParameterValues.valuesOf(resolvedType, tokenReferences.typeParametersReferences));
                         }
-                        for (ResolvedType resolvedType: memberTypes) {
-                            List<List<Pair<Modifier.Keyword,Boolean>>> modifiers = new ArrayList<>(List.of(
-                                    List.of(new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))),
-                                    List.of(new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(false))),
-                                    List.of(new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(false)))
-                            ));
-
-                            if (resolvedType.isReferenceType()) {
-                                int typeNameIdx = resolvedType.asReferenceType().getQualifiedName().lastIndexOf(".");
-                                String typeName = resolvedType.asReferenceType().getQualifiedName().substring(typeNameIdx + 1);
-                                String packageName = resolvedType.asReferenceType().getQualifiedName().replace( "." + typeName, "");
-                                // Get the compilation unit of the test class to get its package declaration
-                                // It's important to collect protected members from a type in the same package
-                                CompilationUnit testCu = (CompilationUnit) tc.getParentNode().get();
-                                Optional<PackageDeclaration> testClassPackageDeclaration = testCu.getPackageDeclaration();
-                                if (testClassPackageDeclaration.isPresent() && testClassPackageDeclaration.get().getNameAsString().contains(packageName)) {
-                                    modifiers.add(List.of(new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(true))));
-                                }
-
-                                // Get the declaring type of the method usage
-                                String qualifiedName = resolvedType.asReferenceType().getQualifiedName();
-                                Optional<Path> resolvedTypePath = JavaParserUtils.retrieveFilePathFromFullyQualifiedName(qualifiedName, repoSourcePath);
-                                if (!resolvedTypePath.isPresent()) {
-                                    resolvedTypePath = JavaParserUtils.retrieveFilePathFromFullyQualifiedName(qualifiedName, repoTestPath);
-                                }
-                                if (resolvedTypePath.isPresent()) {
-                                    if (!returnClassReferences.containsKey(qualifiedName)) {
-                                        returnClassReferences.put(qualifiedName, new ArrayList<>());
-                                    }
-                                    final Path resolvedTypePathToCompare = resolvedTypePath.get();
-                                    boolean isAlreadyPresent = returnClassReferences.get(qualifiedName).stream().anyMatch(p -> p.toString().equals(resolvedTypePathToCompare.toString()));
-                                    if (!isAlreadyPresent) {
-                                        returnClassReferences.get(qualifiedName).add(resolvedTypePath.get());
-                                    }
-                                } else {
-                                    logger.error("Declaring type path not found for while processing a field match (" + token + " of type " + resolvedType.asReferenceType().getQualifiedName() + "): " + qualifiedName);
-                                }
-
-                                List<com.github.javaparser.utils.Pair<ResolvedTypeParameterDeclaration, ResolvedType>> typeParameters =  resolvedType.asReferenceType().getTypeParametersMap();
-
-                                List<ResolvedReferenceType> ancestors = new ArrayList<>();
-
-                                try {
-                                    // The values of the type parameters of the ancestors too (Step 31: the result was
-                                    // discarded, so `E` of `ArrayList<E>` was unknown after a variable of a class
-                                    // extending `ArrayList<Node>`)
-                                    ancestors = resolvedType.asReferenceType().getAllAncestors();
-                                } catch (Exception e) {
-                                    String message = "Error resolving ancestors of reference type: " + resolvedType.asReferenceType().getQualifiedName();
-                                    logger.error(message);
-                                    clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
-                                    logger.error("********************************************************************");
-                                    logger.error("Stack trace:");
-                                    for (StackTraceElement ste : e.getStackTrace()) {
-                                        logger.error("\tat " + ste.toString());
-                                    }
-                                    logger.error("********************************************************************");
-                                }
-
-                                for (ResolvedReferenceType ancestor: ancestors) {
-                                    typeParameters.addAll(ancestor.getTypeParametersMap());
-                                }
-                                for(com.github.javaparser.utils.Pair<ResolvedTypeParameterDeclaration, ResolvedType> typeParameterPair: typeParameters) {
-                                    ResolvedTypeParameterDeclaration typeParameterDeclaration = typeParameterPair.a;
-                                    String typeParameterKey = typeParameterDeclaration.getContainerQualifiedName() + "<" + typeParameterDeclaration.getName() + ">";
-                                    // A type variable stands for the resolved values recorded for its type parameter, not for the first one (Step 21)
-                                    for (ResolvedType typeParameterValue : TypeParameterValues.valuesOf(typeParameterPair.b, tokenReferences.typeParametersReferences)) {
-                                        if (!typeParameterReferences.containsKey(typeParameterKey)) {
-                                            typeParameterReferences.put(typeParameterKey, new ArrayList<>());
-                                        }
-                                        final ResolvedType typeParameterValueToCompare = typeParameterValue;
-                                        boolean isAlreadyPresent = typeParameterReferences.get(typeParameterKey).stream().anyMatch(t -> t.equals(typeParameterValueToCompare));
-                                        if (!isAlreadyPresent) {
-                                            typeParameterReferences.get(typeParameterKey).add(typeParameterValue);
-                                        }
-                                    }
-                                }
-
-                                try {
-                                    try {
-                                        collectMethodUsages(
-                                                methodIdentifiers,
-                                                resolvedType.asReferenceType().getTypeDeclaration().get().getAllMethods(),
-                                                modifiers,
-                                                List.of(new Pair("Test", Boolean.valueOf(false)))
-                                        );
-                                    } catch (Exception e) {
-                                        String message = "Error resolving reference type: " + resolvedType + " - " + e.getMessage();
-                                        logger.error(message);
-                                        clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
-                                        collectResolvedMethodDeclaration(
-                                                methodIdentifiers,
-                                                resolvedType.asReferenceType().getTypeDeclaration().get().getDeclaredMethods(),
-                                                modifiers,
-                                                List.of(new Pair("Test", Boolean.valueOf(false)))
-                                        );
-                                        logger.error("********************************************************************");
-                                        logger.error("Stack trace:");
-                                        for (StackTraceElement ste : e.getStackTrace()) {
-                                            logger.error("\tat " + ste.toString());
-                                        }
-                                        logger.error("********************************************************************");
-                                    }
-                                    //updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
-                                    List<FieldDeclaration> fieldDeclarations =  resolvedType.asReferenceType().getTypeDeclaration().get().toAst().get().findAll(FieldDeclaration.class);
-                                    updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, fieldDeclarations, modifiers, TypeDeclaration.class, 0);
-                                    //updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, fieldIdentifiers);
-                                } catch (Exception e) {
-                                    String message = "Error resolving reference type: " + resolvedType + " - " + e.getMessage();
-                                    logger.error(message);
-                                    clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
-                                    logger.error("********************************************************************");
-                                    logger.error("Stack trace:");
-                                    for (StackTraceElement ste : e.getStackTrace()) {
-                                        logger.error("\tat " + ste.toString());
-                                    }
-                                    logger.error("********************************************************************");
-                                }
-                            }
-                        }
+                        collectMembersOfTypes(memberTypes, tc, tokenReferences, methodIdentifiers, fieldIdentifiers, returnClassReferences, typeParameterReferences, token, testPrefixName, targetAssertion);
                         tokenIdentifiersCollector.setClassIdentifiersMap(classIdentifiers);
                         tokenIdentifiersCollector.setMethodIdentifiersMap(methodIdentifiers);
                         tokenIdentifiersCollector.setFieldIdentifiersMap(fieldIdentifiers);
@@ -2369,6 +2273,237 @@ public class TokensUtils {
             }
             logger.error("********************************************************************");
         }
+    }
+
+    /**
+     * Collects the members (methods and fields) of the given types, the paths of the types and the values of their type
+     * parameters (and of their ancestors'): the members offered after a value of these types (a variable, a field, a
+     * parameter, the result of a call, a cast).
+     */
+    private static void collectMembersOfTypes(
+            List<ResolvedType> memberTypes,
+            TypeDeclaration tc,
+            TokenReferencesCollector tokenReferences,
+            HashMap<String, List<MethodUsage>> methodIdentifiers,
+            HashMap<String, List<Pair<VariableDeclarator, Type>>> fieldIdentifiers,
+            HashMap<String, List<Path>> returnClassReferences,
+            HashMap<String, List<ResolvedType>> typeParameterReferences,
+            String token,
+            String testPrefixName,
+            String targetAssertion
+    ) {
+        for (ResolvedType resolvedType: memberTypes) {
+            List<List<Pair<Modifier.Keyword,Boolean>>> modifiers = new ArrayList<>(List.of(
+                    List.of(new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))),
+                    List.of(new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(false))),
+                    List.of(new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(false)))
+            ));
+
+            if (resolvedType.isReferenceType()) {
+                int typeNameIdx = resolvedType.asReferenceType().getQualifiedName().lastIndexOf(".");
+                String typeName = resolvedType.asReferenceType().getQualifiedName().substring(typeNameIdx + 1);
+                String packageName = resolvedType.asReferenceType().getQualifiedName().replace( "." + typeName, "");
+                // Get the compilation unit of the test class to get its package declaration
+                // It's important to collect protected members from a type in the same package
+                CompilationUnit testCu = (CompilationUnit) tc.getParentNode().get();
+                Optional<PackageDeclaration> testClassPackageDeclaration = testCu.getPackageDeclaration();
+                if (testClassPackageDeclaration.isPresent() && testClassPackageDeclaration.get().getNameAsString().contains(packageName)) {
+                    modifiers.add(List.of(new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(true))));
+                }
+
+                // Get the declaring type of the method usage
+                String qualifiedName = resolvedType.asReferenceType().getQualifiedName();
+                Optional<Path> resolvedTypePath = JavaParserUtils.retrieveFilePathFromFullyQualifiedName(qualifiedName, repoSourcePath);
+                if (!resolvedTypePath.isPresent()) {
+                    resolvedTypePath = JavaParserUtils.retrieveFilePathFromFullyQualifiedName(qualifiedName, repoTestPath);
+                }
+                if (resolvedTypePath.isPresent()) {
+                    if (!returnClassReferences.containsKey(qualifiedName)) {
+                        returnClassReferences.put(qualifiedName, new ArrayList<>());
+                    }
+                    final Path resolvedTypePathToCompare = resolvedTypePath.get();
+                    boolean isAlreadyPresent = returnClassReferences.get(qualifiedName).stream().anyMatch(p -> p.toString().equals(resolvedTypePathToCompare.toString()));
+                    if (!isAlreadyPresent) {
+                        returnClassReferences.get(qualifiedName).add(resolvedTypePath.get());
+                    }
+                } else {
+                    logger.error("Declaring type path not found for while processing a field match (" + token + " of type " + resolvedType.asReferenceType().getQualifiedName() + "): " + qualifiedName);
+                }
+
+                List<com.github.javaparser.utils.Pair<ResolvedTypeParameterDeclaration, ResolvedType>> typeParameters =  resolvedType.asReferenceType().getTypeParametersMap();
+
+                List<ResolvedReferenceType> ancestors = new ArrayList<>();
+
+                try {
+                    // The values of the type parameters of the ancestors too (Step 31: the result was
+                    // discarded, so `E` of `ArrayList<E>` was unknown after a variable of a class
+                    // extending `ArrayList<Node>`)
+                    ancestors = resolvedType.asReferenceType().getAllAncestors();
+                } catch (Exception e) {
+                    String message = "Error resolving ancestors of reference type: " + resolvedType.asReferenceType().getQualifiedName();
+                    logger.error(message);
+                    clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
+                    logger.error("********************************************************************");
+                    logger.error("Stack trace:");
+                    for (StackTraceElement ste : e.getStackTrace()) {
+                        logger.error("\tat " + ste.toString());
+                    }
+                    logger.error("********************************************************************");
+                }
+
+                for (ResolvedReferenceType ancestor: ancestors) {
+                    typeParameters.addAll(ancestor.getTypeParametersMap());
+                }
+                for(com.github.javaparser.utils.Pair<ResolvedTypeParameterDeclaration, ResolvedType> typeParameterPair: typeParameters) {
+                    ResolvedTypeParameterDeclaration typeParameterDeclaration = typeParameterPair.a;
+                    String typeParameterKey = typeParameterDeclaration.getContainerQualifiedName() + "<" + typeParameterDeclaration.getName() + ">";
+                    // A type variable stands for the resolved values recorded for its type parameter, not for the first one (Step 21)
+                    for (ResolvedType typeParameterValue : TypeParameterValues.valuesOf(typeParameterPair.b, tokenReferences.typeParametersReferences)) {
+                        if (!typeParameterReferences.containsKey(typeParameterKey)) {
+                            typeParameterReferences.put(typeParameterKey, new ArrayList<>());
+                        }
+                        final ResolvedType typeParameterValueToCompare = typeParameterValue;
+                        boolean isAlreadyPresent = typeParameterReferences.get(typeParameterKey).stream().anyMatch(t -> t.equals(typeParameterValueToCompare));
+                        if (!isAlreadyPresent) {
+                            typeParameterReferences.get(typeParameterKey).add(typeParameterValue);
+                        }
+                    }
+                }
+
+                try {
+                    try {
+                        collectMethodUsages(
+                                methodIdentifiers,
+                                resolvedType.asReferenceType().getTypeDeclaration().get().getAllMethods(),
+                                modifiers,
+                                List.of(new Pair("Test", Boolean.valueOf(false)))
+                        );
+                    } catch (Exception e) {
+                        String message = "Error resolving reference type: " + resolvedType + " - " + e.getMessage();
+                        logger.error(message);
+                        clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
+                        collectResolvedMethodDeclaration(
+                                methodIdentifiers,
+                                resolvedType.asReferenceType().getTypeDeclaration().get().getDeclaredMethods(),
+                                modifiers,
+                                List.of(new Pair("Test", Boolean.valueOf(false)))
+                        );
+                        logger.error("********************************************************************");
+                        logger.error("Stack trace:");
+                        for (StackTraceElement ste : e.getStackTrace()) {
+                            logger.error("\tat " + ste.toString());
+                        }
+                        logger.error("********************************************************************");
+                    }
+                    //updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
+                    List<FieldDeclaration> fieldDeclarations =  resolvedType.asReferenceType().getTypeDeclaration().get().toAst().get().findAll(FieldDeclaration.class);
+                    updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, fieldDeclarations, modifiers, TypeDeclaration.class, 0);
+                    //updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, fieldIdentifiers);
+                } catch (Exception e) {
+                    String message = "Error resolving reference type: " + resolvedType + " - " + e.getMessage();
+                    logger.error(message);
+                    clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
+                    logger.error("********************************************************************");
+                    logger.error("Stack trace:");
+                    for (StackTraceElement ste : e.getStackTrace()) {
+                        logger.error("\tat " + ste.toString());
+                    }
+                    logger.error("********************************************************************");
+                }
+            }
+        }
+    }
+
+    /**
+     * The tokens before a parenthesis that opens the arguments of a call ({@code foo(}, {@code this(}, {@code super(}) or
+     * the condition of a statement: the other parentheses open a parenthesized expression or the type of a cast (Step 32).
+     */
+    private static final Set<AntlrToken> OPENS_A_CALL_OR_A_STATEMENT = Set.of(
+            AntlrToken.IDENTIFIER, AntlrToken.THIS, AntlrToken.SUPER, AntlrToken.IF, AntlrToken.WHILE, AntlrToken.FOR,
+            AntlrToken.SWITCH, AntlrToken.CATCH, AntlrToken.SYNCHRONIZED, AntlrToken.TRY
+    );
+
+    /**
+     * Whether a frame just closed is the type of a cast, {@code (T)} or {@code (Outer.T)}: a parenthesized expression
+     * whose tokens are names separated by dots, the last one a class (Step 32). Generic types and arrays
+     * ({@code (List<T>)}, {@code (byte[])}) are not recognized.
+     */
+    private static boolean isCastType(TokenReferencesCollector closedReferences) {
+        List<String> tokens = closedReferences.groupTokens;
+        if (!closedReferences.parenthesizedExpression || tokens.size() % 2 == 0 ||
+                closedReferences.contextualInfoType != ContextualInfoType.CLASS_CALL || closedReferences.currentClasses.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < tokens.size(); i++) {
+            AntlrToken expected = i % 2 == 0 ? AntlrToken.IDENTIFIER : AntlrToken.DOT;
+            if (Antlr4Utils.getAntlrToken(tokens.get(i)) != expected) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * After {@code ((T) expression)}: the members of T are offered, as after a value of type T (Step 32).
+     */
+    private static void applyCast(
+            HashMap<String, List<Path>> castClasses,
+            Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>> frame,
+            TypeDeclaration tc,
+            String testPrefixName,
+            String targetAssertion
+    ) {
+        TokenIdentifiersCollector tokenIdentifiers = frame.getValue0();
+        TokenReferencesCollector tokenReferences = frame.getValue1();
+        List<ResolvedType> castTypes = new ArrayList<>();
+        for (Map.Entry<String, List<Path>> castClass : castClasses.entrySet()) {
+            String qualifiedName = castClass.getKey();
+            String className = qualifiedName.substring(qualifiedName.lastIndexOf('.') + 1);
+            for (Path classPath : castClass.getValue()) {
+                try {
+                    CompilationUnit cu = JavaParserUtils.getCompilationUnit(classPath);
+                    for (TypeDeclaration typeDeclaration : JavaParserUtils.getTypeDeclarationsFromCompilationUnitAndName(cu, className)) {
+                        if (qualifiedName.equals(typeDeclaration.getFullyQualifiedName().orElse(typeDeclaration.getNameAsString()))) {
+                            ResolvedType castType = new ReferenceTypeImpl(typeDeclaration.resolve());
+                            if (castTypes.stream().noneMatch(t -> t.equals(castType))) {
+                                castTypes.add(castType);
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    String message = "Unable to resolve the type of a cast: " + qualifiedName + " - " + e.getMessage();
+                    logger.error(message);
+                    clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
+                }
+            }
+        }
+        HashMap<String, List<MethodUsage>> methodIdentifiers = new HashMap<>();
+        HashMap<String, List<Pair<VariableDeclarator, Type>>> fieldIdentifiers = new HashMap<>();
+        HashMap<String, List<Path>> returnClassReferences = new HashMap<>();
+        HashMap<String, List<ResolvedType>> typeParameterReferences = new HashMap<>();
+        collectMembersOfTypes(castTypes, tc, tokenReferences, methodIdentifiers, fieldIdentifiers, returnClassReferences, typeParameterReferences, "cast", testPrefixName, targetAssertion);
+        tokenIdentifiers.setClassIdentifiersMap(new HashMap<>());
+        tokenIdentifiers.setMethodIdentifiersMap(methodIdentifiers);
+        tokenIdentifiers.setFieldIdentifiersMap(fieldIdentifiers);
+        tokenIdentifiers.setParameterIdentifiersMap(new HashMap<>());
+        tokenIdentifiers.setLambdaIdentifiersMap(new HashMap<>());
+        tokenIdentifiers.setConstructorIdentifiersMap(new HashMap<>());
+        tokenIdentifiers.setEnumIdentifiersMap(new HashMap<>());
+        // The contextual information, as after the result of a call: the class and its static members
+        HashMap<String, List<Pair<VariableDeclarator, Type>>> fieldReferences = new HashMap<>();
+        HashMap<String, List<MethodUsage>> methodReferences = new HashMap<>();
+        HashMap<String, List<ResolvedConstructorDeclaration>> constructorReferences = new HashMap<>();
+        HashMap<String, List<EnumConstantDeclaration>> enumReferences = new HashMap<>();
+        tokenReferences.setReturnClasses(returnClassReferences);
+        processReturnClass(tc, tokenReferences, new HashMap<>(), new HashMap<>(), new HashMap<>(), new HashMap<>(), fieldReferences, methodReferences, constructorReferences, enumReferences);
+        tokenReferences.setContextualInfoType(ContextualInfoType.CAST_RETURN);
+        tokenReferences.setCurrentClasses(returnClassReferences);
+        tokenReferences.setReturnClasses(new HashMap<>());
+        tokenReferences.setMethods(methodReferences);
+        tokenReferences.setFields(fieldReferences);
+        tokenReferences.setConstructors(constructorReferences);
+        tokenReferences.setEnums(enumReferences);
+        tokenReferences.setTypeParameterReferences(typeParameterReferences);
     }
 
     /** The field {@code length} of the arrays ({@code int length}, JLS 10.7), with no declaring class. */

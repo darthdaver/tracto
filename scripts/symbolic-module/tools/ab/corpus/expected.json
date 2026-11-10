@@ -149,6 +149,11 @@
    "date": "2026-11-09T19:22:57",
    "jar_sha256": "0763dd6b39420b9c269a1610842ee2544644177f138a1a77d809b2c538500889",
    "reason": "Step 31: type parameters of the ancestors recorded (result of getAllAncestors was discarded), array length offered: 1,139 -> 1,172 complete, 0 worse"
+  },
+  {
+   "date": "2026-11-10T09:51:34",
+   "jar_sha256": "b3e917a1da7d9fcce01070f9c6815ec156020aece95c5bbf6a2ad76bb819087a",
+   "reason": "Step 32: casts ((T) expression). members of T; length of arrays resolved"
   }
  ],
  "oracles": {
@@ -975,12 +980,9 @@
     "status": "complete"
    },
    "PathMatcherFactoryTestSTARSplitTest|testSyntaxAndPatternStartingWithGlobCreatesPatternPathMatcherWithCorrectPattern_split_1|assertEquals(regexp, ((PatternPathMatcher) pathMatcher).getPattern().pattern());": {
-    "digest": "f986b09baaf6ed03",
-    "missing": [
-     "getPattern",
-     "pattern"
-    ],
-    "status": "loses a step"
+    "digest": "2d62890d88b783b6",
+    "missing": [],
+    "status": "complete"
    },
    "PathMatcherFactoryTestSTARSplitTest|testSyntaxAndPatternStartingWithRegexCreatesPatternPathMatcherWithCorrectPattern_split_0|assertTrue(pathMatcher instanceof PatternPathMatcher);": {
     "digest": "3ffb2340e4bdf077",
@@ -988,12 +990,9 @@
     "status": "complete"
    },
    "PathMatcherFactoryTestSTARSplitTest|testSyntaxAndPatternStartingWithRegexCreatesPatternPathMatcherWithCorrectPattern_split_1|assertEquals(\"test[02]\", ((PatternPathMatcher) pathMatcher).getPattern().pattern());": {
-    "digest": "f620280b8e0bc7eb",
-    "missing": [
-     "getPattern",
-     "pattern"
-    ],
-    "status": "loses a step"
+    "digest": "58e0ff521b4200bf",
+    "missing": [],
+    "status": "complete"
    },
    "ReadonlyFlagTestSTARSplitTest|testAssertWritable_split_0|assertThrows(ReadOnlyFileSystemException.class, () -> inTest.assertWritable());": {
     "digest": "9883b13b061e0e7a",
@@ -4245,11 +4244,9 @@
     "status": "complete"
    },
    "PrinterTestSTARSplitTest|sequentialTextNodesDontCollapse_split_1|assertEquals(\" there.\", ((TextNode) hello.nextSibling()).getWholeText());": {
-    "digest": "65c4741d352efedb",
-    "missing": [
-     "getWholeText"
-    ],
-    "status": "loses a step"
+    "digest": "7c30b5a09128ebf9",
+    "missing": [],
+    "status": "complete"
    },
    "PrinterTestSTARSplitTest|sequentialTextNodesDontCollapse_split_2|assertEquals(\"Hello there.\", div.text());": {
     "digest": "b62040f116a38b11",
@@ -5394,25 +5391,19 @@
     "status": "complete"
    },
    "ReflectionValueExtractorTestSTARSplitTest|artifactMap_split_0|assertEquals(\"g0\", ((Artifact) ReflectionValueExtractor.evaluate(\"project.artifactMap(g0:a0:c0)\", project)).getGroupId());": {
-    "digest": "7a8fe5d8ed538671",
-    "missing": [
-     "getGroupId"
-    ],
-    "status": "loses a step"
+    "digest": "590c4d7332ce28c1",
+    "missing": [],
+    "status": "complete"
    },
    "ReflectionValueExtractorTestSTARSplitTest|artifactMap_split_1|assertEquals(\"a1\", ((Artifact) ReflectionValueExtractor.evaluate(\"project.artifactMap(g1:a1:c1)\", project)).getArtifactId());": {
-    "digest": "67512b0f15b47aff",
-    "missing": [
-     "getArtifactId"
-    ],
-    "status": "loses a step"
+    "digest": "2be9281814459c70",
+    "missing": [],
+    "status": "complete"
    },
    "ReflectionValueExtractorTestSTARSplitTest|artifactMap_split_2|assertEquals(\"c2\", ((Artifact) ReflectionValueExtractor.evaluate(\"project.artifactMap(g2:a2:c2)\", project)).getClassifier());": {
-    "digest": "05bef9acf3167668",
-    "missing": [
-     "getClassifier"
-    ],
-    "status": "loses a step"
+    "digest": "1c331c32a1981d37",
+    "missing": [],
+    "status": "complete"
    },
    "ReflectionValueExtractorTestSTARSplitTest|badIndexedSyntax_split_0|assertNull(ReflectionValueExtractor.evaluate(\"h.value[\", value));": {
     "digest": "cb6f2b8b74761907",

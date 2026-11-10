@@ -17,5 +17,7 @@ public enum ContextualInfoType {
     LAMBDA_BODY,
     LAMBDA_RETURN,
     CONSTRUCTOR_CALL,
-    CONSTRUCTOR_RETURN
+    CONSTRUCTOR_RETURN,
+    // The value of a parenthesized cast, `((T) expression)` (Step 32)
+    CAST_RETURN
 }
