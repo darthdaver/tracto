@@ -2080,7 +2080,7 @@ public class TokensUtils {
                                         VariableDeclarator variableDeclarator = field.getValue0();
                                         Type varType = field.getValue1();
                                         // The field `length` of the arrays has no parent to resolve its type (Step 32)
-                                        ResolvedType resolvedType = variableDeclarator == ARRAY_LENGTH ? ResolvedPrimitiveType.INT : varType.resolve();
+                                        ResolvedType resolvedType = variableDeclarator == ARRAY_LENGTH ? ResolvedPrimitiveType.INT : resolveVariableType(variableDeclarator, varType);
                                         resolvedTypes.add(resolvedType);
                                         Optional<Node> parentNode = variableDeclarator.getParentNode();
                                         Optional<TypeDeclaration> declaringTypeDeclaration = Optional.empty();
@@ -2520,6 +2520,24 @@ public class TokensUtils {
 
     /** The field {@code length} of the arrays ({@code int length}, JLS 10.7), with no declaring class. */
     private static final VariableDeclarator ARRAY_LENGTH = new VariableDeclarator(PrimitiveType.intType(), "length");
+
+    /**
+     * The type of a variable or field. For a variable declared with {@code var} whose initializer the symbol solver
+     * cannot type as a whole, the type determined from the parts of the initializer, when it is not ambiguous (Step 34).
+     */
+    private static ResolvedType resolveVariableType(VariableDeclarator variableDeclarator, Type type) {
+        try {
+            return type.resolve();
+        } catch (RuntimeException e) {
+            if (type.isVarType()) {
+                Optional<ResolvedType> fromInitializer = VarTypes.fromInitializer(variableDeclarator);
+                if (fromInitializer.isPresent()) {
+                    return fromInitializer.get();
+                }
+            }
+            throw e;
+        }
+    }
 
     /** Adds the field {@code length} of the arrays to the field identifiers (Step 31). */
     static void addArrayLength(HashMap<String, List<Pair<VariableDeclarator, Type>>> fieldIdentifiers) {

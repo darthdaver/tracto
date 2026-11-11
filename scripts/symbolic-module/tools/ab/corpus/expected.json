@@ -159,6 +159,11 @@
    "date": "2026-11-10T18:02:36",
    "jar_sha256": "c4a2116d99effba0487f01243bfe10877e1aaa0a769325917846d4ca67f2b941",
    "reason": "Step 33: methods of a type whose lookup failed (unresolvable signatures, record accessors)"
+  },
+  {
+   "date": "2026-11-11T09:07:29",
+   "jar_sha256": "3c7d1eefbe47c023682ea3a75fac320d5178566cec0c1b789e5a5f9412274e52",
+   "reason": "Step 34: type of var variables from their initializers (cryptofs +10); 1 record-accessor body differs by identity hash (pre-existing, Step 35)"
   }
  ],
  "oracles": {
@@ -626,56 +631,44 @@
     "status": "complete"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadReturnsDecryptedDataInsideFile_split_0|assertThat(data, contains(decryptedData.get()));": {
-    "digest": "5d7aabd684f9e371",
+    "digest": "d1a08101ca9bf81f",
     "missing": [],
     "status": "complete"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadReturnsDecryptedDataInsideFile_split_1|assertEquals(CLEARTEXT_CHUNK_SIZE, data.remaining());": {
-    "digest": "fb7d4514b40c025a",
-    "missing": [
-     "remaining"
-    ],
-    "status": "loses a step"
+    "digest": "5621cef44dee9d40",
+    "missing": [],
+    "status": "complete"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadReturnsDecryptedDataInsideFile_split_2|assertEquals(CLEARTEXT_CHUNK_SIZE, data.capacity());": {
-    "digest": "c905189d172ef0fd",
-    "missing": [
-     "capacity"
-    ],
-    "status": "loses a step"
+    "digest": "6154d7a9b3763350",
+    "missing": [],
+    "status": "complete"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadReturnsDecrytedDataNearEOF_split_0|assertThat(data, contains(decryptedData.get()));": {
-    "digest": "9b70dce77f6b955e",
+    "digest": "4d4a77dc51bfd391",
     "missing": [],
     "status": "complete"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadReturnsDecrytedDataNearEOF_split_1|assertEquals(CLEARTEXT_CHUNK_SIZE - 3, data.remaining());": {
-    "digest": "7c94acf5c90f6e13",
-    "missing": [
-     "remaining"
-    ],
-    "status": "loses a step"
+    "digest": "e30f0777ad6a4140",
+    "missing": [],
+    "status": "complete"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadReturnsDecrytedDataNearEOF_split_2|assertEquals(CLEARTEXT_CHUNK_SIZE, data.capacity());": {
-    "digest": "cafd827d37f9f89a",
-    "missing": [
-     "capacity"
-    ],
-    "status": "loses a step"
+    "digest": "5847f202b1057f78",
+    "missing": [],
+    "status": "complete"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadReturnsEmptyChunkAfterEOF_split_0|assertEquals(0, data.remaining());": {
-    "digest": "996abe4718b95f54",
-    "missing": [
-     "remaining"
-    ],
-    "status": "loses a step"
+    "digest": "cd0525a78ca45c0c",
+    "missing": [],
+    "status": "complete"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadReturnsEmptyChunkAfterEOF_split_1|assertEquals(CLEARTEXT_CHUNK_SIZE, data.capacity());": {
-    "digest": "45008cddc8035fb6",
-    "missing": [
-     "capacity"
-    ],
-    "status": "loses a step"
+    "digest": "36be05bc8d8c170b",
+    "missing": [],
+    "status": "complete"
    },
    "ChunkLoaderTestSTARSplitTest|testLoadThrowsAndNotifiesOnFailedDecryption_split_0|assertThrows(AuthenticationFailedException.class, () -> inTest.load(chunkIndex));": {
     "digest": "a84b808b30304ab6",
@@ -700,11 +693,9 @@
     "status": "complete"
    },
    "CryptoFileSystemModuleTestSTARSplitTest|testEventConsumerIsDecorated_split_0|assertDoesNotThrow(() -> decoratedConsumer.accept(event));": {
-    "digest": "a7ca6900c9de93b5",
-    "missing": [
-     "accept"
-    ],
-    "status": "loses a step"
+    "digest": "98c44e24ac6f5b26",
+    "missing": [],
+    "status": "complete"
    },
    "CryptoFileSystemModuleTestSTARSplitTest|testInUseManagerIsStubOnReadOnly_split_0|assertInstanceOf(StubInUseManager.class, result);": {
     "digest": null,
@@ -712,26 +703,19 @@
     "status": "dropped"
    },
    "CryptoFileSystemModuleTestSTARSplitTest|testOwnerIsBlankOrNull_split_0|assertTrue(result.isEmpty());": {
-    "digest": "4b0396347862b2b1",
-    "missing": [
-     "isEmpty"
-    ],
-    "status": "loses a step"
+    "digest": "d0c924311782f465",
+    "missing": [],
+    "status": "complete"
    },
    "CryptoFileSystemModuleTestSTARSplitTest|testOwnerIsInsideBounds_split_0|assertTrue(result.isPresent());": {
-    "digest": "1dbe3fff26064a03",
-    "missing": [
-     "isPresent"
-    ],
-    "status": "loses a step"
+    "digest": "77239ec6d88a8aaf",
+    "missing": [],
+    "status": "complete"
    },
    "CryptoFileSystemModuleTestSTARSplitTest|testOwnerIsInsideBounds_split_1|assertEquals(expectedLength, result.get().length());": {
-    "digest": "eb1481228b28e0e4",
-    "missing": [
-     "get",
-     "length"
-    ],
-    "status": "loses a step"
+    "digest": "018d6ae35647ad0c",
+    "missing": [],
+    "status": "complete"
    },
    "CryptoPosixFileAttributesTestSTARSplitTest|testGetPermissionsReadOnly_split_0|assertArrayEquals(EnumSet.of(OWNER_READ, GROUP_READ, OTHERS_READ, OWNER_EXECUTE, GROUP_EXECUTE, OTHERS_EXECUTE).toArray(), attrs.permissions().toArray());": {
     "digest": "38d527939db541c8",
@@ -947,7 +931,7 @@
     "status": "complete"
    },
    "OrphanContentDirTestSTARSplitTest|testFixWithNonCryptomatorFiles_split_0|assertTrue(Files.exists(stepParentDir.path().resolve(\"unrelated.file\")));": {
-    "digest": "36fa0d66d0459bba",
+    "digest": "1acc09a200614f8f",
     "missing": [],
     "status": "complete"
    },

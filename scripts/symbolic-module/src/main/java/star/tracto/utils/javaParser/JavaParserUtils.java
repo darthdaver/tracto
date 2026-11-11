@@ -23,6 +23,7 @@ import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserMethodDeclaration;
 import com.github.javaparser.symbolsolver.javassistmodel.JavassistMethodDeclaration;
 import com.github.javaparser.symbolsolver.reflectionmodel.ReflectionMethodDeclaration;
+import com.github.javaparser.resolution.TypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JarTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
@@ -191,6 +192,15 @@ public class JavaParserUtils {
             logger.warn("Type {} not resolved - {}", canonicalName, e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /**
+     * The type solvers of the repository set by {@link #setRepoJavaParser}, to resolve a name in the context of a node.
+     *
+     * @return the type solver, or empty if it is not set
+     */
+    public static Optional<TypeSolver> getRepoTypeSolver() {
+        return Optional.ofNullable(repoTypeSolver);
     }
 
     /**

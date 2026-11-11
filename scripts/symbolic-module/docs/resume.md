@@ -36,6 +36,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 31 | on the corpus: 1,139 → 1,172 complete (+33, 0 worse) |
 | After Step 32 | on the corpus: 1,172 → 1,178 complete (+6, 0 worse); the v1 classes with a cast: +22 |
 | After Step 33 | on the corpus: 1,178 → 1,199 complete (+21, 0 worse); the 52 v1 classes with chain causes, v1 → Step 32: +594, 0 worse |
+| After Step 34 | on the corpus: 1,199 → 1,209 complete (+10, 0 worse); the cryptofs classes with a `var` receiver: +17 |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -211,7 +212,10 @@ examples to start from.
    re-measured on the 52 v1 classes with these causes (v1 jar → Step 32 jar: +594 oracles, 0 worse; 257 missing
    steps left); then the methods of a type whose lookup failed as a whole (a type of a dependency in one signature:
    eec `Styles.toColor`, esapi `ESAPI.securityConfiguration`, steve, ffmpeg, cryptofs; the accessors of the records).
-   Remaining shapes, causes to be examined (Step 33 doc): lambda bodies `()->x.` (cryptofs), parenthesized expressions `(new X()).` (esapi), arrays
+   **Step 34 done** (`docs/fixes/step-34-var-initializers.md`): the lambda bodies `()->x.` (cryptofs) were not the
+   cause, the variables declared with `var` were: their type from the parts of the initializer when the symbol solver
+   cannot type it as a whole (an argument of a type of a dependency), when not ambiguous.
+   Remaining shapes, causes to be examined: parenthesized expressions `(new X()).` (esapi), arrays
    returned through a type variable (`strings.get(0).length`, eec), the members of an interface's `Object`
    (`data.get(0).toString`), fields of other classes (`structEval.threadMemo`, jsoup).
 9. **Dependencies** (cause `dependency`, 91 in v1): needs a design decision of the author on the inference setting
@@ -235,6 +239,9 @@ examples to start from.
    - after the name of a class (`String.`), its instance and protected methods are offered too (`clone`, `finalize`):
      the modifier rules are combined with OR and the rule "not private" alone accepts them
      (`JavaParserUtils.checkModifiersRules`, found in Step 33);
+   - the body of a method without a source (the JDK read by reflection, the accessors of the records) is garbage taken
+     from the text of its `MethodUsage` (`JavaParserUtils.getBodyFromMethodUsage`), with an identity hash for the
+     records (not deterministic; found in Step 34): Step 35;
    - the imports and the package of the focal class are added to the classes of the test class (not visible there
      unless imported in the test class too);
    - the qualifiers `Assert.`/`Assertions.` are removed with a text replacement (`TestUtils`, targets and bodies):
