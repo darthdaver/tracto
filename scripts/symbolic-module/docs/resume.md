@@ -37,6 +37,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 32 | on the corpus: 1,172 → 1,178 complete (+6, 0 worse); the v1 classes with a cast: +22 |
 | After Step 33 | on the corpus: 1,178 → 1,199 complete (+21, 0 worse); the 52 v1 classes with chain causes, v1 → Step 32: +594, 0 worse |
 | After Step 34 | on the corpus: 1,199 → 1,209 complete (+10, 0 worse); the cryptofs classes with a `var` receiver: +17 |
+| After Step 35 | on the corpus: unchanged (1,209); 290 garbage bodies of methods without a source emptied, the corpus output deterministic again |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -239,9 +240,8 @@ examples to start from.
    - after the name of a class (`String.`), its instance and protected methods are offered too (`clone`, `finalize`):
      the modifier rules are combined with OR and the rule "not private" alone accepts them
      (`JavaParserUtils.checkModifiersRules`, found in Step 33);
-   - the body of a method without a source (the JDK read by reflection, the accessors of the records) is garbage taken
-     from the text of its `MethodUsage` (`JavaParserUtils.getBodyFromMethodUsage`), with an identity hash for the
-     records (not deterministic; found in Step 34): Step 35;
+   - ~~the body of a method without a source is garbage taken from the text of its `MethodUsage`~~: **Step 35 done**
+     (`docs/fixes/step-35-sourceless-bodies.md`);
    - the imports and the package of the focal class are added to the classes of the test class (not visible there
      unless imported in the test class too);
    - the qualifiers `Assert.`/`Assertions.` are removed with a text replacement (`TestUtils`, targets and bodies):

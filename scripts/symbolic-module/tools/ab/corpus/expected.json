@@ -164,6 +164,11 @@
    "date": "2026-11-11T09:07:29",
    "jar_sha256": "3c7d1eefbe47c023682ea3a75fac320d5178566cec0c1b789e5a5f9412274e52",
    "reason": "Step 34: type of var variables from their initializers (cryptofs +10); 1 record-accessor body differs by identity hash (pre-existing, Step 35)"
+  },
+  {
+   "date": "2026-11-11T09:35:52",
+   "jar_sha256": "27e0a76d180e0490ffed498714e5278999a349dfa07d3ae7eeae10cad11888be",
+   "reason": "Step 35: no body for methods without a source (290 garbage bodies emptied in 98 steps; statuses unchanged)"
   }
  ],
  "oracles": {
@@ -369,7 +374,7 @@
     "status": "complete"
    },
    "NewsAttributesTestSTARSplitTest|testNewsAttributesAsMap_split_6|assertArrayEquals(Arrays.stream(attributes.getGenres()).map(NewsAttributes.NewsGenre::toString).toArray(String[]::new), map.get(NewsAttributes.GENRES));": {
-    "digest": "f9f71894f8f568c3",
+    "digest": "705848528a0e3978",
     "missing": [],
     "status": "complete"
    },
@@ -728,17 +733,17 @@
     "status": "complete"
    },
    "DirStructureTestSTARSplitTest|testAllCombosOfDataAndConfigAndKey_split_0|assertEquals(expectedResult, DirStructure.checkDirStructure(vaultPath, CONFIG, KEY));": {
-    "digest": "725e764e6f892a96",
+    "digest": "6cb9cdd7256137ea",
     "missing": [],
     "status": "complete"
    },
    "DirStructureTestSTARSplitTest|testNonDirectoryVaultPathThrowsIOException_split_0|assertThrows(IOException.class, () -> DirStructure.checkDirStructure(tmp, CONFIG, KEY));": {
-    "digest": "4e216da5f6b46ef2",
+    "digest": "d86bd1e30f143b95",
     "missing": [],
     "status": "complete"
    },
    "DirStructureTestSTARSplitTest|testNonExistingVaultPathThrowsIOException_split_0|assertThrows(IOException.class, () -> DirStructure.checkDirStructure(vaultPath, CONFIG, KEY));": {
-    "digest": "9f9c7184b3a43e1d",
+    "digest": "a4583274a32eecd0",
     "missing": [],
     "status": "complete"
    },
@@ -868,7 +873,7 @@
     "status": "complete"
    },
    "MissingContentDirTestSTARSplitTest|testFix_split_0|assertDoesNotThrow(() -> Files.readAttributes(expectedPath, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS));": {
-    "digest": "08abb22dd9513e56",
+    "digest": "a1c7852ea678adef",
     "missing": [],
     "status": "complete"
    },
@@ -891,7 +896,7 @@
     "status": "loses a step"
    },
    "MissingDirIdBackupTestSTARSplitTest|testGetFix_split_0|assertTrue(result.getFix(Mockito.mock(Path.class), Mockito.mock(VaultConfig.class), Mockito.mock(Masterkey.class), Mockito.mock(Cryptor.class)).isPresent());": {
-    "digest": "92e1b6b7847f0b68",
+    "digest": "65b9689853bcb917",
     "missing": [
      "Cryptor",
      "Masterkey",
@@ -931,7 +936,7 @@
     "status": "complete"
    },
    "OrphanContentDirTestSTARSplitTest|testFixWithNonCryptomatorFiles_split_0|assertTrue(Files.exists(stepParentDir.path().resolve(\"unrelated.file\")));": {
-    "digest": "1acc09a200614f8f",
+    "digest": "f4e4b9ea41cc6002",
     "missing": [],
     "status": "complete"
    },
@@ -2036,7 +2041,7 @@
     "status": "complete"
    },
    "HeaderStyleTestSTARSplitTest|testAnnoOnClassAndMethodTest_split_2|assertEquals(fill.getPatternType(), PatternType.solid);": {
-    "digest": "0cd4733e9355efff",
+    "digest": "f0b34def8feaa815",
     "missing": [],
     "status": "complete"
    },
@@ -2066,7 +2071,7 @@
     "status": "complete"
    },
    "HeaderStyleTestSTARSplitTest|testAnnoOnClassTest_split_2|assertEquals(fill.getPatternType(), PatternType.solid);": {
-    "digest": "9054329c3b8dbdee",
+    "digest": "cf34be8aae70211e",
     "missing": [],
     "status": "complete"
    },
@@ -2091,7 +2096,7 @@
     "status": "complete"
    },
    "HeaderStyleTestSTARSplitTest|testFillBgColor_split_2|assertEquals(fill.getPatternType(), PatternType.solid);": {
-    "digest": "92e65583e27093c3",
+    "digest": "0a882dbc7fd592f5",
     "missing": [],
     "status": "complete"
    },
@@ -2111,7 +2116,7 @@
     "status": "complete"
    },
    "HeaderStyleTestSTARSplitTest|testFontColor_split_2|assertEquals(fill.getPatternType(), PatternType.solid);": {
-    "digest": "e41a228f23dffa35",
+    "digest": "15ae01d48e179744",
     "missing": [],
     "status": "complete"
    },
@@ -2136,7 +2141,7 @@
     "status": "complete"
    },
    "HeaderStyleTestSTARSplitTest|testOriginal_split_2|assertEquals(fill.getPatternType(), PatternType.solid);": {
-    "digest": "cb0310f6fc3c5c1a",
+    "digest": "565eb697063268aa",
     "missing": [],
     "status": "complete"
    },
@@ -3168,17 +3173,17 @@
   },
   "ffmpeg": {
    "FFmpegExecutorTestSTARSplitTest|testFilter_split_0|assertEquals(FFmpegJob.State.FINISHED, job.getState());": {
-    "digest": "cd655153169a5de9",
+    "digest": "74ca9567ce2bf30a",
     "missing": [],
     "status": "complete"
    },
    "FFmpegExecutorTestSTARSplitTest|testMetaTags_split_0|assertEquals(FFmpegJob.State.FINISHED, job.getState());": {
-    "digest": "616a22757fb635ac",
+    "digest": "f17e8108392db8df",
     "missing": [],
     "status": "complete"
    },
    "FFmpegExecutorTestSTARSplitTest|testNormal_split_0|assertEquals(FFmpegJob.State.FINISHED, job.getState());": {
-    "digest": "d2c1ad44831801d7",
+    "digest": "d8cc090ce64db02e",
     "missing": [],
     "status": "complete"
    },
@@ -3188,7 +3193,7 @@
     "status": "complete"
    },
    "FFmpegExecutorTestSTARSplitTest|testProgress_split_1|assertEquals(FFmpegJob.State.FINISHED, job.getState());": {
-    "digest": "12cdccd619089c6e",
+    "digest": "4e1d87ed277a2699",
     "missing": [],
     "status": "complete"
    },
@@ -3198,12 +3203,12 @@
     "status": "complete"
    },
    "FFmpegExecutorTestSTARSplitTest|testProgress_split_3|assertThat(progesses.get(0).status, is(Progress.Status.CONTINUE));": {
-    "digest": "aa8aa56a362cfd89",
+    "digest": "9c73843a9e756b4d",
     "missing": [],
     "status": "complete"
    },
    "FFmpegExecutorTestSTARSplitTest|testProgress_split_4|assertThat(progesses.get(progesses.size() - 1).status, is(Progress.Status.END));": {
-    "digest": "8348cbf39ca37dcd",
+    "digest": "4c62321ae80af3e6",
     "missing": [],
     "status": "complete"
    },
@@ -3225,7 +3230,7 @@
     "status": "complete"
    },
    "FFmpegExecutorTestSTARSplitTest|testTwoPass_split_1|assertEquals(FFmpegJob.State.FINISHED, job.getState());": {
-    "digest": "9443d4204274c143",
+    "digest": "63ac3aeca1dab671",
     "missing": [],
     "status": "complete"
    },
@@ -3453,37 +3458,37 @@
     "status": "complete"
    },
    "FFmpegUtilsTestSTARSplitTest|testToTimecode_split_0|assertEquals(\"00:00:00\", toTimecode(0, TimeUnit.NANOSECONDS));": {
-    "digest": "e83b3a98319f6dab",
+    "digest": "ca48204370945d4a",
     "missing": [],
     "status": "complete"
    },
    "FFmpegUtilsTestSTARSplitTest|testToTimecode_split_1|assertEquals(\"00:00:00.000000001\", toTimecode(1, TimeUnit.NANOSECONDS));": {
-    "digest": "677cf4ab265242ba",
+    "digest": "ffa5adfe60ad41b2",
     "missing": [],
     "status": "complete"
    },
    "FFmpegUtilsTestSTARSplitTest|testToTimecode_split_2|assertEquals(\"00:00:00.000001\", toTimecode(1, TimeUnit.MICROSECONDS));": {
-    "digest": "b3b09efafe973f55",
+    "digest": "e3eea20e4dd480f0",
     "missing": [],
     "status": "complete"
    },
    "FFmpegUtilsTestSTARSplitTest|testToTimecode_split_3|assertEquals(\"00:00:00.001\", toTimecode(1, TimeUnit.MILLISECONDS));": {
-    "digest": "25937ba4c9861be1",
+    "digest": "37a058ae6fc6c8ea",
     "missing": [],
     "status": "complete"
    },
    "FFmpegUtilsTestSTARSplitTest|testToTimecode_split_4|assertEquals(\"00:00:01\", toTimecode(1, TimeUnit.SECONDS));": {
-    "digest": "9d71606ee913a140",
+    "digest": "f007a059fd62ecec",
     "missing": [],
     "status": "complete"
    },
    "FFmpegUtilsTestSTARSplitTest|testToTimecode_split_5|assertEquals(\"00:01:00\", toTimecode(1, TimeUnit.MINUTES));": {
-    "digest": "e4f2f1a60e1990de",
+    "digest": "1cb00347fcf9949b",
     "missing": [],
     "status": "complete"
    },
    "FFmpegUtilsTestSTARSplitTest|testToTimecode_split_6|assertEquals(\"01:00:00\", toTimecode(1, TimeUnit.HOURS));": {
-    "digest": "c016c92a8de8cb3c",
+    "digest": "bc8ebd198bf860ee",
     "missing": [],
     "status": "complete"
    },
@@ -3821,7 +3826,7 @@
     "status": "loses a step"
    },
    "FormElementTestSTARSplitTest|createsSubmitableConnection_split_0|assertEquals(Connection.Method.GET, con.request().method());": {
-    "digest": "e8295a94cc04edb5",
+    "digest": "a98792b512733e9e",
     "missing": [],
     "status": "complete"
    },
@@ -3838,7 +3843,7 @@
     "status": "loses a step"
    },
    "FormElementTestSTARSplitTest|createsSubmitableConnection_split_3|assertEquals(Connection.Method.POST, con2.request().method());": {
-    "digest": "02da5d3ffbdba4eb",
+    "digest": "7e4601c5fb180378",
     "missing": [],
     "status": "complete"
    },
@@ -5829,7 +5834,7 @@
   },
   "steve": {
    "ChangeConfigurationTaskTestSTARSplitTest|testAuthorizationKey_split_0|assertEquals(ConfigurationKeyEnum.AuthorizationKey.name(), request.getKey());": {
-    "digest": "770974b73f8e2ec3",
+    "digest": "22ed2e8eb18dc89e",
     "missing": [
      "getKey"
     ],
@@ -5843,7 +5848,7 @@
     "status": "loses a step"
    },
    "ChangeConfigurationTaskTestSTARSplitTest|testCpoName_split_0|assertEquals(ConfigurationKeyEnum.CpoName.name(), request.getKey());": {
-    "digest": "ef42e8dd151105de",
+    "digest": "97d6cee5b36fe1d8",
     "missing": [
      "getKey"
     ],
@@ -6274,47 +6279,47 @@
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test19_split_0|assertEquals(capturedForm.getExpired(), BooleanType.FALSE);": {
-    "digest": "a3652b59b4200144",
+    "digest": "5f677ce509b58330",
     "missing": [],
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test19_split_1|assertEquals(capturedForm.getInTransaction(), BooleanType.ALL);": {
-    "digest": "9368ef61ed0120e7",
+    "digest": "4cc44b025d4cbe6f",
     "missing": [],
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test19_split_2|assertEquals(capturedForm.getBlocked(), BooleanType.ALL);": {
-    "digest": "505c4a3efb9c50ac",
+    "digest": "3cdb2672266cb840",
     "missing": [],
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test20_split_0|assertEquals(capturedForm.getExpired(), BooleanType.ALL);": {
-    "digest": "4b6f806dee12e215",
+    "digest": "66aebde13d7674f0",
     "missing": [],
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test20_split_1|assertEquals(capturedForm.getInTransaction(), BooleanType.TRUE);": {
-    "digest": "e9a49fe511e8f634",
+    "digest": "9e0075848f295476",
     "missing": [],
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test20_split_2|assertEquals(capturedForm.getBlocked(), BooleanType.ALL);": {
-    "digest": "505c4a3efb9c50ac",
+    "digest": "3cdb2672266cb840",
     "missing": [],
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test21_split_0|assertEquals(capturedForm.getExpired(), BooleanType.ALL);": {
-    "digest": "4b6f806dee12e215",
+    "digest": "66aebde13d7674f0",
     "missing": [],
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test21_split_1|assertEquals(capturedForm.getInTransaction(), BooleanType.ALL);": {
-    "digest": "9368ef61ed0120e7",
+    "digest": "4cc44b025d4cbe6f",
     "missing": [],
     "status": "complete"
    },
    "OcppTagsRestControllerTestSTARSplitTest|test21_split_2|assertEquals(capturedForm.getBlocked(), BooleanType.FALSE);": {
-    "digest": "e23fd894fee2a2ae",
+    "digest": "2ff934bbcc1cfc0d",
     "missing": [],
     "status": "complete"
    },
@@ -6324,14 +6329,14 @@
     "status": "complete"
    },
    "OcppVersionTestSTARSplitTest|testToProtocol_split_0|assertEquals(transport, protocol.getTransport());": {
-    "digest": "27f0cb8cef51e114",
+    "digest": "e7431445775f2b7e",
     "missing": [
      "getTransport"
     ],
     "status": "loses a step"
    },
    "OcppVersionTestSTARSplitTest|testToProtocol_split_1|assertEquals(version, protocol.getVersion());": {
-    "digest": "a9cc8710990a2014",
+    "digest": "ad53111b0a0cf594",
     "missing": [
      "getVersion"
     ],

@@ -1391,6 +1391,11 @@ public class JavaParserUtils {
     public static Optional<String> getBodyFromMethodUsage(MethodUsage methodUsage) {
         Optional<String> body = Optional.empty();
         int signatureIdx = methodUsage.toString().indexOf(methodUsage.getSignature());
+        if (signatureIdx == -1) {
+            // A method without a source (read by reflection, the accessor of a record): its text is not code, but the
+            // description of the object, with an identity hash for some (Step 35)
+            return Optional.empty();
+        }
         int bodyIdx = methodUsage.toString().substring(signatureIdx + methodUsage.getSignature().length()).indexOf("{");
         if (bodyIdx != -1) {
             // Extract the body of the method from the signature index
@@ -1411,6 +1416,10 @@ public class JavaParserUtils {
     public static Optional<String> getBodyFromResolvedConstructorDeclaration(ResolvedConstructorDeclaration resolvedConstructorDeclaration) {
         Optional<String> body = Optional.empty();
         int signatureIdx = resolvedConstructorDeclaration.toString().indexOf(resolvedConstructorDeclaration.getSignature());
+        if (signatureIdx == -1) {
+            // A constructor without a source: its text is the description of the object (Step 35)
+            return Optional.empty();
+        }
         int bodyIdx = resolvedConstructorDeclaration.toString().substring(signatureIdx + resolvedConstructorDeclaration.getSignature().length()).indexOf("{");
         if (bodyIdx != -1) {
             // Extract the body of the method from the signature index

@@ -266,6 +266,9 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
 - Step 34: the type of a variable declared with `var` whose initializer the symbol solver cannot type as a whole (an
   argument of a type of a dependency), from the parts of the initializer when not ambiguous (corpus: +10 complete, 0
   worse; the cryptofs classes with a `var` receiver: +17).
+- Step 35: no body in the contextual information of a method without a source (the JDK read by reflection, the
+  accessors of the records: a description of the object was taken, with an identity hash for the records); candidates
+  and statuses unchanged.
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles
