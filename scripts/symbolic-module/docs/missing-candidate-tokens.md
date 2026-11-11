@@ -269,6 +269,9 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
 - Step 35: no body in the contextual information of a method without a source (the JDK read by reflection, the
   accessors of the records: a description of the object was taken, with an identity hash for the records); candidates
   and statuses unchanged.
+- Step 36: the token steps of a target do not depend on the targets processed before it (the flag "the current value
+  is a `Stream`" was kept from one datapoint to the next: `LAMBDA_PARAM` and `LAMBDA_CALL` outside streams); statuses
+  unchanged, 11 corpus oracles with other token steps.
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles
@@ -312,10 +315,9 @@ several causes):
    `MatcherAssert.` removed, the sources of Hamcrest given to the solver (`assertion-api/`).
 8. **Type inference of the chains** (451 in v1, 436 alone; the largest but the hardest).
 9. **Dependencies** (85): design (section 6) with the answer of the author on the inference setting.
-10. **Pre-existing defects**, each its own step: candidates depending on the processing history (state across
-   datapoints and classes: static `unsolvableTokens`, the shallow `cloneRootTokenReferences`); the protected-member
+10. **Pre-existing defects**, each its own step: ~~candidates depending on the processing history~~ (Step 36); the protected-member
    filter (`String.contains` on package names); a substring of an error message holding an identity hash; the test methods annotated `@ParameterizedTest` (or other test annotations than `@Test`)
-   offered as candidates; the private members of the JDK classes offered after a value of that type (`String.isMalformed3`); the `LAMBDA_PARAM` placeholder offered outside lambdas (`assertEquals(hot.toString(`).
+   offered as candidates; the private members of the JDK classes offered after a value of that type (`String.isMalformed3`); ~~the `LAMBDA_PARAM` placeholder offered outside lambdas~~ (same cause, Step 36).
 
 Proposed to the author on 2026-11-05 (not decided): cut the first training dataset after steps 1-3 (about 470 oracles
 at most, the causes overlap), measured with the full test of `docs/resume.md` section 7.

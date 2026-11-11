@@ -325,6 +325,7 @@ public class TokensUtils {
                         List<Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>>> tokenIdentifiersStack = new ArrayList<>();
                         rootTokenIdentifiersCollector = new TokenIdentifiersCollector();
                         rootTokenReferencesCollector = new TokenReferencesCollector();
+                        resetDatapointState();
                         // Get the target assertion from the test prefix
                         String targetAssertion = datapoint.target();
 
@@ -697,6 +698,7 @@ public class TokensUtils {
                         List<Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>>> tokenIdentifiersStack = new ArrayList<>();
                         rootTokenIdentifiersCollector = new TokenIdentifiersCollector();
                         rootTokenReferencesCollector = new TokenReferencesCollector();
+                        resetDatapointState();
                         // Get the target assertion from the test prefix
                         String targetAssertion = datapointId + "::" + "inference";
                         logger.info("Processing test class " + (testPrefixClass.getFullyQualifiedName().isPresent() ? testPrefixClass.getFullyQualifiedName().get() : testPrefixClass.getNameAsString()));
@@ -934,6 +936,20 @@ public class TokensUtils {
     }
 
 
+
+    /**
+     * Clears the state of the processing of a target that is kept in static fields, so that the token steps of a target do
+     * not depend on the targets processed before it (Step 36): the flag telling that the current value is a
+     * {@code Stream} (set by {@code list.stream()}, cleared only by a {@code ->}, it was kept by the next targets, which
+     * got the {@code LAMBDA_PARAM} placeholder and the {@code LAMBDA_CALL} contextual information) and the tokens that
+     * cannot be processed further (read by the inference only; they were kept unless a later generated token cleared
+     * them).
+     */
+    private static void resetDatapointState() {
+        streamFlag = false;
+        unsolvableTokens = new HashSet<>();
+        unsolvableWarn = false;
+    }
 
     public static TokenIdentifiersCollector cloneRootTokenIdentifiers () {
         TokenIdentifiersCollector clonedTokenIdentifierCollector = new TokenIdentifiersCollector(

@@ -169,6 +169,11 @@
    "date": "2026-11-11T09:35:52",
    "jar_sha256": "27e0a76d180e0490ffed498714e5278999a349dfa07d3ae7eeae10cad11888be",
    "reason": "Step 35: no body for methods without a source (290 garbage bodies emptied in 98 steps; statuses unchanged)"
+  },
+  {
+   "date": "2026-11-11T14:08:13",
+   "jar_sha256": "9980fb0ae40c345bc8b0589121e12e11d4e5291d020a94fa712e397e9c55bbab",
+   "reason": "Step 36: per-datapoint reset of the stream flag (LAMBDA_PARAM / LAMBDA_CALL leaked from an earlier stream target; crawler 11 oracles, statuses unchanged)"
   }
  ],
  "oracles": {
@@ -219,22 +224,22 @@
     "status": "complete"
    },
    "LinkAttributesTestSTARSplitTest|testLinkAttributesAsMap_split_0|assertEquals(attributes.getHref().toString(), map.get(LinkAttributes.HREF)[0]);": {
-    "digest": "1a09f78ca34f4a81",
+    "digest": "e4735d6fbd8cdb8e",
     "missing": [],
     "status": "complete"
    },
    "LinkAttributesTestSTARSplitTest|testLinkAttributesAsMap_split_1|assertEquals(attributes.getParams().get(\"rel\"), map.get(\"params.rel\")[0]);": {
-    "digest": "0a136453d28f9a41",
+    "digest": "90ef93af594221f4",
     "missing": [],
     "status": "complete"
    },
    "LinkAttributesTestSTARSplitTest|testLinkAttributesAsMap_split_2|assertEquals(attributes.getParams().get(\"hreflang\"), map.get(\"params.hreflang\")[0]);": {
-    "digest": "da8eb86546e241a2",
+    "digest": "db2558a9e73615dc",
     "missing": [],
     "status": "complete"
    },
    "LinkAttributesTestSTARSplitTest|testNullLinkAttributesAsMap_split_0|assertNull(map.get(LinkAttributes.HREF));": {
-    "digest": "651d41bb84317eb3",
+    "digest": "b65630b0119fae91",
     "missing": [],
     "status": "complete"
    },
@@ -379,37 +384,37 @@
     "status": "complete"
    },
    "NewsAttributesTestSTARSplitTest|testNullNewsAttributesAsMap_split_0|assertNull(map.get(NewsAttributes.NAME));": {
-    "digest": "9be2911f66c5e253",
+    "digest": "bbb1bf4494659e39",
     "missing": [],
     "status": "complete"
    },
    "NewsAttributesTestSTARSplitTest|testNullNewsAttributesAsMap_split_1|assertNull(map.get(NewsAttributes.TITLE));": {
-    "digest": "445df957fecfef63",
+    "digest": "a2877b72e96a0d37",
     "missing": [],
     "status": "complete"
    },
    "NewsAttributesTestSTARSplitTest|testNullNewsAttributesAsMap_split_2|assertNull(map.get(NewsAttributes.LANGUAGE));": {
-    "digest": "c981827039eb953f",
+    "digest": "997f96f744a29b83",
     "missing": [],
     "status": "complete"
    },
    "NewsAttributesTestSTARSplitTest|testNullNewsAttributesAsMap_split_3|assertNull(map.get(NewsAttributes.PUBLICATION_DATE));": {
-    "digest": "bf8473a4fec82112",
+    "digest": "9b22fc34ae68c01c",
     "missing": [],
     "status": "complete"
    },
    "NewsAttributesTestSTARSplitTest|testNullNewsAttributesAsMap_split_4|assertNull(map.get(NewsAttributes.KEYWORDS));": {
-    "digest": "1c3f8edd5fde9e64",
+    "digest": "59b0b3cf9dee7947",
     "missing": [],
     "status": "complete"
    },
    "NewsAttributesTestSTARSplitTest|testNullNewsAttributesAsMap_split_5|assertNull(map.get(NewsAttributes.STOCK_TICKERS));": {
-    "digest": "36bf0f38ca94e465",
+    "digest": "6e401f0fb2eb0e99",
     "missing": [],
     "status": "complete"
    },
    "NewsAttributesTestSTARSplitTest|testNullNewsAttributesAsMap_split_6|assertNull(map.get(NewsAttributes.GENRES));": {
-    "digest": "2b78f6e8d8b0fee2",
+    "digest": "407a3244ad6f5fe5",
     "missing": [],
     "status": "complete"
    },

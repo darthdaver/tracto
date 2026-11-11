@@ -38,6 +38,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 33 | on the corpus: 1,178 → 1,199 complete (+21, 0 worse); the 52 v1 classes with chain causes, v1 → Step 32: +594, 0 worse |
 | After Step 34 | on the corpus: 1,199 → 1,209 complete (+10, 0 worse); the cryptofs classes with a `var` receiver: +17 |
 | After Step 35 | on the corpus: unchanged (1,209); 290 garbage bodies of methods without a source emptied, the corpus output deterministic again |
+| After Step 36 | on the corpus: unchanged (1,209, 0 worse); the stream flag no longer leaks from one target to the next (`LAMBDA_PARAM` and `LAMBDA_CALL` outside streams: crawler 11 oracles) |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -222,10 +223,10 @@ examples to start from.
 9. **Dependencies** (cause `dependency`, 91 in v1): needs a design decision of the author on the inference setting
    (section 6 of `missing-candidate-tokens.md`).
 10. **Pre-existing defects**, each its own step:
-   - the candidates depend on the processing history: state kept across datapoints and classes (the static
-     `unsolvableTokens`/`rootUnsolvableTokens` of `TokensUtils`; `cloneRootTokenReferences` copies maps shallowly and
-     the stream path appends into the root's lists). Fixing it also makes the full test splittable per test class
-     (section 7);
+   - ~~the candidates depend on the processing history~~: **Step 36 done** (`docs/fixes/step-36-processing-history.md`;
+     decided by the author on 2026-11-11, with the next two defects, before the dataset v2): the static stream flag
+     was kept from one target to the next; the shallow copies share lists only within one target. The full test can
+     now be split per test class (section 7);
    - the protected-member filter compares package names with `String.contains`;
    - an error path takes a substring of a message that contains an identity hash (`Range [131, 126) out of bounds`,
      cryptofs `ChunkSaverTest`);
@@ -252,9 +253,8 @@ examples to start from.
    - the comments of the arguments of a target, moved before the statement by the printing of the normalization and of
      the split, stay in the test prefix where the target was (`// // /*<MASK_PLACEHOLDER>*/`; Step 30, cryptofs
      `CryptoFileSystemPropertiesTest`);
-   - the `LAMBDA_PARAM` placeholder (added when the token after `(` is missing in a stream context,
-     `TokensUtils` ~line 412) is offered outside lambdas (eec `CacheTest`: `assertEquals(hot.toString(`); probably the
-     stream flag is kept across datapoints (not verified).
+   - ~~the `LAMBDA_PARAM` placeholder offered outside lambdas~~ (eec `CacheTest`: `assertEquals(hot.toString(`): the
+     stream flag kept across datapoints, **Step 36 done**.
 
 **When to stop and train** (decided by the author on 2026-11-07: after steps 4-6, see section 2; the first proposal was): cut the first training dataset after steps 1-3
 (static imports, class names, assigned assertions; about 470 oracles at most, the causes overlap), with the full test
