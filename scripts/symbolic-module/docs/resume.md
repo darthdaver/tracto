@@ -39,6 +39,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 34 | on the corpus: 1,199 → 1,209 complete (+10, 0 worse); the cryptofs classes with a `var` receiver: +17 |
 | After Step 35 | on the corpus: unchanged (1,209); 290 garbage bodies of methods without a source emptied, the corpus output deterministic again |
 | After Step 36 | on the corpus: unchanged (1,209, 0 worse); the stream flag no longer leaks from one target to the next (`LAMBDA_PARAM` and `LAMBDA_CALL` outside streams: crawler 11 oracles) |
+| After Step 37 | on the corpus: unchanged (1,209, 0 worse); only the members the test class can access: 1,188 steps lose candidates (private members after a value, instance methods after a class name), none gains one |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -227,20 +228,21 @@ examples to start from.
      decided by the author on 2026-11-11, with the next two defects, before the dataset v2): the static stream flag
      was kept from one target to the next; the shallow copies share lists only within one target. The full test can
      now be split per test class (section 7);
-   - the protected-member filter compares package names with `String.contains`;
+   - ~~the protected-member filter compares package names with `String.contains`~~: **Step 37 done**
+     (`docs/fixes/step-37-member-access.md`);
    - an error path takes a substring of a message that contains an identity hash (`Range [131, 126) out of bounds`,
      cryptofs `ChunkSaverTest`);
    - the test methods annotated `@ParameterizedTest` (or `@RepeatedTest`, `@TestFactory`, `@TestTemplate`) are offered
      as candidates: only `@Test` is excluded (`TokensUtils.collectMethodUsages` / `collectResolvedMethodDeclaration`,
      `TestClassScope.addMethods`); seen in jsoup `TokenQueueTest`. Cheap;
-   - the private members of the JDK classes are offered after a value of that type (`String`: `isMalformed3`,
-     `COMPACT_STRINGS`; `Object`: `wait0`), in the outputs of Step 24 already (steve, cryptofs, jsoup): the modifier
-     rules of `collectMethodUsages` let them through for the classes read from the JDK sources (not verified further);
+   - ~~the private members of the JDK classes are offered after a value of that type~~ (`String.isMalformed3`,
+     `Object.wait0`): **Step 37 done**, the rule "not protected" let every private member through;
    - `java.lang` and the JDK classes come from the newest and the oldest JDK of `lib` when the Java version of the
      repository is not pinned to one JDK (`JavaUtils`): classes of both are offered (`Compiler`, `IO`);
-   - after the name of a class (`String.`), its instance and protected methods are offered too (`clone`, `finalize`):
-     the modifier rules are combined with OR and the rule "not private" alone accepts them
-     (`JavaParserUtils.checkModifiersRules`, found in Step 33);
+   - ~~after the name of a class (`String.`), its instance and protected methods are offered too~~: **Step 37 done**
+     (`MemberAccess`: the access rule of Java; `X::` offers the instance methods);
+   - after a value, the fields of the classes nested in its type are collected too, the inherited fields are not (found
+     in Step 37); no member is offered after a string literal (`"a".length()`);
    - ~~the body of a method without a source is garbage taken from the text of its `MethodUsage`~~: **Step 35 done**
      (`docs/fixes/step-35-sourceless-bodies.md`);
    - the imports and the package of the focal class are added to the classes of the test class (not visible there

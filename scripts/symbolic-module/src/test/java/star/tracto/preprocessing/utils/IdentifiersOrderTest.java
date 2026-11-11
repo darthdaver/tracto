@@ -42,7 +42,7 @@ class IdentifiersOrderTest {
         String fields = COLLIDING_NAMES.stream().map(name -> "    int " + name + ";\n").collect(Collectors.joining());
         ClassOrInterfaceDeclaration clazz = parseClass("class Fixture {\n" + fields + "}\n");
         HashMap<String, List<Pair<VariableDeclarator, Type>>> identifiers = new HashMap<>();
-        TokensUtils.updateHashMapOfFieldTypeIdentifiers(identifiers, clazz.getFields(), new ArrayList<>(), ClassOrInterfaceDeclaration.class, 0);
+        TokensUtils.updateHashMapOfFieldTypeIdentifiers(identifiers, clazz.getFields(), star.tracto.preprocessing.utils.MemberAccess.ANY, ClassOrInterfaceDeclaration.class, 0);
         assertEquals(COLLIDING_NAMES, new ArrayList<>(identifiers.keySet()));
     }
 
@@ -50,7 +50,7 @@ class IdentifiersOrderTest {
     void theFieldsOfOneDeclarationAreInTheirOrder() {
         ClassOrInterfaceDeclaration clazz = parseClass("class Fixture {\n    int " + String.join(", ", COLLIDING_NAMES) + ";\n}\n");
         HashMap<String, List<Pair<VariableDeclarator, Type>>> identifiers = new HashMap<>();
-        TokensUtils.updateHashMapOfFieldTypeIdentifiers(identifiers, clazz.getFields(), new ArrayList<>(), ClassOrInterfaceDeclaration.class, 0);
+        TokensUtils.updateHashMapOfFieldTypeIdentifiers(identifiers, clazz.getFields(), star.tracto.preprocessing.utils.MemberAccess.ANY, ClassOrInterfaceDeclaration.class, 0);
         assertEquals(COLLIDING_NAMES, new ArrayList<>(identifiers.keySet()));
     }
 
@@ -70,8 +70,8 @@ class IdentifiersOrderTest {
         ClassOrInterfaceDeclaration first = parseClass("class First {\n    int value;\n}\n");
         ClassOrInterfaceDeclaration second = parseClass("class Second {\n    int value;\n}\n");
         HashMap<String, List<Pair<VariableDeclarator, Type>>> identifiers = new HashMap<>();
-        TokensUtils.updateHashMapOfFieldTypeIdentifiers(identifiers, first.getFields(), new ArrayList<>(), ClassOrInterfaceDeclaration.class, 0);
-        TokensUtils.updateHashMapOfFieldTypeIdentifiers(identifiers, second.getFields(), new ArrayList<>(), ClassOrInterfaceDeclaration.class, 0);
+        TokensUtils.updateHashMapOfFieldTypeIdentifiers(identifiers, first.getFields(), star.tracto.preprocessing.utils.MemberAccess.ANY, ClassOrInterfaceDeclaration.class, 0);
+        TokensUtils.updateHashMapOfFieldTypeIdentifiers(identifiers, second.getFields(), star.tracto.preprocessing.utils.MemberAccess.ANY, ClassOrInterfaceDeclaration.class, 0);
         assertEquals(List.of("value"), new ArrayList<>(identifiers.keySet()));
         // The list of a name keeps one entry per equal declarator (the check of TokensUtils is by equals), as before
         assertEquals(1, identifiers.get("value").size());

@@ -1703,6 +1703,36 @@ public class TokensUtils {
                         tokenReferences.setFields(new HashMap<>());
                         tokenReferences.setEnums(new HashMap<>());
                         break;
+                    case COLONCOLON:
+                        // `X::`, a method reference on a class: its static methods and its instance methods (the
+                        // receiver is the first argument), not its fields (Step 37; after `X.`, its static members only).
+                        // After a value (`x::`), its members are kept
+                        if (tokenReferences.contextualInfoType == ContextualInfoType.CLASS_CALL) {
+                            for (Map.Entry<String, List<Path>> classReference : tokenReferences.currentClasses.entrySet()) {
+                                String simpleName = classReference.getKey().substring(classReference.getKey().lastIndexOf('.') + 1);
+                                for (Path classPath : classReference.getValue()) {
+                                    try {
+                                        CompilationUnit cu = JavaParserUtils.getCompilationUnit(classPath);
+                                        for (TypeDeclaration typeDeclaration : JavaParserUtils.getTypeDeclarationsFromCompilationUnitAndName(cu, simpleName)) {
+                                            updateHashMapOfMethodUsageIdentifiers(methodIdentifiers, typeDeclaration, MemberAccess.ofValue(tc), List.of(new Pair("Test", Boolean.valueOf(false))));
+                                        }
+                                    } catch (Exception e) {
+                                        String message = "Unable to collect the methods referenced after " + classReference.getKey() + ":: - " + e.getMessage();
+                                        logger.error(message);
+                                        clazzDatapointsErrors.get(testPrefixName).get(targetAssertion).add(message);
+                                    }
+                                }
+                            }
+                            tokenIdentifiersCollector.setClassIdentifiersMap(new HashMap<>());
+                            tokenIdentifiersCollector.setMethodIdentifiersMap(methodIdentifiers);
+                            tokenIdentifiersCollector.setFieldIdentifiersMap(new HashMap<>());
+                            tokenIdentifiersCollector.setEnumIdentifiersMap(new HashMap<>());
+                            updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
+                            tokenReferences.setMethods(methodReferences);
+                            tokenReferences.setFields(new HashMap<>());
+                            tokenReferences.setEnums(new HashMap<>());
+                        }
+                        break;
                     case THIS:
                         try {
                             // Retrieve the fields of the test class and the ones it inherits
@@ -1957,25 +1987,9 @@ public class TokensUtils {
                                     // Iterate over the matched type declarations and collect their members,
                                     // according to the modifiers rules
                                     for (TypeDeclaration targetTypeDeclaration: matchedTypeDeclarations) {
-                                        // Set up an initial list of modifiers rules for searching field and method members
-                                        List<List<Pair<Modifier.Keyword,Boolean>>> modifiers = new ArrayList<>();
-                                        modifiers.add(List.of(
-                                                new Pair(Modifier.Keyword.STATIC, Boolean.valueOf(true)),
-                                                new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))
-                                        ));
-                                        modifiers.add(List.of(new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(false))));
-                                        // Check if the matched class is in the same package as the test class
-                                        if (matchedPackageDeclaration.isPresent() && testPackageDeclaration.isPresent()) {
-                                            String matchedPackageName = matchedPackageDeclaration.get().getNameAsString();
-                                            String testPackageName = testPackageDeclaration.get().getNameAsString();
-                                            // If the matched class is in the same package as the test class, add protected members to the search
-                                            if (testPackageName.equals(matchedPackageName)) {
-                                                modifiers.add(List.of(
-                                                        new Pair(Modifier.Keyword.STATIC, Boolean.valueOf(true)),
-                                                        new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(true))
-                                                ));
-                                            }
-                                        }
+                                        // The members the test class can access (Step 37): after `X.`, the static ones;
+                                        // after `new X`, the ones of the value created (offered after `new X().`)
+                                        MemberAccess modifiers = previousTokenType == AntlrToken.NEW ? MemberAccess.ofValue(tc) : MemberAccess.ofClassName(tc);
                                         // Add all possible enum constant declarations if the type is an enum
                                         updateHashMapOfEnumConstantDeclarationIdentifiers(enumIdentifiers, targetTypeDeclaration);
                                         updateHashMapOfEnumConstantReferencesFromIdentifiers(enumReferences, enumIdentifiers);
@@ -2309,23 +2323,10 @@ public class TokensUtils {
             String targetAssertion
     ) {
         for (ResolvedType resolvedType: memberTypes) {
-            List<List<Pair<Modifier.Keyword,Boolean>>> modifiers = new ArrayList<>(List.of(
-                    List.of(new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))),
-                    List.of(new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(false))),
-                    List.of(new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(false)))
-            ));
+            // The members the test class can access (Step 37)
+            MemberAccess modifiers = MemberAccess.ofValue(tc);
 
             if (resolvedType.isReferenceType()) {
-                int typeNameIdx = resolvedType.asReferenceType().getQualifiedName().lastIndexOf(".");
-                String typeName = resolvedType.asReferenceType().getQualifiedName().substring(typeNameIdx + 1);
-                String packageName = resolvedType.asReferenceType().getQualifiedName().replace( "." + typeName, "");
-                // Get the compilation unit of the test class to get its package declaration
-                // It's important to collect protected members from a type in the same package
-                CompilationUnit testCu = (CompilationUnit) tc.getParentNode().get();
-                Optional<PackageDeclaration> testClassPackageDeclaration = testCu.getPackageDeclaration();
-                if (testClassPackageDeclaration.isPresent() && testClassPackageDeclaration.get().getNameAsString().contains(packageName)) {
-                    modifiers.add(List.of(new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(true))));
-                }
 
                 // Get the declaring type of the method usage
                 String qualifiedName = resolvedType.asReferenceType().getQualifiedName();
@@ -2596,30 +2597,13 @@ public class TokensUtils {
                     for (TypeDeclaration targetTypeDeclaration: matchedTypeDeclarations) {
                         updateHashMapOfResolvedConstructorDeclarationIdentifiers(constructorIdentifiers, targetTypeDeclaration);
                         updateHashMapOfResolvedConstructorReferencesFromIdentifiers(constructorReferences, constructorIdentifiers);
-                        // Set up an initial list of modifiers rules for searching field and method members
-                        List<List<Pair<Modifier.Keyword,Boolean>>> modifiers = new ArrayList<>();
-                        modifiers.add(List.of(
-                                new Pair(Modifier.Keyword.STATIC, Boolean.valueOf(true)),
-                                new Pair(Modifier.Keyword.PUBLIC, Boolean.valueOf(true))
-                        ));
-                        modifiers.add(List.of(new Pair(Modifier.Keyword.PRIVATE, Boolean.valueOf(false))));
-                        // Check if the matched class is in the same package as the test class
-                        if (matchedPackageDeclaration.isPresent() && testPackageDeclaration.isPresent()) {
-                            String matchedPackageName = matchedPackageDeclaration.get().getNameAsString();
-                            String testPackageName = testPackageDeclaration.get().getNameAsString();
-                            // If the matched class is in the same package as the test class, add protected members to the search
-                            if (testPackageName.equals(matchedPackageName)) {
-                                modifiers.add(List.of(
-                                        new Pair(Modifier.Keyword.STATIC, Boolean.valueOf(true)),
-                                        new Pair(Modifier.Keyword.PROTECTED, Boolean.valueOf(true))
-                                ));
-                            }
-                        }
+                        // A value (the result of a call, of a constructor, a field, a cast): the members the test
+                        // class can access (Step 37)
+                        MemberAccess modifiers = MemberAccess.ofValue(tc);
                         // Add all possible enum constant declarations if the type is an enum
                         updateHashMapOfEnumConstantDeclarationIdentifiers(enumIdentifiers, targetTypeDeclaration);
                         updateHashMapOfEnumConstantReferencesFromIdentifiers(enumReferences, enumIdentifiers);
                         // Collect method usages and field type identifiers from the matched type declaration
-                        // Methods and fields must be static and public or protected (if in the same package)
                         updateHashMapOfMethodUsageIdentifiers(methodIdentifiers, targetTypeDeclaration, modifiers, List.of(new Pair("Test", Boolean.valueOf(false))));
                         updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
                         updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, targetTypeDeclaration.getFields(), modifiers, TypeDeclaration.class, 0);
@@ -2850,13 +2834,13 @@ public class TokensUtils {
     public static void updateHashMapOfMethodUsageIdentifiers(
             HashMap<String, List<MethodUsage>> methodUsageIdentifiers,
             TypeDeclaration typeDeclaration,
-            List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules,
+            MemberAccess access,
             List<Pair<String, Boolean>> annotations
     ) {
         // Collect callable methods from type declaration
         try {
             Set<MethodUsage> methodUsages = typeDeclaration.resolve().getAllMethods();
-            collectMethodUsages(methodUsageIdentifiers, methodUsages, modifiersRules, annotations);
+            collectMethodUsages(methodUsageIdentifiers, methodUsages, access, annotations);
         } catch (Exception e) {
             logger.error("Unable to resolve type declaration " + (typeDeclaration.getFullyQualifiedName().isPresent() ? typeDeclaration.getFullyQualifiedName().get() : typeDeclaration.getNameAsString()) + " and collect methods from it: " + e.getMessage() /*+ " - " + e.getStackTrace()*/);
             logger.error("********************************************************************");
@@ -2876,12 +2860,12 @@ public class TokensUtils {
                 return;
             }
             try {
-                collectMethodUsages(methodUsageIdentifiers, resolvableMethods(resolvedTypeDeclaration), modifiersRules, annotations);
+                collectMethodUsages(methodUsageIdentifiers, resolvableMethods(resolvedTypeDeclaration), access, annotations);
             } catch (Exception resolvableMethodsException) {
                 logger.error("Unable to collect the resolvable methods of " + resolvedTypeDeclaration.getQualifiedName() + " - " + resolvableMethodsException.getMessage());
             }
             try {
-                collectResolvedMethodDeclaration(methodUsageIdentifiers, resolvedTypeDeclaration.getDeclaredMethods(), modifiersRules, annotations);
+                collectResolvedMethodDeclaration(methodUsageIdentifiers, resolvedTypeDeclaration.getDeclaredMethods(), access, annotations);
             } catch (Exception declaredMethodsException) {
                 unsolvableTokens.add(typeDeclaration.getNameAsString());
             }
@@ -2939,31 +2923,13 @@ public class TokensUtils {
     private static void collectResolvedMethodDeclaration(
             HashMap<String, List<MethodUsage>> methodUsageIdentifiers,
             Set<ResolvedMethodDeclaration> resolvedMethodDeclarations,
-            List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules,
+            MemberAccess access,
             List<Pair<String, Boolean>> annotations
     ) {
         // In a fixed order: the order of the set depends on the identity hash codes of the methods (Step 24)
         for (ResolvedMethodDeclaration resolvedMethodDeclaration : MemberOrder.methodDeclarations(resolvedMethodDeclarations)) {
-            List<Modifier> methodModifiers = new ArrayList<>();
-            AccessSpecifier accessSpecifier = resolvedMethodDeclaration.accessSpecifier();
-
-            if (accessSpecifier == AccessSpecifier.PUBLIC) {
-                methodModifiers.add(new Modifier(Modifier.Keyword.PUBLIC));
-            } else if (accessSpecifier == AccessSpecifier.PRIVATE) {
-                methodModifiers.add(new Modifier(Modifier.Keyword.PRIVATE));
-            } else if (accessSpecifier == AccessSpecifier.PROTECTED) {
-                methodModifiers.add(new Modifier(Modifier.Keyword.PROTECTED));
-            }
-
-            if (resolvedMethodDeclaration.isStatic()) {
-                methodModifiers.add(new Modifier(Modifier.Keyword.STATIC));
-            }
-            if (resolvedMethodDeclaration.isAbstract()) {
-                methodModifiers.add(new Modifier(Modifier.Keyword.ABSTRACT));
-            }
-
-            if (!JavaParserUtils.checkModifiersRules(modifiersRules, methodModifiers)) {
-                // Skip methods that do not match the modifiers rules
+            // The members the test class can access (Step 37)
+            if (!access.allows(resolvedMethodDeclaration)) {
                 continue;
             }
             try {
@@ -2994,23 +2960,13 @@ public class TokensUtils {
     private static void collectMethodUsages(
             HashMap<String, List<MethodUsage>> methodUsageIdentifiers,
             Set<MethodUsage> methodUsages,
-            List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules,
+            MemberAccess access,
             List<Pair<String, Boolean>> annotations
     ) {
         // In a fixed order: the order of the set depends on the identity hash codes of the methods (Step 21)
         for (MethodUsage methodUsage : TypeParameterValues.inFixedOrder(methodUsages)) {
-            List<Modifier> methodModifiers = new ArrayList<>();
-
-            if (methodUsage.getDeclaration() instanceof JavaParserMethodDeclaration jpMethodDeclaration) {
-                MethodDeclaration jpMethod = jpMethodDeclaration.getWrappedNode();
-                methodModifiers.addAll(jpMethod.getModifiers());
-            } else {
-                try {
-                    methodModifiers.addAll(JavaParserUtils.getMethodModifiers(methodUsage.getDeclaration()).stream().map(m -> new Modifier(Modifier.Keyword.valueOf(m.toUpperCase()))).collect(Collectors.toList()));
-                } catch (IllegalArgumentException e) {}
-            }
-            if (!JavaParserUtils.checkModifiersRules(modifiersRules, methodModifiers)) {
-                // Skip methods that do not match the modifiers rules
+            // The members the test class can access (Step 37)
+            if (!access.allows(methodUsage.getDeclaration())) {
                 continue;
             }
             try {
@@ -3130,13 +3086,15 @@ public class TokensUtils {
     public static void updateHashMapOfFieldTypeIdentifiers(
             HashMap<String, List<Pair<VariableDeclarator,Type>>> variableDeclaratorIdentifiers,
             List<FieldDeclaration> fieldDeclarations,
-            List<List<Pair<Modifier.Keyword, Boolean>>> modifiersRules,
+            MemberAccess access,
             Class scope,
             int hierarchicalLevel
     ) {
         // By identity, in the order of the declarations: not in the order of the identity hash codes (Step 24)
         Set<VariableDeclarator> tcVariablesMap = new LinkedIdentitySet<>();
-        JavaParserUtils.collectExistingVariables(tcVariablesMap, fieldDeclarations, modifiersRules, scope, hierarchicalLevel);
+        // The fields the test class can access (Step 37)
+        List<FieldDeclaration> accessibleFields = fieldDeclarations.stream().filter(access::allows).toList();
+        JavaParserUtils.collectExistingVariables(tcVariablesMap, accessibleFields, List.of(), scope, hierarchicalLevel);
 
         tcVariablesMap.forEach(variableDeclarator -> {
             String variableName = variableDeclarator.getNameAsString();
@@ -3281,7 +3239,7 @@ public class TokensUtils {
             HashMap<String, List<Pair<VariableDeclarator,Type>>> fieldIdentifiers,
             TypeDeclaration<?> testClass
     ) {
-        updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, testClass.getFields(), new ArrayList<>(), ClassOrInterfaceDeclaration.class, 0);
+        updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, testClass.getFields(), MemberAccess.ANY, ClassOrInterfaceDeclaration.class, 0);
         updateHashMapOfVariableIdentifiers(fieldIdentifiers, TestClassScope.inheritedFields(testClass));
     }
 
@@ -3307,7 +3265,7 @@ public class TokensUtils {
             }
             return;
         }
-        collectMethodUsages(methodIdentifiers, allMethods, new ArrayList<>(), List.of(new Pair<>("Test", Boolean.FALSE)));
+        collectMethodUsages(methodIdentifiers, allMethods, MemberAccess.ANY, List.of(new Pair<>("Test", Boolean.FALSE)));
     }
 
     /** The suffixes of the names of the classes generated by the pipeline from a test class. */
