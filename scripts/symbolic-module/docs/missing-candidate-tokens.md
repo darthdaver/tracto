@@ -283,6 +283,15 @@ by cause: member of a chain 451 (436 alone; jsoup 287), Hamcrest `assertThat` 31
 (57; eec 41), member of a known type 55 (49; cryptofs 29), test class member 12, nested-block variable 10,
 `assertInstanceOf` 7 (jsoup 5, cryptofs 2), other 4, static import 2, `Range [N, N) out of bounds` 1.
 
+**Dataset v2 (full test of 2026-11-11, Step 37):** 2.9% lost (269 of 9,148 oracles by `compare_tokens.py`; 8,784
+complete of 9,043 counted by `missing_tokens.py`), 0 regressions against dataset v1 (details in `docs/resume.md`,
+section 7). By project: crawler 0.0%, uuid 0.0%, plexus 0.4%, jsoup 0.5%, eec 2.9%, cryptofs 3.5%, steve 4.3%, esapi
+12.3%, ffmpeg 16.7%. Lost oracles by cause (alone): dependency 151 (148; ffmpeg 97, esapi 39, cryptofs 10, steve 5),
+member of a chain 48 (43; eec 17, jsoup 13, esapi 12), member of a known type 40 (36; cryptofs 15, esapi 11, eec 10),
+test class member 12 (11; eec 11), `assertInstanceOf` 7 (dropped; jsoup 5, cryptofs 2), other 3, nested-block variable
+3, class name 1, test method parameter 1. The dependencies are now the main cause (58% of the lost oracles; 148 of them
+are recovered by that cause alone).
+
 **Lost oracles by cause after Step 21** (oracles recovered by fixing that cause alone, of 9,049; an oracle can have
 several causes):
 

@@ -40,6 +40,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 35 | on the corpus: unchanged (1,209); 290 garbage bodies of methods without a source emptied, the corpus output deterministic again |
 | After Step 36 | on the corpus: unchanged (1,209, 0 worse); the stream flag no longer leaks from one target to the next (`LAMBDA_PARAM` and `LAMBDA_CALL` outside streams: crawler 11 oracles) |
 | After Step 37 | on the corpus: unchanged (1,209, 0 worse); only the members the test class can access: 1,188 steps lose candidates (private members after a value, instance methods after a class name), none gains one |
+| **Dataset v2** (full test, 2026-11-11, Step 37 `41ce9ea`) | **2.9%** on the nine projects (8,784 complete of 9,043; dataset v1: 7,937, +847, 0 regressions) |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -88,6 +89,10 @@ This is what makes the fast checks of section 4 exact.
 - **2026-11-09, dataset v1 cut; Hamcrest `assertThat` in scope (asked by the author):** the full test of the final jar
   (section 7) is dataset v1. Next, add `assertThat` (Hamcrest, `MatcherAssert.assertThat` included) to the grammar and
   accept its oracles (424 dropped: ffmpeg 312, cryptofs 112), then step 7.
+- **2026-11-11, dataset v2 (decided by the author):** before the dataset v2, fix the defects that make the candidates
+  wrong or depend on the run (step 9: the processing history, Step 36; the private members after a value and the
+  instance methods after the name of a class, Step 37), then the full test (section 7). Done: dataset v2 is the full
+  test of Step 37. The chain shapes and the dependencies (step 8) come after (v3).
 
 ## 3. Setting up the laptop
 
@@ -303,6 +308,24 @@ jsoup took 4.6 h (`-j 9`), eec 2.6 h, the others under 45 min. The datasets (25 
 project names out for `compare_tokens.py`); `ab.py` reported a false `OutOfMemoryError` on every project, because the
 log prints the candidates and `OutOfMemoryError` is one of them since Step 26 (fixed: it now looks for
 `java.lang.OutOfMemoryError`).
+
+**Done on 2026-11-11 (dataset v2):** the jar of Step 37 (`41ce9ea`, `tmp/ab/jar-v2.jar`), same command and
+configuration (`ab.py run v2 ... -j 9 --jvm-options=-Xmx12g`), compared with dataset v1 (`tmp/ab/final`, not rerun).
+`compare_tokens.py` (`tmp/ab/v2-compare.txt`): **0 regressions**; lost 1,116 → 269 of 9,148 oracles. The oracles
+datasets are identical to v1 except ffmpeg and cryptofs, by Step 30: the Hamcrest oracles are no longer dropped (ffmpeg
+dropped → complete 250, dropped → loses a step 62; cryptofs dropped → complete 3), and the 110 cryptofs
+`MatcherAssert.assertThat` lose their class, a new target text, so a new key (dropped → absent 110, absent → complete
+108, absent → loses a step 2). Candidates: removed in every project (Step 37: `finalize`, `clone`, `registerNatives`,
+`wait0`, the private members of the projects; after a class name, the methods of `Object`); added in fewer steps
+(most: the Hamcrest matchers and classes, ffmpeg, cryptofs, esapi; `length`, uuid 73; jsoup 271 steps with the members
+of `Node`; the methods of `Object`, eec 82, steve 66). Each step was checked on the corpus; these additions of the full
+run were not traced one by one to a step.
+`missing_tokens.py` (`tmp/ab/v2-missing.txt`): **2.9% lost** (8,784 complete of 9,043; v1 12.2%): crawler 0.0%
+(v1 1.6%), uuid 0.0% (14.9%), plexus 0.4% (1.0%), jsoup 0.5% (8.1%), eec 2.9% (9.1%), cryptofs 3.5% (19.2%), steve
+4.3% (11.0%), esapi 12.3% (13.5%), ffmpeg 16.7% (60.4%); dropped 432 → 7 (`assertInstanceOf`). Every stage exited 0,
+no `java.lang.OutOfMemoryError` (the log still prints the candidate `OutOfMemoryError`, as in v1); peak memory 10.6 GB
+(jsoup, `-Xmx12g`); jsoup took 4.3 h, eec 2.4 h, the others under 45 min. The datasets (26 GB) are in
+`tmp/ab/v2/<project>/out/raw-tokens-dataset-training/`.
 
 Step 21's own A/B (2026-11-05, server): A = Step 20, B = Step 21, nine projects, `tmp/ab/step21-A|B` on
 the server: 20.8% lost on both sides (7,170 complete of 9,049 by `missing_tokens.py`), 0 regressions, no status change
