@@ -155,9 +155,64 @@ regular expressions on the partial oracle and on the split test prefix (not the 
   solver (more sources to search, fewer failed resolutions): measure both.
 - Input repositories: 130 of 135 are Maven only, 4 have Maven and Gradle files, 1 is Gradle only; `oracles-dataset.sh`
   processes only Maven projects.
-- **Open question for the author:** at inference time, on which projects will the module run: the Maven repositories
-  selected for the datasets, on the author's machine, or any project of another user (Gradle, projects that do not
-  build)?
+- **Inference setting (decided by the author on 2026-11-12):** Maven projects only, for the datasets and for the
+  inference; Gradle and the projects that do not build later.
+
+### 6.1 Dependencies: what was measured (2026-11-12, Step 38)
+
+- Probe with the jar of dataset v2, no code change: the sources jars of the dependencies of ffmpeg and steve, resolved
+  by Maven (`dependency:copy-dependencies`, test scope, `-Dclassifier=sources`) and unpacked into
+  `<repo>/processed_libs/decompiled/<artifact>/`, which the module already gives to the symbol solver and searches for
+  the classes by name. Control: the same jar and classes without them (`tmp/ab/probe-deps.txt`, `probe-nodeps.txt`).
+  ffmpeg, the 508 oracles of the classes with missing tokens in v2: 98 lose a step without the sources (dependency 187
+  steps, Guava `ImmutableList`, and `Filters.FILTERS. ▸ get`), 0 with them. steve, 12 oracles: 7 → 2 (the 2 left: a
+  variable of a nested block). No oracle worse.
+- Maven resolves ffmpeg in about 20 s (29 jars). Sources jars missing: ffmpeg 1 of 29, steve 2 of 220, none with Java
+  classes (`listenablefuture-9999.0-empty-to-avoid-conflict-with-guava`, the web resources of `swagger-ui`).
+- Steve brings 218 sources jars (31,174 files): the memory and the speed of the solver with them are to be measured.
+- The repository list of the dataset (`resources/seart-github-repos.csv`) has 4,517 repositories (not 135): the
+  resolution must handle multi-module projects and failures (logged, the generation goes on without the dependencies).
+
+### 6.2 Dependencies: design (discussed with the author on 2026-11-12)
+
+The author's priority: **no target token lost at inference time**; losing a few candidates while generating the
+dataset is acceptable. Then, as much context as possible (Javadoc, code) for the model.
+
+- **The candidates (the guarantee) come from deterministic sources only.** What the symbol solver needs for the target
+  to be among the candidates: the types, their supertypes, the members and their signatures (with the generics). The
+  bytecode always has them, and in a Maven project that builds the binary jar is always in the local repository (at
+  inference as at generation).
+- Levels, the best available per artifact: (1) the sources jar; (2) no sources: **stubs** generated from the bytecode
+  (`.java` files: package, declaration, generic signatures, fields and constants, methods with the parameter names of
+  the debug information, empty bodies), in the same folder as the sources, so that every path of the module sees an
+  ordinary class (the lookups of a class by name, the fields read from the syntax tree, `toAst()`); (3) if a stub
+  cannot be generated, the binary jar read by the solver (`JarTypeSolver`) in `processed_libs/jars/`. The jar alone is
+  not enough for the guarantee a priori: the paths that read the `.java` files find nothing in it. **Experiment
+  planned** (ffmpeg, Guava): sources vs jar only vs stubs, the target tokens recovered by each, to decide whether the
+  stubs are needed.
+- **Context:** the Javadoc of the `-javadoc` jar (HTML parsed into the stubs) when there are no sources; the bodies
+  decompiled (Vineflower or CFR) and merged into the stubs, per method, a failure losing only the body; at inference
+  only for the methods invoked by the test prefix. Parked until the counts of the resolver show how often they are
+  needed.
+- **Provenance:** each datapoint records where the context of a library comes from (`source`, `javadoc-jar`,
+  `decompiled`, `stub`): the model is trained almost only on real sources, and may see less at inference. The
+  mismatch can then be measured, and the training can include, seeded in the prompt builder, examples without the
+  Javadoc or with decompiled bodies.
+- **An LLM or an agent retrieving missing information:** not for the candidates (a member recalled or found on the web
+  can be wrong: another version, or a member that does not exist; the bytecode is exact). For the context, possible
+  later, as an offline enrichment cached per artifact and version (`groupId:artifactId:version`), marked `generated`,
+  only for the artifacts left without Javadoc by the deterministic levels: reproducible (cached), auditable, optional.
+  No second fine-tuned model is needed (an off-the-shelf model with search); but training and inference must match: if
+  the inference contexts carry generated docs, the training contexts must too (the cost is running it on the training
+  repositories). The popular libraries are known to the base model already; the gap is the obscure artifacts.
+- **Done in Step 38** (2026-11-12): (1), (3) without the Javadoc, (5). The experiment (2) was settled by a test: with
+  the jar alone the members of its classes are offered, not the names of its classes (`DependencyLibrariesTokensTest`):
+  the stubs are needed. Left: the Javadoc of the `-javadoc` jars in the stubs (none of the 91 stubbed artifacts of 30
+  repositories has one), the decompiled bodies, the provenance (4).
+- Plan of Step 38: (1) the resolver (Maven: binaries, sources, `-javadoc` for the jars without sources; a shared cache;
+  a report of the dependencies resolved and missed); (2) the experiment sources / jar / stubs; (3) the stub generator
+  with the Javadoc of the `-javadoc` jar, the jar as fallback; (4) the provenance in the datapoints; (5) the pipeline
+  (`ab.py`, `corpus.py`, `bash/oracles-dataset.sh`), the corpus prepared again, every difference explained.
 
 ## 7. Decisions of the author that apply to this work
 
@@ -275,6 +330,10 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
 - Step 37: only the members the test class can access, as in Java (`MemberAccess`): no private member after a value,
   the static members only after the name of a class, the instance methods after `X::`; statuses unchanged, 0 worse,
   1,188 steps lose candidates, none gains one.
+- Step 38: the dependencies of the Maven projects (`tools/deps/resolve_maven.py`: sources, stubs generated from the
+  bytecode of the jars without sources, jars; section 6.2): corpus 1,209 → 1,263 complete, 0 worse; candidates and
+  contextual information: additions only; the oracles stage gains the library methods invoked by the prefixes, with
+  their Javadoc.
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles

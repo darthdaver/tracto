@@ -2,6 +2,7 @@ package star.tracto;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import star.tracto.data.enums.NamingConvention;
+import star.tracto.deps.StubGenerator;
 import star.tracto.preprocessing.OraclesDataset;
 import star.tracto.preprocessing.TokensDataset;
 import star.tracto.utils.JavaUtils;
@@ -13,6 +14,7 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -26,6 +28,9 @@ public class SymbolicModule {
         try {
             if (datasetType.equals("inference") || datasetType.equals("test")) {
                 Client.run(args);
+            } else if (datasetType.equals("stubs")) {
+                // The stubs of a jar without sources (Step 38): stubs <jar> <output folder>
+                StubGenerator.main(Arrays.copyOfRange(args, 1, args.length));
             } else {
                 String projectIdentifier = args[1];
                 Path repoRootPath = Path.of(args[2]);
@@ -54,7 +59,10 @@ public class SymbolicModule {
             Files.walkFileTree(repoRootPath, new SimpleFileVisitor<>() {
                 @Override
                 public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                    if (dir.toString().endsWith(NamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())) {
+                    // The sources of the libraries (one folder each) and the binary jars of the libraries without
+                    // sources (tools/deps/resolve_maven.py, Step 38)
+                    if (dir.toString().endsWith(NamingConvention.DECOMPILED_LIB_FOLDER.getConventionName())
+                            || dir.toString().endsWith(NamingConvention.JAR_LIB_FOLDER.getConventionName())) {
                         matchingPaths.add(dir);
                     }
                     return FileVisitResult.CONTINUE;
@@ -63,6 +71,8 @@ public class SymbolicModule {
         } catch (IOException e) {
             System.err.println("Error while searching for folders: " + e.getMessage());
         }
+        // In a fixed order (Step 38): the order of the libraries given to the symbol solver
+        matchingPaths.sort(null);
         return matchingPaths;
     }
 }

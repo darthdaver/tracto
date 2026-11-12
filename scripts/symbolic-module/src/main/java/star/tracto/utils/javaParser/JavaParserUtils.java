@@ -130,6 +130,16 @@ public class JavaParserUtils {
                 } catch (IOException e) {
                     throw new Error("Unable to resolve jar " + classPathElement, e);
                 }
+            } else if (Path.of(classPathElement).endsWith(NamingConvention.JAR_LIB_FOLDER.getConventionName())) {
+                // The binary jars of the libraries without sources (Step 38), in a fixed order. The branch below never
+                // reaches its jars: findPotentialProjectsRoots always returns at least the folder itself
+                try (var jars = Files.list(Path.of(classPathElement))) {
+                    for (Path jar : jars.filter(path -> path.toString().endsWith(".jar") && Files.isRegularFile(path)).sorted().toList()) {
+                        typeSolver.add(new JarTypeSolver(jar));
+                    }
+                } catch (IOException e) {
+                    logger.error("Unable to read the jars of the libraries in {}", classPathElement, e);
+                }
             } else {
                 Path startPath = Paths.get(classPathElement);
                 try {

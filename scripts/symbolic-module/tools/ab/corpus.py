@@ -12,8 +12,10 @@ order, contextual information). Since Steps 21-24 the tokens stage is determinis
 difference is a real change.
 
 Commands (from scripts/symbolic-module):
-  corpus.py prepare --jar J [-j N] [--jvm-options=...]
-      runs the oracles stage of J on the corpus projects (tmp/ab/corpus-src); again only when the oracles stage changes
+  corpus.py prepare --jar J [-j N] [--jvm-options=...] [--no-deps]
+      runs the oracles stage of J on the corpus projects (tmp/ab/corpus-src); again only when the oracles stage changes.
+      Since Step 38 the dependencies of the projects are resolved into their copies first (ab.py run --deps), unless
+      --no-deps (the corpus before Step 38)
   corpus.py check --jar J [-j N] [--jvm-options=...]
       runs the tokens stage of J on the corpus classes and compares with the expected results; exit status 1 on any
       difference. The results are kept in tmp/ab/corpus/last-check.json
@@ -165,7 +167,8 @@ def load_corpus():
 
 def prepare(args):
     projects = list(load_corpus()['projects'])
-    ok = ab.run(SOURCE_RUN, os.path.abspath(args.jar), args.config, args.j, False, projects, jvm_options=args.jvm_options.split())
+    ok = ab.run(SOURCE_RUN, os.path.abspath(args.jar), args.config, args.j, False, projects, jvm_options=args.jvm_options.split(),
+                deps=args.deps)
     sys.exit(0 if ok else 1)
 
 
@@ -276,6 +279,8 @@ def main():
         c.add_argument('--jvm-options', default='-Xmx6g')
         if name == 'prepare':
             c.add_argument('--config', default=CONFIG)
+            c.add_argument('--deps', action=argparse.BooleanOptionalAction, default=True,
+                           help='resolve the dependencies of the projects first (Step 38; --no-deps: as before)')
     a = sub.add_parser('accept'); a.add_argument('--reason', required=True)
     args = p.parse_args()
     {'select': select, 'prepare': prepare, 'check': check, 'accept': accept}[args.command](args)

@@ -8,14 +8,17 @@ TRACTO_INPUT (default: <repository>/input/github-repos) at the commits listed in
 Subcommands:
   build <commit|WORKTREE> <jar>
       Builds the jar of a commit in a temporary git worktree (WORKTREE: the working tree of the module).
-  run <label> <jar> <config> [-j N] [--tokens] [--projects id,...] [--tokens-projects id,...] [--jvm-options "..."]
+  run <label> <jar> <config> [-j N] [--tokens] [--deps] [--projects id,...] [--tokens-projects id,...] [--jvm-options "..."]
       Runs the oracles stage on fresh copies of the projects into tmp/ab/<label>, one project after another (-j 1, the
       default: the projects are not run in parallel), and the tokens stage with --tokens (on crawler-commons, or on --tokens-projects). The two
       sides of an A/B are run at the same time as two commands. Records for each project the exit status, the wall and
       CPU time and the peak memory, and checks that the run is complete: exit status 0, statistics written,
       "Oracles datapoints generated" in the log, no OutOfMemoryError; checks that nothing is written outside the
       output folders; records the fingerprint of the environment in summary.json. Exits with 1 if a run is not
-      complete.
+      complete. With --deps (Step 38), the dependencies of each project are resolved into its copy before the oracles
+      stage (tools/deps/resolve_maven.py, cache tmp/ab/deps-cache, the stubs generated with the jar of the run); the
+      report of the resolution is recorded under "deps" (a failed resolution is not a problem of the run: the
+      generation goes on without the dependencies, as in production).
   fingerprint
       Prints the fingerprint of the environment: the JDK running the pipeline, the JDK sources, the input
       repositories (commit and status), the runner.
@@ -39,6 +42,7 @@ INPUT = os.environ.get('TRACTO_INPUT', os.path.join(REPO_ROOT, 'input', 'github-
 JAVA_HOME = os.environ.get('TRACTO_JAVA_HOME', os.path.join(REPO_ROOT, 'scripts', 'utils', 'resources', 'sdkman', 'candidates', 'java', '21.0.6-amzn'))
 JAVA = os.path.join(JAVA_HOME, 'bin', 'java')
 AB = os.path.join(MODULE, 'tmp', 'ab')
+DEPS_CACHE = os.environ.get('TRACTO_DEPS_CACHE', os.path.join(AB, 'deps-cache'))
 JAVA_VERSION_ARG = 'auto'
 # The longest runs first (with -j > 1, the parallel runs end together)
 PROJECTS = [
@@ -114,7 +118,18 @@ def run_process(command, log_path, cwd):
     }
 
 
-def run_project(label, jar, config, project_id, relative_path, tokens, jvm_options):
+def resolve_dependencies(repo, jar):
+    """The dependencies of a project into its copy (Step 38); the summary of the report."""
+    sys.path.insert(0, os.path.join(MODULE, 'tools', 'deps'))
+    # No bytecode cache written into the module during a run (its written-outside check)
+    sys.dont_write_bytecode = True
+    import resolve_maven  # noqa: E402
+    os.environ.setdefault('JAVA_HOME', JAVA_HOME)
+    report = resolve_maven.run(repo, DEPS_CACHE, tracto_jar=jar)
+    return {k: report.get(k) for k in ('status', 'mode', 'modules', 'counts', 'seconds', 'error', 'cached', 'failed')}
+
+
+def run_project(label, jar, config, project_id, relative_path, tokens, jvm_options, deps=False):
     base = os.path.join(AB, label, project_id)
     shutil.rmtree(base, ignore_errors=True)
     os.makedirs(base)
@@ -122,6 +137,8 @@ def run_project(label, jar, config, project_id, relative_path, tokens, jvm_optio
     # The pipeline writes the generated test classes into the repository: each run works on its own copy
     subprocess.run(['cp', '-R', os.path.join(INPUT, relative_path), repo], check=True)
     result = {'project': project_id}
+    if deps:
+        result['deps'] = resolve_dependencies(repo, jar)
     result['oracles'] = run_process([JAVA, *jvm_options, '-jar', jar, 'oracles', project_id, repo, out, MODULE, JAVA_VERSION_ARG, config],
                                     os.path.join(base, 'log.txt'), MODULE)
     statistics = os.path.join(out, 'statistics-oracles-dataset-training', project_id, f'statistics-{project_id}.json')
@@ -153,14 +170,14 @@ def run_project(label, jar, config, project_id, relative_path, tokens, jvm_optio
     return result
 
 
-def run(label, jar, config, jobs, tokens, project_ids=None, tokens_projects=DEFAULT_TOKENS_PROJECTS, jvm_options=()):
+def run(label, jar, config, jobs, tokens, project_ids=None, tokens_projects=DEFAULT_TOKENS_PROJECTS, jvm_options=(), deps=False):
     projects = [p for p in PROJECTS if project_ids is None or p[0] in project_ids]
     os.makedirs(os.path.join(AB, label), exist_ok=True)
     marker = os.path.join(AB, label, '.start')
     open(marker, 'w').close()
     results = []
     with ThreadPoolExecutor(max_workers=jobs) as pool:
-        futures = {pool.submit(run_project, label, jar, config, pid, rel, tokens and pid in tokens_projects, list(jvm_options)): pid for pid, rel in projects}
+        futures = {pool.submit(run_project, label, jar, config, pid, rel, tokens and pid in tokens_projects, list(jvm_options), deps): pid for pid, rel in projects}
         for future in as_completed(futures):
             result = future.result()
             results.append(result)
@@ -173,7 +190,7 @@ def run(label, jar, config, jobs, tokens, project_ids=None, tokens_projects=DEFA
     environment = fingerprint()
     written = subprocess.run(['find', MODULE, '-newer', marker, '-type', 'f', '-not', '-path', f'{MODULE}/tmp/*',
                               '-not', '-path', f'{MODULE}/target/*', '-not', '-path', f'{MODULE}/.idea/*'], capture_output=True, text=True).stdout.split()
-    summary = {'label': label, 'jar': jar, 'jar_sha256': sha256(jar), 'config': config, 'jobs': jobs, 'jvm_options': list(jvm_options),
+    summary = {'label': label, 'jar': jar, 'jar_sha256': sha256(jar), 'config': config, 'jobs': jobs, 'jvm_options': list(jvm_options), 'deps': deps,
                'results': sorted(results, key=lambda r: r['project']), 'written_outside': written,
                'environment': environment}
     json.dump(summary, open(os.path.join(AB, label, 'summary.json'), 'w'), indent=2)
@@ -225,6 +242,7 @@ def main():
     p.add_argument('-j', type=int, default=1); p.add_argument('--tokens', action='store_true'); p.add_argument('--projects')
     p.add_argument('--tokens-projects', help='the projects of the tokens stage (default: crawler)')
     p.add_argument('--jvm-options', default='', help='options of the JVM running the pipeline, e.g. "-Xmx16g"')
+    p.add_argument('--deps', action='store_true', help='resolve the dependencies of each project first (Step 38)')
     commands.add_parser('fingerprint')
     args = parser.parse_args()
     if args.command == 'build':
@@ -233,7 +251,7 @@ def main():
         ok = run(args.label, os.path.abspath(args.jar), os.path.abspath(args.config), args.j, args.tokens,
                  set(args.projects.split(',')) if args.projects else None,
                  set(args.tokens_projects.split(',')) if args.tokens_projects else DEFAULT_TOKENS_PROJECTS,
-                 args.jvm_options.split())
+                 args.jvm_options.split(), args.deps)
         sys.exit(0 if ok else 1)
     elif args.command == 'fingerprint':
         print(json.dumps(fingerprint(), indent=2))

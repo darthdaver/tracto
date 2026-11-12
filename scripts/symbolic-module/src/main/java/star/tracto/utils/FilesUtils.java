@@ -287,7 +287,9 @@ public class FilesUtils {
             return new ArrayList<>();
         }
         try (Stream<Path> stream = Files.list(path)) {  // Ensure the stream is closed
-            return stream.filter(Files::isDirectory).collect(Collectors.toList());
+            // In a fixed order (Step 38): the folders of the libraries are given to the symbol solver in this order, and
+            // two libraries can define the same class (the first one wins)
+            return stream.filter(Files::isDirectory).sorted().collect(Collectors.toList());
         } catch (IOException e) {
             log.error("Error when trying to list directories in path " + path, e);
             return new ArrayList<>();

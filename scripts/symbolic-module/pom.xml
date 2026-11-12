@@ -167,6 +167,12 @@
             <artifactId>javaparser-symbol-solver-core</artifactId>
             <version>3.28.2</version>
         </dependency>
+        <!-- Javassist: the stubs of the libraries without sources (Step 38); the version the symbol solver brings -->
+        <dependency>
+            <groupId>org.javassist</groupId>
+            <artifactId>javassist</artifactId>
+            <version>3.31.0-GA</version>
+        </dependency>
         <!-- Lsp4j -->
         <dependency>
             <groupId>org.eclipse.lsp4j</groupId>

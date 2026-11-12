@@ -28,7 +28,8 @@ export PATH="$ANT_BIN:$PATH"
 
 mode=${1:-"training"}
 GITHUB_REPOS_LIST_FILE=${2:-$GITHUB_REPOS_LIST_FILE}
-resolve_deps=${3:-"false"}
+# Resolve the dependencies of each repository before generating its datapoints (Step 38): `true` (default) or `false`
+resolve_deps=${3:-"true"}
 
 if [ ! -e "${SYMBOLIC_JAR}" ]; then
   cd "${SYMBOLIC_DIR}"
@@ -128,8 +129,15 @@ while IFS=, read -r repo_id repo_name; do
 
       if [ "$junit_plugin" == true ]; then
         cd "$SYMBOLIC_DIR"
-        # Generate Oracle dataset
         sdk use java "$JAVA21"
+        # The dependencies of the repository, into its folder processed_libs (sources, stubs of the jars without sources,
+        # binary jars), read by the oracles and the tokens stages. A failed resolution is logged, the generation goes on
+        if [ "$resolve_deps" == "true" ]; then
+          echo "Resolving dependencies" >> "$log_file"
+          python3 "${SYMBOLIC_DIR}/tools/deps/resolve_maven.py" "${GITHUB_REPOS_DIR}/${repo_name}" --tracto-jar "${SYMBOLIC_JAR}" >> "$log_file" 2>&1 \
+            || echo "Dependencies not resolved (see ${GITHUB_REPOS_DIR}/${repo_name}/processed_libs)" >> "$log_file"
+        fi
+        # Generate Oracle dataset
         if [ "$mode" == "training" ]; then
           java -jar "${SYMBOLIC_JAR}" "oracles" "${repo_id}" "${GITHUB_REPOS_DIR}/${repo_name}" "${OUTPUT_DIR}" "${SYMBOLIC_DIR}" auto "${SRC_RESOURCES_DIR}/dataset/oracles-dataset_config.json" >> "$log_file" 2>&1
         else
