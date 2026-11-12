@@ -42,6 +42,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 37 | on the corpus: unchanged (1,209, 0 worse); only the members the test class can access: 1,188 steps lose candidates (private members after a value, instance methods after a class name), none gains one |
 | **Dataset v2** (full test, 2026-11-11, Step 37 `41ce9ea`) | **2.9%** on the nine projects (8,784 complete of 9,043; dataset v1: 7,937, +847, 0 regressions) |
 | After Step 38 | on the corpus: 1,209 → 1,263 complete (+54, 0 worse; esapi +29, ffmpeg +13, cryptofs +7, steve +5): the dependencies of the Maven projects resolved (`tools/deps/resolve_maven.py`; sources, stubs of the jars without sources) |
+| After Step 39 | statuses unchanged (1,263 complete, 0 worse, 0 target tokens removed): the void methods offered only in the body of a lambda or as a method reference (5,284 steps lose candidates, 141.8 → 127.6 per step) |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -233,7 +234,9 @@ examples to start from.
    of the external dependencies) into `processed_libs`: the sources, or stubs generated from the bytecode for the jars
    without sources (`StubGenerator`), or the jar. Called by `ab.py run --deps`, `corpus.py prepare` and
    `bash/oracles-dataset.sh`. Left: the Javadoc of the `-javadoc` jars in the stubs, the decompiled bodies, the
-   provenance in the datapoints, Lombok; the candidate noise of the resolved libraries (next step).
+   provenance in the datapoints, Lombok. The candidate noise of the resolved libraries: **Step 39 done**
+   (`docs/fixes/step-39-void-methods.md`): the void methods only where a call needs no value; the annotation types kept
+   on purpose (`Anno.class`, their nested constants).
 10. **Pre-existing defects**, each its own step:
    - ~~the candidates depend on the processing history~~: **Step 36 done** (`docs/fixes/step-36-processing-history.md`;
      decided by the author on 2026-11-11, with the next two defects, before the dataset v2): the static stream flag

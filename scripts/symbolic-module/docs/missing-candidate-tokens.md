@@ -334,6 +334,9 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
   bytecode of the jars without sources, jars; section 6.2): corpus 1,209 → 1,263 complete, 0 worse; candidates and
   contextual information: additions only; the oracles stage gains the library methods invoked by the prefixes, with
   their Javadoc.
+- Step 39: the void methods offered only where a call needs no value (the body of an expression lambda, a method
+  reference; `VoidCalls`): statuses unchanged, 0 worse, 0 target tokens removed; 5,284 steps lose candidates (the JUnit
+  assertions, `Object.wait`/`notify`, the void helpers of the test class), none gains one.
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles

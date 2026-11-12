@@ -412,7 +412,7 @@ public class TokensUtils {
                                     } else if (nextANTLRToken.equals("IDENTIFIER")) {
                                         if (!Antlr4Utils.getAntlrToken(tokens.get(i - 1)).equals(AntlrToken.IDENTIFIER)) {
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.classPathIdentifiers.keySet());
-                                            adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.methodIdentifiers.keySet());
+                                            adjustedNextConcreteTokens.addAll(methodCandidates(currentTokenIdentifiersCollector, tokens.subList(0, i)));
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.constructorIdentifiers.keySet());
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.fieldIdentifiers.keySet());
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.parameterIdentifiers.keySet());
@@ -819,7 +819,7 @@ public class TokensUtils {
                                     } else if (nextANTLRToken.equals("IDENTIFIER")) {
                                         if (!Antlr4Utils.getAntlrToken(tokens.get(tokens.size() - 1)).equals(AntlrToken.IDENTIFIER)) {
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.classPathIdentifiers.keySet());
-                                            adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.methodIdentifiers.keySet());
+                                            adjustedNextConcreteTokens.addAll(methodCandidates(currentTokenIdentifiersCollector, tokens));
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.constructorIdentifiers.keySet());
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.fieldIdentifiers.keySet());
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.parameterIdentifiers.keySet());
@@ -978,6 +978,23 @@ public class TokensUtils {
                 new HashMap<>(rootTokenReferencesCollector.enums)
         );
         return clonedTokenReferencesCollector;
+    }
+
+    /**
+     * The names of the methods offered as candidates after the given tokens of the partial oracle (Step 39): the void
+     * methods only where a call needs no value ({@link VoidCalls#allowed}), in the order of the identifiers.
+     */
+    private static List<String> methodCandidates(TokenIdentifiersCollector collector, List<String> previousTokens) {
+        if (VoidCalls.allowed(previousTokens)) {
+            return new ArrayList<>(collector.methodIdentifiers.keySet());
+        }
+        List<String> names = new ArrayList<>();
+        for (Map.Entry<String, List<MethodUsage>> entry : collector.methodIdentifiers.entrySet()) {
+            if (!VoidCalls.allVoid(entry.getValue())) {
+                names.add(entry.getKey());
+            }
+        }
+        return names;
     }
 
     /**
