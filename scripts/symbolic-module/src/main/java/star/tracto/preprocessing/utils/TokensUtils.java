@@ -8,6 +8,7 @@ import com.github.javaparser.ast.type.PrimitiveType;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.resolution.MethodUsage;
 import com.github.javaparser.resolution.declarations.ResolvedConstructorDeclaration;
+import com.github.javaparser.ast.AccessSpecifier;
 import com.github.javaparser.resolution.declarations.ResolvedMethodDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedTypeParameterDeclaration;
@@ -2248,15 +2249,21 @@ public class TokensUtils {
                         // parameter, not for the first one (Step 21)
                         List<ResolvedType> memberTypes = new ArrayList<>();
                         for (ResolvedType resolvedType: resolvedTypes) {
-                            if (resolvedType.isArray()) {
+                            // A type variable first stands for its values: an array can be one of them
+                            // (`List<String[]>`: `rows.get(0).` ▸ `length`, Step 40)
+                            for (ResolvedType value : TypeParameterValues.valuesOf(resolvedType, tokenReferences.typeParametersReferences)) {
+                                if (!value.isArray()) {
+                                    memberTypes.add(value);
+                                    continue;
+                                }
                                 // The field `length` of an array (Step 31). The members of the component type stay
                                 // offered: the access to an element (`values[0].`) is not tracked
                                 addArrayLength(fieldIdentifiers);
+                                while (value.isArray()) {
+                                    value = value.asArrayType().getComponentType();
+                                }
+                                memberTypes.addAll(TypeParameterValues.valuesOf(value, tokenReferences.typeParametersReferences));
                             }
-                            while (resolvedType.isArray()) {
-                                resolvedType = resolvedType.asArrayType().getComponentType();
-                            }
-                            memberTypes.addAll(TypeParameterValues.valuesOf(resolvedType, tokenReferences.typeParametersReferences));
                         }
                         collectMembersOfTypes(memberTypes, tc, tokenReferences, methodIdentifiers, fieldIdentifiers, returnClassReferences, typeParameterReferences, token, testPrefixName, targetAssertion);
                         tokenIdentifiersCollector.setClassIdentifiersMap(classIdentifiers);
@@ -2441,6 +2448,11 @@ public class TokensUtils {
                         }
                         logger.error("********************************************************************");
                     }
+                    // An interface has the public methods of Object (JLS 9.2), which the symbol solver does not list
+                    // among its methods (Step 40: `pair.` ▸ `toString`)
+                    if (resolvedType.asReferenceType().getTypeDeclaration().get().isInterface()) {
+                        collectMethodUsages(methodIdentifiers, publicObjectMethods(), modifiers, List.of(new Pair("Test", Boolean.valueOf(false))));
+                    }
                     //updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
                     List<FieldDeclaration> fieldDeclarations =  resolvedType.asReferenceType().getTypeDeclaration().get().toAst().get().findAll(FieldDeclaration.class);
                     updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, fieldDeclarations, modifiers, TypeDeclaration.class, 0);
@@ -2458,6 +2470,24 @@ public class TokensUtils {
                 }
             }
         }
+    }
+
+    /**
+     * The public instance methods of {@code Object}: the members every interface has (JLS 9.2). Empty when
+     * {@code Object} cannot be resolved.
+     */
+    private static Set<MethodUsage> publicObjectMethods() {
+        Set<MethodUsage> methods = new HashSet<>();
+        Optional<ResolvedReferenceTypeDeclaration> object = JavaParserUtils.solveType("java.lang.Object");
+        if (object.isEmpty()) {
+            return methods;
+        }
+        for (ResolvedMethodDeclaration method : object.get().getDeclaredMethods()) {
+            if (method.accessSpecifier() == AccessSpecifier.PUBLIC && !method.isStatic()) {
+                methods.add(new MethodUsage(method));
+            }
+        }
+        return methods;
     }
 
     /**

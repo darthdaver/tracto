@@ -337,6 +337,9 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
 - Step 39: the void methods offered only where a call needs no value (the body of an expression lambda, a method
   reference; `VoidCalls`): statuses unchanged, 0 worse, 0 target tokens removed; 5,284 steps lose candidates (the JUnit
   assertions, `Object.wait`/`notify`, the void helpers of the test class), none gains one.
+- Step 40: chains: an array as the value of a type variable (`strings.get(0).length`), the public methods of `Object`
+  on a value whose type is an interface (`data.get(0).toString`): corpus 1,263 → 1,293 complete, 0 worse; candidates
+  and contextual information: additions only.
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles
