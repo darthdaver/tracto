@@ -885,6 +885,11 @@ assertFalseMethodCall
     | ASSERT_FALSE '(' (STRING_LITERAL ',')? (expression | booleanSupplierExpression) ')' SEMI
     ;
 
+// JUnit 5: (expectedType, actualValue[, message]), the message a String or a Supplier<String> (Step 41)
+assertInstanceOfMethodCall
+    : ASSERT_INSTANCE_OF '(' expression ',' expression (',' (supplierExpression | expression))? ')' SEMI
+    ;
+
 assertIterableEqualsMethodCall
     : ASSERT_ITERABLE_EQUALS '(' expression ',' expression (',' (supplierExpression | expression))? ')' SEMI
     ;
@@ -926,6 +931,11 @@ assertThatMethodCall
 assertThrowsMethodCall
     : ASSERT_THROWS '(' expression ',' executable (',' (supplierExpression | expression))? ')' SEMI
     | ASSERT_THROWS '(' (STRING_LITERAL ',')? expression ',' throwingRunnableExpression ')' SEMI
+    ;
+
+// The assertThrows of JUnit 5 that requires the exact type: (expectedType, executable[, message]) (Step 41)
+assertThrowsExactlyMethodCall
+    : ASSERT_THROWS_EXACTLY '(' expression ',' executable (',' (supplierExpression | expression))? ')' SEMI
     ;
 
 assertTimeoutMethodCall

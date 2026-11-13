@@ -1997,6 +1997,18 @@ public class JavaParserBaseListener implements JavaParserListener {
 	 *
 	 * <p>The default implementation does nothing.</p>
 	 */
+	@Override public void enterAssertInstanceOfMethodCall(JavaParser.AssertInstanceOfMethodCallContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void exitAssertInstanceOfMethodCall(JavaParser.AssertInstanceOfMethodCallContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
 	@Override public void enterAssertIterableEqualsMethodCall(JavaParser.AssertIterableEqualsMethodCallContext ctx) { }
 	/**
 	 * {@inheritDoc}
@@ -2100,6 +2112,18 @@ public class JavaParserBaseListener implements JavaParserListener {
 	 * <p>The default implementation does nothing.</p>
 	 */
 	@Override public void exitAssertThrowsMethodCall(JavaParser.AssertThrowsMethodCallContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void enterAssertThrowsExactlyMethodCall(JavaParser.AssertThrowsExactlyMethodCallContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void exitAssertThrowsExactlyMethodCall(JavaParser.AssertThrowsExactlyMethodCallContext ctx) { }
 	/**
 	 * {@inheritDoc}
 	 *

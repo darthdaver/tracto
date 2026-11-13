@@ -1700,6 +1700,16 @@ public interface JavaParserListener extends ParseTreeListener {
 	 */
 	void exitAssertFalseMethodCall(JavaParser.AssertFalseMethodCallContext ctx);
 	/**
+	 * Enter a parse tree produced by {@link JavaParser#assertInstanceOfMethodCall}.
+	 * @param ctx the parse tree
+	 */
+	void enterAssertInstanceOfMethodCall(JavaParser.AssertInstanceOfMethodCallContext ctx);
+	/**
+	 * Exit a parse tree produced by {@link JavaParser#assertInstanceOfMethodCall}.
+	 * @param ctx the parse tree
+	 */
+	void exitAssertInstanceOfMethodCall(JavaParser.AssertInstanceOfMethodCallContext ctx);
+	/**
 	 * Enter a parse tree produced by {@link JavaParser#assertIterableEqualsMethodCall}.
 	 * @param ctx the parse tree
 	 */
@@ -1789,6 +1799,16 @@ public interface JavaParserListener extends ParseTreeListener {
 	 * @param ctx the parse tree
 	 */
 	void exitAssertThrowsMethodCall(JavaParser.AssertThrowsMethodCallContext ctx);
+	/**
+	 * Enter a parse tree produced by {@link JavaParser#assertThrowsExactlyMethodCall}.
+	 * @param ctx the parse tree
+	 */
+	void enterAssertThrowsExactlyMethodCall(JavaParser.AssertThrowsExactlyMethodCallContext ctx);
+	/**
+	 * Exit a parse tree produced by {@link JavaParser#assertThrowsExactlyMethodCall}.
+	 * @param ctx the parse tree
+	 */
+	void exitAssertThrowsExactlyMethodCall(JavaParser.AssertThrowsExactlyMethodCallContext ctx);
 	/**
 	 * Enter a parse tree produced by {@link JavaParser#assertTimeoutMethodCall}.
 	 * @param ctx the parse tree

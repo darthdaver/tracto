@@ -65,6 +65,9 @@ public class Antlr4Utils {
             case ASSERT_FALSE:
                 ctx = Optional.of(parser.assertFalseMethodCall());
                 break;
+            case ASSERT_INSTANCE_OF:
+                ctx = Optional.of(parser.assertInstanceOfMethodCall());
+                break;
             case ASSERT_ITERABLE_EQUALS:
                 ctx = Optional.of(parser.assertIterableEqualsMethodCall());
                 break;
@@ -91,6 +94,9 @@ public class Antlr4Utils {
                 break;
             case ASSERT_THROWS:
                 ctx = Optional.of(parser.assertThrowsMethodCall());
+                break;
+            case ASSERT_THROWS_EXACTLY:
+                ctx = Optional.of(parser.assertThrowsExactlyMethodCall());
                 break;
             case ASSERT_TIMEOUT:
                 ctx = Optional.of(parser.assertTimeoutMethodCall());

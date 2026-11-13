@@ -60,4 +60,34 @@ class AssertionGrammarTest {
         assertFalse(afterThree.contains(","), afterThree.toString());
         assertTrue(next(JUnitAssertionType.ASSERT_THAT, "assertThat(clock.now(),is(1L))").contains(";"));
     }
+
+    /** {@code assertInstanceOf(expectedType, actualValue[, message])} of JUnit 5 (Step 41). */
+    @Test
+    void assertInstanceOfHasARule() throws Exception {
+        assertTrue(next(JUnitAssertionType.ASSERT_INSTANCE_OF, "assertInstanceOf(").contains("IDENTIFIER"));
+        assertTrue(next(JUnitAssertionType.ASSERT_INSTANCE_OF, "assertInstanceOf(Clock.").contains("class"));
+        assertTrue(next(JUnitAssertionType.ASSERT_INSTANCE_OF, "assertInstanceOf(Clock.class").contains(","));
+        // After two arguments, the end or the message
+        List<String> afterTwo = next(JUnitAssertionType.ASSERT_INSTANCE_OF, "assertInstanceOf(Clock.class,result.getCause()");
+        assertTrue(afterTwo.contains(")"), afterTwo.toString());
+        assertTrue(afterTwo.contains(","), afterTwo.toString());
+        // After the message (a string or a supplier), the end only
+        List<String> afterMessage = next(JUnitAssertionType.ASSERT_INSTANCE_OF, "assertInstanceOf(Clock.class,result,\"a clock\"");
+        assertTrue(afterMessage.contains(")"), afterMessage.toString());
+        assertFalse(afterMessage.contains(","), afterMessage.toString());
+        assertTrue(next(JUnitAssertionType.ASSERT_INSTANCE_OF, "assertInstanceOf(Clock.class,result,()->\"a clock\"").contains(")"));
+        assertTrue(next(JUnitAssertionType.ASSERT_INSTANCE_OF, "assertInstanceOf(Clock.class,result)").contains(";"));
+    }
+
+    /** {@code assertThrowsExactly(expectedType, executable[, message])} of JUnit 5, as {@code assertThrows} (Step 41). */
+    @Test
+    void assertThrowsExactlyHasARule() throws Exception {
+        assertTrue(next(JUnitAssertionType.ASSERT_THROWS_EXACTLY, "assertThrowsExactly(IllegalStateException.class").contains(","));
+        assertTrue(next(JUnitAssertionType.ASSERT_THROWS_EXACTLY, "assertThrowsExactly(IllegalStateException.class,()->").contains("IDENTIFIER"));
+        List<String> afterTwo = next(JUnitAssertionType.ASSERT_THROWS_EXACTLY, "assertThrowsExactly(IllegalStateException.class,()->clock.stop()");
+        assertTrue(afterTwo.contains(")"), afterTwo.toString());
+        assertTrue(afterTwo.contains(","), afterTwo.toString());
+        assertTrue(next(JUnitAssertionType.ASSERT_THROWS_EXACTLY, "assertThrowsExactly(IllegalStateException.class,clock::").contains("IDENTIFIER"));
+        assertTrue(next(JUnitAssertionType.ASSERT_THROWS_EXACTLY, "assertThrowsExactly(IllegalStateException.class,clock::stop,\"stops\")").contains(";"));
+    }
 }

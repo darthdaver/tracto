@@ -340,6 +340,8 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
 - Step 40: chains: an array as the value of a type variable (`strings.get(0).length`), the public methods of `Object`
   on a value whose type is an interface (`data.get(0).toString`): corpus 1,263 → 1,293 complete, 0 worse; candidates
   and contextual information: additions only.
+- Step 41: the grammar rules of `assertInstanceOf` and `assertThrowsExactly` (the lexer had the tokens, the parser no
+  rule: "Unsupported assertion type"): the 3 dropped corpus oracles are complete (1,296 of 1,302), no other change.
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles

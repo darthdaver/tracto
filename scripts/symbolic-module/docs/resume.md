@@ -44,6 +44,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 38 | on the corpus: 1,209 → 1,263 complete (+54, 0 worse; esapi +29, ffmpeg +13, cryptofs +7, steve +5): the dependencies of the Maven projects resolved (`tools/deps/resolve_maven.py`; sources, stubs of the jars without sources) |
 | After Step 39 | statuses unchanged (1,263 complete, 0 worse, 0 target tokens removed): the void methods offered only in the body of a lambda or as a method reference (5,284 steps lose candidates, 141.8 → 127.6 per step) |
 | After Step 40 | on the corpus: 1,263 → 1,293 complete (+30, 0 worse; eec +20, jsoup +9, esapi +1): an array as the value of a type variable (`strings.get(0).length`), the methods of `Object` on an interface (`data.get(0).toString`) |
+| After Step 41 | on the corpus: 1,293 → 1,296 complete (dropped 3 → 0, no other change): the grammar rules of `assertInstanceOf` and `assertThrowsExactly` |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
