@@ -346,6 +346,9 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
   constraint inferred by the symbol solver, `Consumer<? super T>`), a `var` typed `void` by the symbol solver (the
   void method of an overload chosen: `assertDoesNotThrow(Executable)`) typed from its parts, a returned type parameter
   inferred from an expression lambda: corpus 1,296 → 1,300 complete (cryptofs +4), additions only, 0 worse.
+- Step 43: Lombok: the resolver delomboks the files that use Lombok with the Lombok jar of the project, each copy is
+  the original file with the members marked `@lombok.Generated` added (`lombok-members`), the symbol solver reads the
+  copies before the sources: corpus 1,300 → **1,302 of 1,302** complete (steve +2), additions only, 0 worse.
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles

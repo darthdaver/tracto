@@ -118,6 +118,13 @@ public class JavaParserUtils {
         // projects of the repository, the JDK sources). The symbol solver is set on it once created (below), so that
         // the declarations reached by resolving the code under analysis (toAst, getWrappedNode) can be resolved in turn
         ParserConfiguration parserConfiguration = new ParserConfiguration().setLanguageLevel(LANGUAGE_LEVEL);
+        // The delomboked copies of the files of the project that use Lombok (tools/deps/resolve_maven.py, Step 43), one
+        // folder per source root, before the sources of the project: a class annotated with Lombok resolves to its copy,
+        // with the members Lombok generates (getters, setters, builders, constructors). The sources stay as they are
+        DelombokCopies.load(repoRootPath);
+        for (Path delombokRoot : DelombokCopies.copyRoots()) {
+            typeSolver.add(new JavaParserTypeSolver(delombokRoot, parserConfiguration));
+        }
         List<Path> repoProjectsPaths = findPotentialProjectsRoots(repoRootPath);
         for(Path projectPath : repoProjectsPaths) {
             typeSolver.add(new JavaParserTypeSolver(projectPath, parserConfiguration));

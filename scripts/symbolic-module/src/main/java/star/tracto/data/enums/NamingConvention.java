@@ -11,6 +11,7 @@ public enum NamingConvention {
     SOURCE_LIB_FOLDER("processed_libs/sources"),
     JAR_LIB_FOLDER("processed_libs/jars"),
     DECOMPILED_LIB_FOLDER("processed_libs/decompiled"),
+    DELOMBOK_LIB_FOLDER("processed_libs/delombok"),
     JAVA_CLASSPATHS_JSON("lib/java_classpaths.json"),;
 
     private final String conventionName;

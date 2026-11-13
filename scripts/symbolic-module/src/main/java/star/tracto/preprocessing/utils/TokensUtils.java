@@ -35,6 +35,7 @@ import star.tracto.preprocessing.components.*;
 import star.tracto.utils.FilesUtils;
 import star.tracto.utils.JavaUtils;
 import star.tracto.utils.javaParser.JavaParserUtils;
+import star.tracto.utils.javaParser.DelombokCopies;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
@@ -1955,7 +1956,10 @@ public class TokensUtils {
                             // It's important to collect protected members from classes in the same package
                             CompilationUnit testCu = (CompilationUnit) tc.getParentNode().get();
 
-                            for (final Path classPath: classPaths) {
+                            for (final Path sourcePath: classPaths) {
+                                // The delomboked copy of a class annotated with Lombok, with the members Lombok generates
+                                // (a builder, the constructors, Step 43)
+                                final Path classPath = DelombokCopies.copyOf(sourcePath);
                                 try {
                                     // Get the compilation unit of the matched class
                                     CompilationUnit cu = JavaParserUtils.getCompilationUnit(classPath);
