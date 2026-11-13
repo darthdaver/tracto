@@ -13,7 +13,9 @@ import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.expr.VariableDeclarationExpr;
 import com.github.javaparser.resolution.types.ResolvedReferenceType;
+import com.github.javaparser.resolution.MethodUsage;
 import com.github.javaparser.resolution.declarations.ResolvedMethodDeclaration;
+import com.github.javaparser.resolution.logic.FunctionalInterfaceLogic;
 import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedTypeDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedValueDeclaration;
@@ -42,6 +44,11 @@ import java.util.Set;
  * {@code m(...)} or {@code e.m(...)} where all the methods named {@code m} with as many parameters as arguments (found in
  * the type of {@code e}; for an unqualified call in the enclosing types, then in the static imports) return the same
  * type, which is not a type variable. Otherwise nothing: the variable stays unsolvable, as before.</p>
+ *
+ * <p>Step 42: an initializer typed {@code void} by the symbol solver is typed from its parts too (it chose the void
+ * method of an overload: {@code assertDoesNotThrow(Executable)} for {@code assertDoesNotThrow(() -> value)}); the void
+ * methods are not candidates (the call is a value); a type parameter returned by the method is the type of the body
+ * of an expression lambda passed as a functional interface returning it.</p>
  */
 final class VarTypes {
 
@@ -70,7 +77,11 @@ final class VarTypes {
             return Optional.empty();
         }
         try {
-            return Optional.of(expression.calculateResolvedType());
+            ResolvedType type = expression.calculateResolvedType();
+            // A value is never void: a void type is a void method chosen in an overload (Step 42), typed below
+            if (!type.isVoid()) {
+                return Optional.of(type);
+            }
         } catch (Exception | StackOverflowError e) {
             // Typed below, from its parts
         }
@@ -135,7 +146,7 @@ final class VarTypes {
                 return Optional.empty();
             }
             List<ResolvedMethodDeclaration> candidates = candidates(scopeType.get().asReferenceType().getTypeDeclaration().get(), name, arguments);
-            return returnType(candidates, Optional.of(scopeType.get()));
+            return returnType(candidates, Optional.of(scopeType.get()), call, depth);
         }
         // An unqualified call: the enclosing types, from the innermost, then the static imports (a single import of the
         // name first, then the imports on demand), the first ones declaring the name deciding
@@ -144,7 +155,7 @@ final class VarTypes {
             if (parent.get() instanceof TypeDeclaration<?> typeDeclaration) {
                 List<ResolvedMethodDeclaration> candidates = candidates(typeDeclaration.resolve(), name, arguments);
                 if (!candidates.isEmpty()) {
-                    return returnType(candidates, Optional.empty());
+                    return returnType(candidates, Optional.empty(), call, depth);
                 }
             }
             parent = parent.get().getParentNode();
@@ -169,7 +180,7 @@ final class VarTypes {
                         .filter(ResolvedMethodDeclaration::isStatic).toList()));
             }
             if (!candidates.isEmpty()) {
-                return returnType(candidates, Optional.empty());
+                return returnType(candidates, Optional.empty(), call, depth);
             }
         }
         return Optional.empty();
@@ -215,15 +226,32 @@ final class VarTypes {
 
     /**
      * The return type shared by the candidates, with the type parameters of the type of the scope replaced by their
-     * values; empty if one cannot be resolved, if they differ, if it is {@code void} or a type variable (a type parameter
-     * of the method, inferred from the arguments).
+     * values; empty if one cannot be resolved, if they differ, if it is a wildcard or a type variable that is not
+     * inferred from an expression lambda (a type parameter of the method, inferred from the arguments). The void
+     * candidates are left out: the call is a value (the initializer of a variable, the scope of a call), so Java chose a
+     * method that is not void (Step 42).
      */
-    private static Optional<ResolvedType> returnType(List<ResolvedMethodDeclaration> candidates, Optional<ResolvedType> scopeType) {
+    private static Optional<ResolvedType> returnType(
+            List<ResolvedMethodDeclaration> candidates,
+            Optional<ResolvedType> scopeType,
+            MethodCallExpr call,
+            int depth
+    ) {
         ResolvedType shared = null;
         for (ResolvedMethodDeclaration candidate : candidates) {
             ResolvedType returnType = candidate.getReturnType();
+            if (returnType.isVoid()) {
+                continue;
+            }
             if (scopeType.isPresent()) {
                 returnType = scopeType.get().asReferenceType().useThisTypeParametersOnTheGivenType(returnType);
+            }
+            if (returnType.isTypeVariable()) {
+                Optional<ResolvedType> inferred = fromLambdaArgument(candidate, returnType, call, depth);
+                if (inferred.isEmpty()) {
+                    return Optional.empty();
+                }
+                returnType = inferred.get();
             }
             if (returnType.isVoid() || returnType.isTypeVariable() || returnType.isWildcard()) {
                 return Optional.empty();
@@ -235,6 +263,40 @@ final class VarTypes {
             }
         }
         return Optional.ofNullable(shared);
+    }
+
+    /**
+     * The value of a type parameter of a method returned by it ({@code <T> T attempt(Producer<T> producer)}), from an
+     * argument that is an expression lambda passed as a functional interface whose method returns that type parameter:
+     * the type of the body of the lambda ({@code attempt(() -> Store.make())}: {@code Item}). Empty otherwise (a block
+     * lambda, a method reference, another argument: the type parameter stays unknown, as before).
+     */
+    private static Optional<ResolvedType> fromLambdaArgument(
+            ResolvedMethodDeclaration method,
+            ResolvedType returnType,
+            MethodCallExpr call,
+            int depth
+    ) {
+        String typeParameter = returnType.asTypeParameter().getName();
+        if (method.getTypeParameters().stream().noneMatch(declared -> declared.getName().equals(typeParameter))) {
+            return Optional.empty();
+        }
+        int parameters = Math.min(method.getNumberOfParams(), call.getArguments().size());
+        for (int i = 0; i < parameters; i++) {
+            Expression argument = call.getArgument(i);
+            if (!argument.isLambdaExpr() || argument.asLambdaExpr().getExpressionBody().isEmpty()) {
+                continue;
+            }
+            Optional<MethodUsage> functionalMethod = FunctionalInterfaceLogic.getFunctionalMethod(method.getParam(i).getType());
+            if (functionalMethod.isEmpty()) {
+                continue;
+            }
+            ResolvedType functionalReturn = functionalMethod.get().returnType();
+            if (functionalReturn.isTypeVariable() && functionalReturn.asTypeParameter().getName().equals(typeParameter)) {
+                return typeOf(argument.asLambdaExpr().getExpressionBody().get(), depth + 1);
+            }
+        }
+        return Optional.empty();
     }
 
     private static Optional<ResolvedReferenceTypeDeclaration> solveTypeName(Node node, String name) {

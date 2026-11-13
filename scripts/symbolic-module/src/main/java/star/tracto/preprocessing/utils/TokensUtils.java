@@ -1231,7 +1231,7 @@ public class TokensUtils {
             String parameterKey = entry.getKey();
             for (Type type: entry.getValue()) {
                 try {
-                    ResolvedType resolvedType = type.resolve();
+                    ResolvedType resolvedType = LambdaTypes.parameterType(type);
                     while (resolvedType.isArray()) {
                         resolvedType = resolvedType.asArrayType().getComponentType();
                     }
@@ -2184,7 +2184,7 @@ public class TokensUtils {
                                     List<Type> parameterTypes = tokenIdentifiersCollector.parameterIdentifiers.get(token);
                                     for (Type type: parameterTypes) {
                                         try {
-                                            ResolvedType resolvedType = type.resolve();
+                                            ResolvedType resolvedType = LambdaTypes.parameterType(type);
                                             while (resolvedType.isArray()) {
                                                 resolvedType = resolvedType.asArrayType().getComponentType();
                                             }
@@ -2588,19 +2588,29 @@ public class TokensUtils {
     /**
      * The type of a variable or field. For a variable declared with {@code var} whose initializer the symbol solver
      * cannot type as a whole, the type determined from the parts of the initializer, when it is not ambiguous (Step 34).
+     * A variable is never {@code void}: when the symbol solver types its initializer {@code void}, it has chosen a void
+     * method of an overload ({@code assertDoesNotThrow(Executable)} for {@code assertDoesNotThrow(() -> value)}), and
+     * the type is determined from the parts of the initializer too (Step 42).
      */
     private static ResolvedType resolveVariableType(VariableDeclarator variableDeclarator, Type type) {
+        RuntimeException failure;
         try {
-            return type.resolve();
-        } catch (RuntimeException e) {
-            if (type.isVarType()) {
-                Optional<ResolvedType> fromInitializer = VarTypes.fromInitializer(variableDeclarator);
-                if (fromInitializer.isPresent()) {
-                    return fromInitializer.get();
-                }
+            ResolvedType resolved = type.resolve();
+            if (!type.isVarType() || !resolved.isVoid()) {
+                return resolved;
             }
-            throw e;
+            failure = new IllegalStateException("The initializer of the variable " + variableDeclarator.getNameAsString() + " is typed void");
+        } catch (RuntimeException e) {
+            if (!type.isVarType()) {
+                throw e;
+            }
+            failure = e;
         }
+        Optional<ResolvedType> fromInitializer = VarTypes.fromInitializer(variableDeclarator);
+        if (fromInitializer.isPresent()) {
+            return fromInitializer.get();
+        }
+        throw failure;
     }
 
     /** Adds the field {@code length} of the arrays to the field identifiers (Step 31). */

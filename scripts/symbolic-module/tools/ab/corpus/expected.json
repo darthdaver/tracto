@@ -189,6 +189,11 @@
    "date": "2026-11-13T14:55:28",
    "jar_sha256": "657731f42401e723ba959f2f97f4c8b564e71b3a8957cd3c8e6628adf3462c43",
    "reason": "Steps 39-41 (39 and 40 reviewed against their previous step, not accepted then): Step 39 void methods only where a call needs no value (5,284 steps lose candidates, 0 target tokens removed, statuses unchanged); Step 40 chains, arrays as type-variable values and Object methods on interfaces (+30 complete, additions only); Step 41 grammar rules assertInstanceOf and assertThrowsExactly (3 assertInstanceOf oracles no longer dropped, all complete; no other change against Step 40). Corpus 1,296 complete of 1,302, 6 lose a step, 0 dropped."
+  },
+  {
+   "date": "2026-11-13T15:31:44",
+   "jar_sha256": "6323d3b6c5688ad66a58733d3a3904625527599de11c13b99531060815cfa982",
+   "reason": "Step 42: types from lambdas: a parameter of a lambda without a declared type is the bound of the constraint/wildcard inferred by the solver (Consumer<? super T>); a var is never void (JavaParser chose assertDoesNotThrow(Executable)): typed from its parts, void overloads left out, T inferred from an expression lambda argument. cryptofs +4 complete (e2.context x2, e2.count, attr.isDirectory), 1,300 of 1,302; candidates and contextual information: additions only, in those 4 oracles; 0 worse."
   }
  ],
  "oracles": {
@@ -896,11 +901,9 @@
     "status": "complete"
    },
    "MissingContentDirTestSTARSplitTest|testFix_split_1|assertTrue(attr.isDirectory());": {
-    "digest": "e39bcdfb341c5ce3",
-    "missing": [
-     "isDirectory"
-    ],
-    "status": "loses a step"
+    "digest": "16156dc61ccee8ed",
+    "missing": [],
+    "status": "complete"
    },
    "MissingContentDirTestSTARSplitTest|testGetFix_split_0|assertTrue(result.getFix(Mockito.mock(Path.class), Mockito.mock(VaultConfig.class), Mockito.mock(Masterkey.class), Mockito.mock(Cryptor.class)).isPresent());": {
     "digest": "da7ab15bae02d05d",
@@ -1068,11 +1071,9 @@
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileSteal_split_1|assertTrue(filePath.endsWith((Path) e2.context()));": {
-    "digest": "d8094df79b96ac69",
-    "missing": [
-     "context"
-    ],
-    "status": "loses a step"
+    "digest": "4aa8ae597c1e2e4c",
+    "missing": [],
+    "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileSteal_split_2|assertTrue(Files.notExists(filePath));": {
     "digest": "9010115047e9d434",
@@ -1135,18 +1136,14 @@
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToBefore_split_4|assertEquals(1, e2.count());": {
-    "digest": "8e47aa1c0a6e213e",
-    "missing": [
-     "count"
-    ],
-    "status": "loses a step"
+    "digest": "820374c32d405d36",
+    "missing": [],
+    "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToBefore_split_5|assertTrue(targetPath.endsWith((Path) e2.context()));": {
-    "digest": "21dcc38889b85d30",
-    "missing": [
-     "context"
-    ],
-    "status": "loses a step"
+    "digest": "35431e78fc69e7e0",
+    "missing": [],
+    "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToBefore_split_6|assertNull(useTokens.get(filePath));": {
     "digest": "ab5cd63a8a3cb1ec",
