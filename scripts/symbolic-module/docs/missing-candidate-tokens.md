@@ -355,6 +355,12 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
   packages for a qualified class name (`new java.awt.Color(`; `PackageIndex`, the folders of the solver roots whose
   files declare that package): corpus unchanged (1,302), additions only; the 7 test classes of the 15 lost oracles of
   v3: 14 recovered, 0 worse (left: a lambda parameter in the target of a method that is not a stream method).
+- Step 45: the lambdas written as the argument of any call (`ps.removeIf(el2 -> el2.text())`): the frame of an
+  argument knows its call and position, the parameter type comes from the functional interface the method takes there
+  (`LAMBDA_PARAM` offered where a lambda with a parameter can start), the lambda parameters stay in scope in the whole
+  body; the values created with type arguments (`new ArrayList<String>().`, `new Box<>(x).`): corpus unchanged
+  (1,302), `LAMBDA_PARAM` added in 23 steps; jsoup `ElementsTest`: 198 of 198. The 15 oracles lost by v3: all
+  recovered (Steps 44-45).
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles

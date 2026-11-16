@@ -204,6 +204,11 @@
    "date": "2026-11-16T16:24:20",
    "jar_sha256": "ecfe8411a979648ba3e202dc67441d31a99b5ec1f70b923673ee595eb9aee260",
    "reason": "Step 44: parenthesized values, inherited fields, contextual keywords as names, string literal members, package names (qualified class names); statuses unchanged (1,302 complete), candidates additions only (package first names, inherited fields, String members), contextual info: LITERAL_RETURN after string literals, ffmpeg.version METHOD_CALL->FIELD_CALL (inherited package-private field)"
+  },
+  {
+   "date": "2026-11-16T18:16:38",
+   "jar_sha256": "dcf3302bf928e1f6bce085c69d2ee45772d9bd87d6ad5a5912bfabca301e8d0c",
+   "reason": "Step 45: lambda parameters of call arguments (LAMBDA_PARAM where a functional interface parameter with parameters is expected: toArray(IntFunction), Mockito.mock(Answer, T...), newDirectoryStream(path, Filter), Stream.map/toArray when the target is not the parameter), lambda scope, type arguments after new; statuses unchanged (1,302), 23 steps gain LAMBDA_PARAM, no other change"
   }
  ],
  "oracles": {
@@ -409,7 +414,7 @@
     "status": "complete"
    },
    "NewsAttributesTestSTARSplitTest|testNewsAttributesAsMap_split_6|assertArrayEquals(Arrays.stream(attributes.getGenres()).map(NewsAttributes.NewsGenre::toString).toArray(String[]::new), map.get(NewsAttributes.GENRES));": {
-    "digest": "426cdf3945cc74ab",
+    "digest": "6ecd83ce6a4944bf",
     "missing": [],
     "status": "complete"
    },
@@ -756,12 +761,12 @@
     "status": "complete"
    },
    "CryptoPosixFileAttributesTestSTARSplitTest|testGetPermissionsReadOnly_split_0|assertArrayEquals(EnumSet.of(OWNER_READ, GROUP_READ, OTHERS_READ, OWNER_EXECUTE, GROUP_EXECUTE, OTHERS_EXECUTE).toArray(), attrs.permissions().toArray());": {
-    "digest": "9f062b34284c4c4a",
+    "digest": "ea1f2a324b253395",
     "missing": [],
     "status": "complete"
    },
    "CryptoPosixFileAttributesTestSTARSplitTest|testGetPermissions_split_0|assertArrayEquals(delegatePermissions.toArray(), attrs.permissions().toArray());": {
-    "digest": "3b9bacd2b89c8b5c",
+    "digest": "3306e777f550c86a",
     "missing": [],
     "status": "complete"
    },
@@ -786,7 +791,7 @@
     "status": "complete"
    },
    "DirectoryStreamFactoryTestSTARSplitTest|testNewDirectoryStreamAfterClosedThrowsClosedFileSystemException_split_0|assertThrows(ClosedFileSystemException.class, () -> inTest.newDirectoryStream(path, filter));": {
-    "digest": "baf5c77a6bd1ee83",
+    "digest": "45ed8d53c386474c",
     "missing": [],
     "status": "complete"
    },
@@ -916,12 +921,12 @@
     "status": "complete"
    },
    "MissingContentDirTestSTARSplitTest|testGetFix_split_0|assertTrue(result.getFix(Mockito.mock(Path.class), Mockito.mock(VaultConfig.class), Mockito.mock(Masterkey.class), Mockito.mock(Cryptor.class)).isPresent());": {
-    "digest": "af707e64d77588af",
+    "digest": "d7dabb0c9d1bf024",
     "missing": [],
     "status": "complete"
    },
    "MissingDirIdBackupTestSTARSplitTest|testGetFix_split_0|assertTrue(result.getFix(Mockito.mock(Path.class), Mockito.mock(VaultConfig.class), Mockito.mock(Masterkey.class), Mockito.mock(Cryptor.class)).isPresent());": {
-    "digest": "5ddd0fad61fe1d95",
+    "digest": "e5cd8ad0a5fe9e0c",
     "missing": [],
     "status": "complete"
    },
@@ -961,7 +966,7 @@
     "status": "complete"
    },
    "OrphanContentDirTestSTARSplitTest|testGetFix_split_0|assertTrue(result.getFix(Mockito.mock(Path.class), Mockito.mock(VaultConfig.class), Mockito.mock(Masterkey.class), Mockito.mock(Cryptor.class)).isPresent());": {
-    "digest": "c901b29ae43b7fbd",
+    "digest": "67f594f13ed75527",
     "missing": [],
     "status": "complete"
    },
@@ -1216,7 +1221,7 @@
     "status": "complete"
    },
    "UnknownTypeTestSTARSplitTest|testGetFix_split_0|assertTrue(result.getFix(Mockito.mock(Path.class), Mockito.mock(VaultConfig.class), Mockito.mock(Masterkey.class), Mockito.mock(Cryptor.class)).isPresent());": {
-    "digest": "6ee618aaee571ec0",
+    "digest": "ec8462dace23b90b",
     "missing": [],
     "status": "complete"
    }

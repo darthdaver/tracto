@@ -190,6 +190,19 @@ public class TokensUtils {
         boolean afterNew = false;
         // The frame of a parenthesized expression just closed, `(value)`: its members follow if a dot follows (Step 44)
         Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>> parenthesizedValue = null;
+        // The frame of an argument of a call: the name of the method called and the position of the argument (Step 45)
+        String callName = null;
+        int argumentIndex = 0;
+        // The values of the type variables known for the receiver of the method named last (`E` of `items.` for
+        // `items.removeIf(`, Step 45): the types of the parameters of the method can use them
+        HashMap<String, List<ResolvedType>> receiverTypeParameters = new HashMap<>();
+        // The parameters of the lambdas whose body contains the frame, with their types (Step 45): in scope until the
+        // end of the argument that holds the lambda
+        HashMap<String, List<ResolvedType>> lambdaScope = new HashMap<>();
+        // The type arguments of the class created by `new` (`new HashMap<String, List<Item>>(`, Step 45): the frame
+        // opened by `<`, and the count of the `<` opened inside it
+        boolean typeArguments = false;
+        int typeArgumentsDepth = 0;
 
 
         public TokenReferencesCollector(
@@ -442,6 +455,10 @@ public class TokensUtils {
                                         if (streamFlag && Antlr4Utils.getAntlrToken(tokens.get(i - 1)).equals(AntlrToken.LPAREN) && !adjustedNextGenericTokens.contains(token) && !adjustedNextConcreteTokens.contains(token) && !adjustedNextJavaTokens.contains(token) && ((i-2) > 0) && !tokens.get(i-2).equals("collect")) {
                                             adjustedNextConcreteTokens.add("LAMBDA_PARAM");
                                         }
+                                        // The parameter of a lambda argument of a call (Step 45)
+                                        if (!adjustedNextConcreteTokens.contains("LAMBDA_PARAM") && lambdaArgumentExpected(tokenIdentifiersStack)) {
+                                            adjustedNextConcreteTokens.add("LAMBDA_PARAM");
+                                        }
                                     } else {
                                         adjustedNextJavaTokens.add(nextANTLRToken);
                                     }
@@ -474,7 +491,10 @@ public class TokensUtils {
                                 tokenStepBuilder.setNextPossibleProjectTokens(adjustedNextConcreteTokens);
                                 tokenStepBuilder.setNextPossibleJavaTokens(adjustedNextJavaTokens);
                                 tokenStepBuilder.setSyntaxCorrect(false);
-                                if (streamFlag && Antlr4Utils.getAntlrToken(tokens.get(i - 1)).equals(AntlrToken.LPAREN) && !adjustedNextGenericTokens.contains(token) && !adjustedNextConcreteTokens.contains(token) && !adjustedNextJavaTokens.contains(token)  && ((i-2) > 0) && !tokens.get(i-2).equals("collect")) {
+                                boolean lambdaArgumentParameter = Antlr4Utils.getAntlrToken(token) == AntlrToken.IDENTIFIER
+                                        && adjustedNextConcreteTokens.contains("LAMBDA_PARAM") && lambdaArgumentExpected(tokenIdentifiersStack);
+                                if ((streamFlag && Antlr4Utils.getAntlrToken(tokens.get(i - 1)).equals(AntlrToken.LPAREN) && !adjustedNextGenericTokens.contains(token) && !adjustedNextConcreteTokens.contains(token) && !adjustedNextJavaTokens.contains(token)  && ((i-2) > 0) && !tokens.get(i-2).equals("collect"))
+                                        || (lambdaArgumentParameter && !adjustedNextConcreteTokens.contains(token) && i + 1 < tokens.size() && tokens.get(i + 1).equals("->"))) {
                                     tokenStepBuilder.setTarget("LAMBDA_PARAM" + ":" + token);
                                     logger.info("Target: LAMBDA_PARAM" + ":" + token + "\n");
                                 } else {
@@ -852,6 +872,10 @@ public class TokensUtils {
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.enumIdentifiers.keySet());
                                         }
                                         if (streamFlag && Antlr4Utils.getAntlrToken(tokens.get(tokens.size() - 1)).equals(AntlrToken.LPAREN) && ((tokens.size()-2) > 0) && !tokens.get(tokens.size()-2).equals("collect")) {
+                                            adjustedNextConcreteTokens.add("LAMBDA_PARAM");
+                                        }
+                                        // The parameter of a lambda argument of a call (Step 45)
+                                        if (!adjustedNextConcreteTokens.contains("LAMBDA_PARAM") && lambdaArgumentExpected(tokenIdentifiersStack)) {
                                             adjustedNextConcreteTokens.add("LAMBDA_PARAM");
                                         }
                                     } else {
@@ -1529,6 +1553,43 @@ public class TokensUtils {
         // The value of a parenthesized expression closed by the previous token (Step 44), only for this token
         Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>> parenthesizedValue = tokenReferences.parenthesizedValue;
         tokenReferences.parenthesizedValue = null;
+        // The type arguments of the class created by `new` (Step 45): a frame opened by `<`, closed by its `>`
+        if (tokenType == AntlrToken.LT && tokenReferences.afterNew) {
+            TokenIdentifiersCollector typeArgumentIdentifiers = typeArgumentIdentifiers();
+            TokenReferencesCollector typeArgumentReferences = cloneRootTokenReferences();
+            typeArgumentReferences.typeArguments = true;
+            tokenIdentifiersStack.add(new Triplet<>(typeArgumentIdentifiers, typeArgumentReferences, new HashSet<>(rootUnsolvableTokens)));
+            return tokenIdentifiersStack.get(tokenIdentifiersStack.size() - 1);
+        }
+        if (tokenReferences.typeArguments) {
+            switch (tokenType) {
+                case GT:
+                    if (tokenReferences.typeArgumentsDepth == 0) {
+                        // The class created follows: its constructor and the members of the value created
+                        tokenIdentifiersStack.remove(currentTokenIdentifiersAndReferences);
+                        return tokenIdentifiersStack.get(tokenIdentifiersStack.size() - 1);
+                    }
+                    tokenReferences.typeArgumentsDepth--;
+                    copyIdentifiers(typeArgumentIdentifiers(), tokenIdentifiersCollector);
+                    return currentTokenIdentifiersAndReferences;
+                case LT:
+                    tokenReferences.typeArgumentsDepth++;
+                    copyIdentifiers(typeArgumentIdentifiers(), tokenIdentifiersCollector);
+                    return currentTokenIdentifiersAndReferences;
+                case COMMA:
+                case QUESTION:
+                case EXTENDS:
+                case SUPER:
+                case BITAND:
+                    // Another type argument, a wildcard, a bound: a class follows
+                    copyIdentifiers(typeArgumentIdentifiers(), tokenIdentifiersCollector);
+                    return currentTokenIdentifiersAndReferences;
+                default:
+                    break;
+            }
+        }
+        // `new X(`: the arguments of a constructor, not a parenthesized expression (Step 45: after `new X<T>`)
+        final boolean constructorArguments = tokenType == AntlrToken.LPAREN && tokenReferences.afterNew;
         // The name of the class created by `new` goes on until another token than a name or a dot (Step 44)
         if (tokenType == AntlrToken.NEW) {
             tokenReferences.afterNew = true;
@@ -1557,17 +1618,38 @@ public class TokensUtils {
                     newTokenReferencesCollector.setLambdaReferences(tokenReferences.lambdaReferences);
                     newTokenReferencesCollector.setTypeParameterReferences(tokenReferences.typeParametersReferences);
                 }
-                newTokenReferencesCollector.parenthesizedExpression = tokenType == AntlrToken.LPAREN && !OPENS_A_CALL_OR_A_STATEMENT.contains(previousTokenType);
+                newTokenReferencesCollector.parenthesizedExpression = tokenType == AntlrToken.LPAREN && !OPENS_A_CALL_OR_A_STATEMENT.contains(previousTokenType) && !constructorArguments;
+                // The arguments of a call (Step 45), and the parameters of the enclosing lambdas, still in scope
+                if (tokenType == AntlrToken.LPAREN && previousTokenType == AntlrToken.IDENTIFIER) {
+                    newTokenReferencesCollector.callName = previousToken;
+                }
+                inheritLambdaScope(tokenReferences.lambdaScope, newTokenIdentifiersCollector, newTokenReferencesCollector);
                 tokenIdentifiersStack.add(new Triplet<>(newTokenIdentifiersCollector, newTokenReferencesCollector, new HashSet<>(rootUnsolvableTokens)));
                 break;
             case SET_TO_ROOT:
                 // Reset the current token identifiers and references collectors to the root state
                 tokenIdentifiersStack.remove(currentTokenIdentifiersAndReferences);
                 tokenIdentifiersStack.add(new Triplet<>(newTokenIdentifiersCollector, newTokenReferencesCollector, new HashSet<>(rootUnsolvableTokens)));
+                // The same argument of the same call goes on, or the next one after a comma (Step 45)
+                newTokenReferencesCollector.callName = tokenReferences.callName;
+                newTokenReferencesCollector.argumentIndex = tokenReferences.argumentIndex + (tokenType == AntlrToken.COMMA ? 1 : 0);
+                if (tokenType == AntlrToken.COMMA) {
+                    // The lambdas of the argument end: the scope of the enclosing frame
+                    HashMap<String, List<ResolvedType>> enclosingScope = tokenIdentifiersStack.size() > 1
+                            ? tokenIdentifiersStack.get(tokenIdentifiersStack.size() - 2).getValue1().lambdaScope
+                            : new HashMap<>();
+                    inheritLambdaScope(enclosingScope, newTokenIdentifiersCollector, newTokenReferencesCollector);
+                } else {
+                    inheritLambdaScope(tokenReferences.lambdaScope, newTokenIdentifiersCollector, newTokenReferencesCollector);
+                }
                 if (tokenType == AntlrToken.ARROW) {
                     streamFlag = false;
                     tokenReferences.setContextualInfoType(ContextualInfoType.LAMBDA_BODY);
-                    newTokenIdentifiersCollector.setLambdaIdentifiersMap(tokenReferences.lambdaReferences);
+                    // The parameters of the lambda join the scope (Step 45: the whole body, after an operator too)
+                    HashMap<String, List<ResolvedType>> scope = new HashMap<>(newTokenReferencesCollector.lambdaScope);
+                    scope.putAll(tokenReferences.lambdaReferences);
+                    newTokenReferencesCollector.lambdaScope = scope;
+                    newTokenIdentifiersCollector.setLambdaIdentifiersMap(new HashMap<>(scope));
                 }
                 break;
             case KEEP_CURRENT:
@@ -2045,6 +2127,15 @@ public class TokensUtils {
                                 }
                             } else {
                                 tokenIdentifiersCollector.setFieldIdentifiersMap(new HashMap<>());
+                                // The parameter of a lambda written as the argument of a call (Step 45): its type is
+                                // the parameter of the functional interface the method takes there
+                                if (tokenReferences.groupTokens.size() == 1) {
+                                    List<ResolvedType> lambdaParameterTypes = lambdaParameterTypes(tokenIdentifiersStack);
+                                    if (!lambdaParameterTypes.isEmpty()) {
+                                        lambdaReferences.put(token, lambdaParameterTypes);
+                                        tokenReferences.setLambdaReferences(lambdaReferences);
+                                    }
+                                }
                             }
                             break;
                         }
@@ -2197,6 +2288,8 @@ public class TokensUtils {
                         }
 
                         if (methodsMatch) {
+                            // The values of the type variables of the receiver, for the lambdas of the arguments (Step 45)
+                            tokenReferences.receiverTypeParameters = new HashMap<>(tokenReferences.typeParametersReferences);
                             // Get the list of method usages for the matched method name
                             List<MethodUsage> methodUsages = tokenIdentifiersCollector.methodIdentifiers.get(token);
                             methodReferences.put(token, methodUsages);
@@ -2639,6 +2732,127 @@ public class TokensUtils {
             }
         }
         return true;
+    }
+
+    /** The names where a type argument starts: the classes and the first names of the packages (Step 45). */
+    private static TokenIdentifiersCollector typeArgumentIdentifiers() {
+        TokenIdentifiersCollector identifiers = new TokenIdentifiersCollector();
+        identifiers.setClassIdentifiersMap(new HashMap<>(rootTokenIdentifiersCollector.classPathIdentifiers));
+        identifiers.setPackageIdentifiersMap(new HashMap<>(rootTokenIdentifiersCollector.packageIdentifiers));
+        return identifiers;
+    }
+
+    private static void copyIdentifiers(TokenIdentifiersCollector from, TokenIdentifiersCollector to) {
+        to.setClassIdentifiersMap(from.classPathIdentifiers);
+        to.setPackageIdentifiersMap(from.packageIdentifiers);
+        to.setMethodIdentifiersMap(from.methodIdentifiers);
+        to.setFieldIdentifiersMap(from.fieldIdentifiers);
+        to.setParameterIdentifiersMap(from.parameterIdentifiers);
+        to.setLambdaIdentifiersMap(from.lambdaIdentifiers);
+        to.setConstructorIdentifiersMap(from.constructorIdentifiers);
+        to.setEnumIdentifiersMap(from.enumIdentifiers);
+    }
+
+    /**
+     * A new frame inside the body of lambdas (Step 45): their parameters stay names of the frame (after an operator,
+     * in the arguments of a call of the body), until the end of the argument that holds the lambda.
+     */
+    private static void inheritLambdaScope(
+            HashMap<String, List<ResolvedType>> scope,
+            TokenIdentifiersCollector identifiers,
+            TokenReferencesCollector references
+    ) {
+        references.lambdaScope = new HashMap<>(scope);
+        if (!scope.isEmpty()) {
+            HashMap<String, List<ResolvedType>> lambdaIdentifiers = new HashMap<>(identifiers.lambdaIdentifiers);
+            lambdaIdentifiers.putAll(scope);
+            identifiers.setLambdaIdentifiersMap(lambdaIdentifiers);
+        }
+    }
+
+    /**
+     * The types of the parameter of a lambda written as the current argument of a call (Step 45): for each method of
+     * that name in the frame of the call, the parameter at the position of the argument (the last one, if variable
+     * arity), when it is a functional interface whose method has parameters: the type of its first parameter (the
+     * bound of a wildcard, the values recorded for a type variable). Empty when the frame is not the argument of a
+     * call, or no method takes a lambda with a parameter there.
+     */
+    private static List<ResolvedType> lambdaParameterTypes(List<Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>>> stack) {
+        List<ResolvedType> types = new ArrayList<>();
+        if (stack.size() < 2) {
+            return types;
+        }
+        TokenReferencesCollector argument = stack.get(stack.size() - 1).getValue1();
+        TokenReferencesCollector call = stack.get(stack.size() - 2).getValue1();
+        if (argument.callName == null || call.methods == null || !call.methods.containsKey(argument.callName)) {
+            return types;
+        }
+        for (MethodUsage method : call.methods.get(argument.callName)) {
+            try {
+                int parameters = method.getNoParams();
+                int index = argument.argumentIndex;
+                if (parameters == 0 || (index >= parameters && !method.getDeclaration().hasVariadicParameter())) {
+                    continue;
+                }
+                ResolvedType parameterType = method.getParamType(Math.min(index, parameters - 1));
+                if (index >= parameters - 1 && method.getDeclaration().hasVariadicParameter() && parameterType.isArray()) {
+                    parameterType = parameterType.asArrayType().getComponentType();
+                }
+                Optional<MethodUsage> functionalMethod = com.github.javaparser.resolution.logic.FunctionalInterfaceLogic.getFunctionalMethod(parameterType);
+                if (functionalMethod.isEmpty() || functionalMethod.get().getNoParams() == 0) {
+                    continue;
+                }
+                // The functional method as declared by the interface (`test(T)` of `Predicate<T>`): the type
+                // arguments of the parameter replace the type parameters of the interface
+                ResolvedType declaredParameter = functionalMethod.get().getParamType(0);
+                if (parameterType.isReferenceType()) {
+                    declaredParameter = typeArgumentApplied(parameterType.asReferenceType(), declaredParameter);
+                }
+                ResolvedType lambdaParameter = LambdaTypes.withoutWildcard(declaredParameter);
+                HashMap<String, List<ResolvedType>> typeVariableValues = new HashMap<>(call.receiverTypeParameters);
+                call.typeParametersReferences.forEach((key, values) -> typeVariableValues.merge(key, values, (receiver, call2) -> {
+                    List<ResolvedType> merged = new ArrayList<>(receiver);
+                    call2.stream().filter(value -> !merged.contains(value)).forEach(merged::add);
+                    return merged;
+                }));
+                for (ResolvedType value : TypeParameterValues.valuesOf(lambdaParameter, typeVariableValues)) {
+                    if (types.stream().noneMatch(type -> type.equals(value))) {
+                        types.add(value);
+                    }
+                }
+            } catch (RuntimeException e) {
+                logger.warn("Parameter of a lambda argument of " + argument.callName + " not resolved - " + e.getMessage());
+            }
+        }
+        return types;
+    }
+
+    /**
+     * A type of the method of a functional interface with the type arguments of the interface applied: a type parameter
+     * of the interface is replaced by the type argument at its position (JavaParser's
+     * {@code useThisTypeParametersOnTheGivenType} gives the type parameter back when the type argument is a type
+     * variable of the same name: {@code T} of {@code Predicate<? super T>} in a class {@code Nodes<T>}); another type by
+     * {@code useThisTypeParametersOnTheGivenType}.
+     */
+    private static ResolvedType typeArgumentApplied(ResolvedReferenceType functionalInterface, ResolvedType declared) {
+        if (declared.isTypeVariable() && functionalInterface.getTypeDeclaration().isPresent()) {
+            List<ResolvedTypeParameterDeclaration> typeParameters = functionalInterface.getTypeDeclaration().get().getTypeParameters();
+            List<ResolvedType> typeArguments = functionalInterface.typeParametersValues();
+            for (int i = 0; i < typeParameters.size() && i < typeArguments.size(); i++) {
+                ResolvedTypeParameterDeclaration typeParameter = typeParameters.get(i);
+                if (typeParameter.getName().equals(declared.asTypeParameter().getName())
+                        && typeParameter.getContainerQualifiedName().equals(declared.asTypeParameter().getContainerQualifiedName())) {
+                    return typeArguments.get(i);
+                }
+            }
+        }
+        return functionalInterface.useThisTypeParametersOnTheGivenType(declared);
+    }
+
+    /** Whether the next token can be the parameter of a lambda argument of a call (Step 45): the argument starts. */
+    private static boolean lambdaArgumentExpected(List<Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>>> stack) {
+        TokenReferencesCollector argument = stack.get(stack.size() - 1).getValue1();
+        return argument.callName != null && argument.groupTokens.isEmpty() && !lambdaParameterTypes(stack).isEmpty();
     }
 
     /**
