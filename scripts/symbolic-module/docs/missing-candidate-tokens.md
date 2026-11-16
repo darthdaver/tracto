@@ -366,6 +366,26 @@ test class member 12 (11; eec 11), `assertInstanceOf` 7 (dropped; jsoup 5, crypt
 3, class name 1, test method parameter 1. The dependencies are now the main cause (58% of the lost oracles; 148 of them
 are recovered by that cause alone).
 
+**Dataset v3 (full test of 2026-11-16, Step 43, dependencies resolved):** **0.2% lost** (15 of 9,148 oracles by
+`compare_tokens.py`; 9,028 complete of 9,043 counted by `missing_tokens.py`), 0 dropped, 0 regressions against dataset
+v2 (details in `docs/resume.md`, section 7). By project: crawler, ffmpeg, uuid, steve 0.0%, jsoup 0.1%, eec 0.1%,
+cryptofs 0.1%, plexus 0.4%, esapi 0.8%. The 15 lost oracles, one missing token each (`missing_tokens.py` counts 13 as
+"member of a chain", 4 also as "member of a known type", 2 as "other"; the real shapes):
+
+| Shape | Oracles | Example |
+|---|---|---|
+| member of a parenthesized `new` | 4 (esapi) | `assertTrue((new CipherSpec()).` ▸ `getKeySize` |
+| package-private field of another class | 4 (jsoup) | `assertTrue(b_needs_a.` ▸ `threadMemo` |
+| variable named `to` (a lexer keyword, `TO`: the prefix is printed `to .`) | 3 (plexus) | `assertTrue(to .` ▸ `mkdirs` |
+| member of a string literal | 2 (eec, cryptofs) | `"mysql".` ▸ `equals`, `"...".` ▸ `formatted` |
+| fully qualified class name after `new` | 1 (eec) | `new ` ▸ `java` (`new java.awt.Color(...)`) |
+| name of a lambda parameter (a new name) | 1 (jsoup) | `ps.removeIf(` ▸ `el2` |
+
+The last one is a name the developer invents, like a local variable declared in the target: not a candidate defect.
+Noted while checking the oracles datasets: `fullyQualifiedIdentifiers` mixes three forms (`Lorg/slf4j/Logger;` when
+resolved, `org.slf4j.Logger` when not, `java/lang/String;` without the `L` for some JDK types): a pre-existing
+inconsistency of the oracles stage, harmless for the candidates.
+
 **Lost oracles by cause after Step 21** (oracles recovered by fixing that cause alone, of 9,049; an oracle can have
 several causes):
 
