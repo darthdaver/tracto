@@ -19,5 +19,7 @@ public enum ContextualInfoType {
     CONSTRUCTOR_CALL,
     CONSTRUCTOR_RETURN,
     // The value of a parenthesized cast, `((T) expression)` (Step 32)
-    CAST_RETURN
+    CAST_RETURN,
+    // The value of a string literal, `"a".` (Step 44)
+    LITERAL_RETURN
 }

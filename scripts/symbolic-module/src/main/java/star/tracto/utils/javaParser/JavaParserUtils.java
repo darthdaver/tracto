@@ -110,6 +110,13 @@ public class JavaParserUtils {
      *                  classpath is separated by a ":")
      * @return the corresponding JavaParser
      */
+    /** The source roots read by the symbol solver, in its order (not the delomboked copies), set with it. */
+    private static List<Path> sourceRoots = List.of();
+
+    public static List<Path> sourceRoots() {
+        return sourceRoots;
+    }
+
     public static JavaParser setRepoJavaParser(Path repoRootPath, String classpath) {
         CombinedTypeSolver typeSolver = new CombinedTypeSolver();
         // TODO: Verify code without ReflectionTypeSolver and using java source code libraries
@@ -125,9 +132,12 @@ public class JavaParserUtils {
         for (Path delombokRoot : DelombokCopies.copyRoots()) {
             typeSolver.add(new JavaParserTypeSolver(delombokRoot, parserConfiguration));
         }
+        // The source roots of the solver, in its order, without the delomboked copies (Step 44: the packages)
+        List<Path> roots = new ArrayList<>();
         List<Path> repoProjectsPaths = findPotentialProjectsRoots(repoRootPath);
         for(Path projectPath : repoProjectsPaths) {
             typeSolver.add(new JavaParserTypeSolver(projectPath, parserConfiguration));
+            roots.add(projectPath);
         }
         String[] classpathElements = classpath.split(":");
         for (String classPathElement : classpathElements) {
@@ -155,6 +165,7 @@ public class JavaParserUtils {
                     if (!libraryRootPaths.isEmpty()) {
                         for(Path libraryRootPath : libraryRootPaths) {
                             typeSolver.add(new JavaParserTypeSolver(libraryRootPath, parserConfiguration));
+                            roots.add(libraryRootPath);
                         }
                     } else {
                         boolean jarFilesFolder = false;
@@ -184,6 +195,7 @@ public class JavaParserUtils {
             }
         }
         repoTypeSolver = typeSolver;
+        sourceRoots = List.copyOf(roots);
         symbolSolver = new JavaSymbolSolver(typeSolver);
         parserConfiguration.setSymbolResolver(symbolSolver);
         javaParser = new JavaParser(parserConfiguration);

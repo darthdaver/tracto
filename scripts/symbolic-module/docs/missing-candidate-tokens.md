@@ -349,6 +349,12 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
 - Step 43: Lombok: the resolver delomboks the files that use Lombok with the Lombok jar of the project, each copy is
   the original file with the members marked `@lombok.Generated` added (`lombok-members`), the symbol solver reads the
   copies before the sources: corpus 1,300 → **1,302 of 1,302** complete (steve +2), additions only, 0 worse.
+- Step 44: the shapes of the oracles lost by dataset v3: the members of a parenthesized value (`(new X()).`, applied
+  at the following dot only: `(int) x` is a type), the inherited fields after a value, the contextual keywords
+  (`to`, `with`, `record`, ...) read as names, the members of `String` after a string literal, the names of the
+  packages for a qualified class name (`new java.awt.Color(`; `PackageIndex`, the folders of the solver roots whose
+  files declare that package): corpus unchanged (1,302), additions only; the 7 test classes of the 15 lost oracles of
+  v3: 14 recovered, 0 worse (left: a lambda parameter in the target of a method that is not a stream method).
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles
@@ -381,7 +387,9 @@ cryptofs 0.1%, plexus 0.4%, esapi 0.8%. The 15 lost oracles, one missing token e
 | fully qualified class name after `new` | 1 (eec) | `new ` ▸ `java` (`new java.awt.Color(...)`) |
 | name of a lambda parameter (a new name) | 1 (jsoup) | `ps.removeIf(` ▸ `el2` |
 
-The last one is a name the developer invents, like a local variable declared in the target: not a candidate defect.
+The last one is a name the developer invents, like a local variable declared in the target: not a candidate defect
+(but the members of that parameter are missing too: its type is known for the stream methods only). Step 44 recovers
+the other 14.
 Noted while checking the oracles datasets: `fullyQualifiedIdentifiers` mixes three forms (`Lorg/slf4j/Logger;` when
 resolved, `org.slf4j.Logger` when not, `java/lang/String;` without the `L` for some JDK types): a pre-existing
 inconsistency of the oracles stage, harmless for the candidates.

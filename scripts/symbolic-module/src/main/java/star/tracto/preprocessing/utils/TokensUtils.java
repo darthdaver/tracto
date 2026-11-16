@@ -36,6 +36,7 @@ import star.tracto.utils.FilesUtils;
 import star.tracto.utils.JavaUtils;
 import star.tracto.utils.javaParser.JavaParserUtils;
 import star.tracto.utils.javaParser.DelombokCopies;
+import star.tracto.utils.javaParser.PackageIndex;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
@@ -79,6 +80,9 @@ public class TokensUtils {
         HashMap<String, List<MethodUsage>> methodIdentifiers;
         HashMap<String, List<ResolvedConstructorDeclaration>> constructorIdentifiers;
         HashMap<String, List<EnumConstantDeclaration>> enumIdentifiers;
+        // The packages whose name can follow, by the name that follows (Step 44): the first names of the packages
+        // where a class name can be written, the subpackages after the name of a package. Reset with the classes
+        HashMap<String, String> packageIdentifiers = new HashMap<>();
 
         /*
          * Constructor to initialize the token identifiers' collector.
@@ -127,6 +131,11 @@ public class TokensUtils {
 
         public void setClassIdentifiersMap(HashMap<String, List<Path>> classIdentifiers) {
             this.classPathIdentifiers = classIdentifiers;
+            this.packageIdentifiers = new HashMap<>();
+        }
+
+        public void setPackageIdentifiersMap(HashMap<String, String> packageIdentifiers) {
+            this.packageIdentifiers = packageIdentifiers;
         }
 
         public void setFieldIdentifiersMap(HashMap<String, List<Pair<VariableDeclarator,Type>>> fieldIdentifiers) {
@@ -177,6 +186,10 @@ public class TokensUtils {
         List<String> groupTokens = new ArrayList<>();
         // The classes of the cast that starts the parenthesized expression of the frame, `((T) expression)`
         HashMap<String, List<Path>> castClasses = new HashMap<>();
+        // After `new`, until the class name ends (a qualified name, `new java.util.Random(` or `new Outer.Inner(`, Step 44)
+        boolean afterNew = false;
+        // The frame of a parenthesized expression just closed, `(value)`: its members follow if a dot follows (Step 44)
+        Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>> parenthesizedValue = null;
 
 
         public TokenReferencesCollector(
@@ -414,6 +427,11 @@ public class TokensUtils {
                                     } else if (nextANTLRToken.equals("IDENTIFIER")) {
                                         if (!Antlr4Utils.getAntlrToken(tokens.get(i - 1)).equals(AntlrToken.IDENTIFIER)) {
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.classPathIdentifiers.keySet());
+                                            for (String packageName : new TreeSet<>(currentTokenIdentifiersCollector.packageIdentifiers.keySet())) {
+                                                if (!adjustedNextConcreteTokens.contains(packageName)) {
+                                                    adjustedNextConcreteTokens.add(packageName);
+                                                }
+                                            }
                                             adjustedNextConcreteTokens.addAll(methodCandidates(currentTokenIdentifiersCollector, tokens.subList(0, i)));
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.constructorIdentifiers.keySet());
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.fieldIdentifiers.keySet());
@@ -821,6 +839,11 @@ public class TokensUtils {
                                     } else if (nextANTLRToken.equals("IDENTIFIER")) {
                                         if (!Antlr4Utils.getAntlrToken(tokens.get(tokens.size() - 1)).equals(AntlrToken.IDENTIFIER)) {
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.classPathIdentifiers.keySet());
+                                            for (String packageName : new TreeSet<>(currentTokenIdentifiersCollector.packageIdentifiers.keySet())) {
+                                                if (!adjustedNextConcreteTokens.contains(packageName)) {
+                                                    adjustedNextConcreteTokens.add(packageName);
+                                                }
+                                            }
                                             adjustedNextConcreteTokens.addAll(methodCandidates(currentTokenIdentifiersCollector, tokens));
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.constructorIdentifiers.keySet());
                                             adjustedNextConcreteTokens.addAll(currentTokenIdentifiersCollector.fieldIdentifiers.keySet());
@@ -963,6 +986,7 @@ public class TokensUtils {
                 new HashMap<>(rootTokenIdentifiersCollector.constructorIdentifiers),
                 new HashMap<>(rootTokenIdentifiersCollector.enumIdentifiers)
         );
+        clonedTokenIdentifierCollector.setPackageIdentifiersMap(new HashMap<>(rootTokenIdentifiersCollector.packageIdentifiers));
         return clonedTokenIdentifierCollector;
     }
 
@@ -1121,6 +1145,17 @@ public class TokensUtils {
         rootTokenIdentifiersCollector.setMethodIdentifiersMap(methodUsageIdentifiers);
         rootTokenIdentifiersCollector.setParameterIdentifiersMap(parameterIdentifiers);
         rootTokenIdentifiersCollector.setEnumIdentifiersMap(enumConstantIdentifiers);
+        // The first names of the packages, for a fully qualified class name (Step 44)
+        rootTokenIdentifiersCollector.setPackageIdentifiersMap(firstPackageNames());
+    }
+
+    /** The first names of the packages of the source roots, each the name of its package (Step 44). */
+    private static HashMap<String, String> firstPackageNames() {
+        HashMap<String, String> packages = new HashMap<>();
+        for (String name : PackageIndex.ofSolver().firstNames()) {
+            packages.put(name, name);
+        }
+        return packages;
     }
 
     public static void setupRootTokenReferences (
@@ -1491,6 +1526,15 @@ public class TokensUtils {
         if (tokenAction != AntlrTokenAction.REMOVE_CURRENT) {
             tokenReferences.groupTokens.add(token);
         }
+        // The value of a parenthesized expression closed by the previous token (Step 44), only for this token
+        Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>> parenthesizedValue = tokenReferences.parenthesizedValue;
+        tokenReferences.parenthesizedValue = null;
+        // The name of the class created by `new` goes on until another token than a name or a dot (Step 44)
+        if (tokenType == AntlrToken.NEW) {
+            tokenReferences.afterNew = true;
+        } else if (tokenType != AntlrToken.IDENTIFIER && tokenType != AntlrToken.DOT) {
+            tokenReferences.afterNew = false;
+        }
         // Update the token identifiers and references collectors based on the action associated with the current token
         switch (tokenAction) {
             case ADD_ROOT:
@@ -1527,6 +1571,11 @@ public class TokensUtils {
                 }
                 break;
             case KEEP_CURRENT:
+                if (tokenType == AntlrToken.DOT && parenthesizedValue != null) {
+                    // `(value).`: the members of the value (Step 44)
+                    carryValue(parenthesizedValue, currentTokenIdentifiersAndReferences);
+                    break;
+                }
                 // Do nothing, keep the current token identifiers and references collectors unless the token is a dot that
                 // access the type of a field
                 if (tokenType == AntlrToken.DOT && (tokenReferences.contextualInfoType == ContextualInfoType.FIELD_CALL || tokenReferences.contextualInfoType == ContextualInfoType.PARAMETER_CALL)) {
@@ -1569,6 +1618,11 @@ public class TokensUtils {
                         // `((T) expression)`: the members of T follow (Step 32)
                         applyCast(closedReferences.castClasses, tokenIdentifiersStack.get(tokenIdentifiersStack.size() - 1), tc, testPrefixName, targetAssertion);
                         break;
+                    } else if (closedReferences.parenthesizedExpression) {
+                        // `(value)`: a parenthesized expression without an operator (an operator resets the frame), a
+                        // single value: if a dot follows, its members, as after the value itself (`(new X()).`, Step
+                        // 44). Not before: the group can be a type (`(int) x`, a primitive cast)
+                        tokenReferences.parenthesizedValue = currentTokenIdentifiersAndReferences;
                     }
                     if (tokenReferences.contextualInfoType == ContextualInfoType.CONSTRUCTOR_CALL) {
                         tokenReferences.setContextualInfoType(ContextualInfoType.CONSTRUCTOR_RETURN);
@@ -1663,8 +1717,6 @@ public class TokensUtils {
                     case HEX_FLOAT_LITERAL:
                     case BOOL_LITERAL:
                     case CHAR_LITERAL:
-                    case STRING_LITERAL: //TODO: consider to add candidate next tokens for string (equals methods, etc.)
-                    case TEXT_BLOCK:
                     case NULL_LITERAL:
                         // In case of unusual unexpected tokens within the oracle expression, remove all the references
                         // cause no classes, methods, fields or constructors can be suggested in this state
@@ -1681,11 +1733,35 @@ public class TokensUtils {
                         tokenReferences.setConstructors(new HashMap<>());
                         tokenReferences.setEnums(new HashMap<>());
                         break;
+                    case STRING_LITERAL:
+                    case TEXT_BLOCK:
+                        // A string: the members of String follow (`"a".equals(x)`, Step 44)
+                        Path stringPath = javaLangClasses().get("String");
+                        if (stringPath != null) {
+                            HashMap<String, List<Path>> stringClass = new HashMap<>();
+                            stringClass.put("java.lang.String", List.of(stringPath));
+                            applyValueType(stringClass, currentTokenIdentifiersAndReferences, tc, testPrefixName, targetAssertion, ContextualInfoType.LITERAL_RETURN);
+                        } else {
+                            tokenIdentifiersCollector.setClassIdentifiersMap(new HashMap<>());
+                            tokenIdentifiersCollector.setFieldIdentifiersMap(new HashMap<>());
+                            tokenIdentifiersCollector.setMethodIdentifiersMap(new HashMap<>());
+                            tokenIdentifiersCollector.setConstructorIdentifiersMap(new HashMap<>());
+                            tokenIdentifiersCollector.setEnumIdentifiersMap(new HashMap<>());
+                            tokenReferences.setContextualInfoType(ContextualInfoType.DEFINITION);
+                            tokenReferences.setCurrentClasses(new HashMap<>());
+                            tokenReferences.setReturnClasses(new HashMap<>());
+                            tokenReferences.setMethods(new HashMap<>());
+                            tokenReferences.setFields(new HashMap<>());
+                            tokenReferences.setConstructors(new HashMap<>());
+                            tokenReferences.setEnums(new HashMap<>());
+                        }
+                        break;
                     case IMPLEMENTS:
                     case INSTANCEOF:
                         // A type follows: the classes visible in the test class, as at the root (Step 26; before, the
                         // classes of the previous step were kept, the context of the expression tested)
                         tokenIdentifiersCollector.setClassIdentifiersMap(new HashMap<>(rootTokenIdentifiersCollector.classPathIdentifiers));
+                        tokenIdentifiersCollector.setPackageIdentifiersMap(new HashMap<>(rootTokenIdentifiersCollector.packageIdentifiers));
                         tokenIdentifiersCollector.setMethodIdentifiersMap(new HashMap<>());
                         tokenIdentifiersCollector.setConstructorIdentifiersMap(new HashMap<>());
                         tokenIdentifiersCollector.setFieldIdentifiersMap(new HashMap<>());
@@ -1875,6 +1951,37 @@ public class TokensUtils {
                         if (lambdasMatch) matchCount++;
                         if (parametersMatch) matchCount++;
                         if (enumConstantsMatch) matchCount++;
+                        // The name of a package, in a fully qualified class name: its subpackages and its public
+                        // classes follow (Step 44). A variable or a class of the same name obscures it (JLS 6.4.2)
+                        if (!classesMatch && !methodsMatch && !fieldsMatch && !lambdasMatch && !parametersMatch && !enumConstantsMatch
+                                && tokenIdentifiersCollector.packageIdentifiers.containsKey(token)) {
+                            String packageName = tokenIdentifiersCollector.packageIdentifiers.get(token);
+                            PackageIndex packageIndex = PackageIndex.ofSolver();
+                            HashMap<String, List<Path>> packageClasses = new HashMap<>();
+                            for (Map.Entry<String, Path> packageClass : packageIndex.publicClassesOf(packageName).entrySet()) {
+                                packageClasses.put(packageClass.getKey(), new ArrayList<>(List.of(packageClass.getValue())));
+                            }
+                            HashMap<String, String> subpackages = new HashMap<>();
+                            for (String subpackage : packageIndex.subpackagesOf(packageName)) {
+                                subpackages.put(subpackage, packageName + "." + subpackage);
+                            }
+                            tokenIdentifiersCollector.setClassIdentifiersMap(packageClasses);
+                            tokenIdentifiersCollector.setPackageIdentifiersMap(subpackages);
+                            tokenIdentifiersCollector.setMethodIdentifiersMap(new HashMap<>());
+                            tokenIdentifiersCollector.setFieldIdentifiersMap(new HashMap<>());
+                            tokenIdentifiersCollector.setParameterIdentifiersMap(new HashMap<>());
+                            tokenIdentifiersCollector.setLambdaIdentifiersMap(new HashMap<>());
+                            tokenIdentifiersCollector.setConstructorIdentifiersMap(new HashMap<>());
+                            tokenIdentifiersCollector.setEnumIdentifiersMap(new HashMap<>());
+                            tokenReferences.setContextualInfoType(ContextualInfoType.IDENTIFIER);
+                            tokenReferences.setCurrentClasses(new HashMap<>());
+                            tokenReferences.setReturnClasses(new HashMap<>());
+                            tokenReferences.setMethods(new HashMap<>());
+                            tokenReferences.setConstructors(new HashMap<>());
+                            tokenReferences.setEnums(new HashMap<>());
+                            tokenReferences.setFields(new HashMap<>());
+                            break;
+                        }
                         // If the token does not match any identifier, clear all maps to avoid suggesting irrelevant tokens
                         // TODO: Manage tokens that could refer to lambda expressions or generics
                         if (!classesMatch && !methodsMatch && !fieldsMatch && !lambdasMatch && !parametersMatch && !enumConstantsMatch) {
@@ -1950,6 +2057,9 @@ public class TokensUtils {
 
                         // If the token matches a class name, collect its members (fields and methods or constructors)
                         if (classesMatch) {
+                            // The class created by `new`: its name follows `new`, or is qualified by a package or by
+                            // its outer class (`new java.util.Random(`, `new Outer.Inner(`, Step 44)
+                            final boolean createdClass = tokenReferences.afterNew;
                             // Get the list of class paths for the matched class name
                             List<Path> classPaths = tokenIdentifiersCollector.classPathIdentifiers.get(token);
                             // Get the compilation unit of the test class to get its package declaration
@@ -1998,7 +2108,7 @@ public class TokensUtils {
                                         }
                                     }
                                     // If the previous token is "new", we are likely dealing with a constructor call
-                                    if (previousTokenType == AntlrToken.NEW) {
+                                    if (createdClass) {
                                         for (TypeDeclaration targetTypeDeclaration: matchedTypeDeclarations) {
                                             // Collect the constructors from the matched type declaration according to the modifiers rules
                                             updateHashMapOfResolvedConstructorDeclarationIdentifiers(constructorIdentifiers, targetTypeDeclaration);
@@ -2011,7 +2121,7 @@ public class TokensUtils {
                                     for (TypeDeclaration targetTypeDeclaration: matchedTypeDeclarations) {
                                         // The members the test class can access (Step 37): after `X.`, the static ones;
                                         // after `new X`, the ones of the value created (offered after `new X().`)
-                                        MemberAccess modifiers = previousTokenType == AntlrToken.NEW ? MemberAccess.ofValue(tc) : MemberAccess.ofClassName(tc);
+                                        MemberAccess modifiers = createdClass ? MemberAccess.ofValue(tc) : MemberAccess.ofClassName(tc);
                                         // Add all possible enum constant declarations if the type is an enum
                                         updateHashMapOfEnumConstantDeclarationIdentifiers(enumIdentifiers, targetTypeDeclaration);
                                         updateHashMapOfEnumConstantReferencesFromIdentifiers(enumReferences, enumIdentifiers);
@@ -2033,7 +2143,7 @@ public class TokensUtils {
                                 }
                             }
                             tokenReferences.setReturnClasses(new HashMap<>());
-                            contextualInfoType = previousTokenType == AntlrToken.NEW ? ContextualInfoType.CONSTRUCTOR_CALL : ContextualInfoType.CLASS_CALL;
+                            contextualInfoType = createdClass ? ContextualInfoType.CONSTRUCTOR_CALL : ContextualInfoType.CLASS_CALL;
                         }
 
                         if (lambdasMatch) {
@@ -2460,6 +2570,14 @@ public class TokensUtils {
                     //updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
                     List<FieldDeclaration> fieldDeclarations =  resolvedType.asReferenceType().getTypeDeclaration().get().toAst().get().findAll(FieldDeclaration.class);
                     updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, fieldDeclarations, modifiers, TypeDeclaration.class, 0);
+                    // The inherited fields, those the test class can access (Step 44: `structEval.` ▸ `threadMemo`, a
+                    // package-private field of a superclass in the package of the test class)
+                    for (ResolvedReferenceType ancestor : ancestors) {
+                        Optional<Node> ancestorDeclaration = ancestor.getTypeDeclaration().flatMap(declaration -> declaration.toAst());
+                        if (ancestorDeclaration.isPresent()) {
+                            updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, ancestorDeclaration.get().findAll(FieldDeclaration.class), modifiers, TypeDeclaration.class, 0);
+                        }
+                    }
                     //updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, fieldIdentifiers);
                 } catch (Exception e) {
                     String message = "Error resolving reference type: " + resolvedType + " - " + e.getMessage();
@@ -2533,6 +2651,55 @@ public class TokensUtils {
             String testPrefixName,
             String targetAssertion
     ) {
+        applyValueType(castClasses, frame, tc, testPrefixName, targetAssertion, ContextualInfoType.CAST_RETURN);
+    }
+
+    /**
+     * After the closing parenthesis of {@code (value)}, a parenthesized expression without an operator: the enclosing
+     * frame takes the identifiers and the references of the value, so that the members offered after {@code (value).}
+     * are the ones offered after {@code value.} (Step 44). The fields of the enclosing frame that describe its own group
+     * (a parenthesized expression, its tokens, its cast) are kept.
+     */
+    private static void carryValue(
+            Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>> closed,
+            Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>> enclosing
+    ) {
+        TokenIdentifiersCollector from = closed.getValue0();
+        TokenIdentifiersCollector to = enclosing.getValue0();
+        to.setClassIdentifiersMap(from.classPathIdentifiers);
+        to.setPackageIdentifiersMap(from.packageIdentifiers);
+        to.setMethodIdentifiersMap(from.methodIdentifiers);
+        to.setFieldIdentifiersMap(from.fieldIdentifiers);
+        to.setParameterIdentifiersMap(from.parameterIdentifiers);
+        to.setLambdaIdentifiersMap(from.lambdaIdentifiers);
+        to.setConstructorIdentifiersMap(from.constructorIdentifiers);
+        to.setEnumIdentifiersMap(from.enumIdentifiers);
+        TokenReferencesCollector fromReferences = closed.getValue1();
+        TokenReferencesCollector toReferences = enclosing.getValue1();
+        toReferences.setContextualInfoType(fromReferences.contextualInfoType);
+        toReferences.setTypeParameterReferences(fromReferences.typeParametersReferences);
+        toReferences.setParameterReferences(fromReferences.parametersReferences);
+        toReferences.setLambdaReferences(fromReferences.lambdaReferences);
+        toReferences.setCurrentClasses(fromReferences.currentClasses);
+        toReferences.setReturnClasses(fromReferences.returnClasses);
+        toReferences.setFields(fromReferences.fields);
+        toReferences.setMethods(fromReferences.methods);
+        toReferences.setConstructors(fromReferences.constructors);
+        toReferences.setEnums(fromReferences.enums);
+    }
+
+    /**
+     * The members of the given classes are offered, as after a value of their type: after a cast (Step 32), after a
+     * string literal (Step 44).
+     */
+    private static void applyValueType(
+            HashMap<String, List<Path>> castClasses,
+            Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>> frame,
+            TypeDeclaration tc,
+            String testPrefixName,
+            String targetAssertion,
+            ContextualInfoType contextualInfoType
+    ) {
         TokenIdentifiersCollector tokenIdentifiers = frame.getValue0();
         TokenReferencesCollector tokenReferences = frame.getValue1();
         List<ResolvedType> castTypes = new ArrayList<>();
@@ -2576,7 +2743,7 @@ public class TokensUtils {
         HashMap<String, List<EnumConstantDeclaration>> enumReferences = new HashMap<>();
         tokenReferences.setReturnClasses(returnClassReferences);
         processReturnClass(tc, tokenReferences, new HashMap<>(), new HashMap<>(), new HashMap<>(), new HashMap<>(), fieldReferences, methodReferences, constructorReferences, enumReferences);
-        tokenReferences.setContextualInfoType(ContextualInfoType.CAST_RETURN);
+        tokenReferences.setContextualInfoType(contextualInfoType);
         tokenReferences.setCurrentClasses(returnClassReferences);
         tokenReferences.setReturnClasses(new HashMap<>());
         tokenReferences.setMethods(methodReferences);

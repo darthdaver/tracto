@@ -22,6 +22,17 @@ import java.util.stream.Collectors;
 
 public class Antlr4Utils {
 
+    /**
+     * The contextual keywords that are keywords only in a module declaration ({@code to}, {@code with}, ...) or in a
+     * declaration ({@code record}, {@code sealed}, {@code permits}) or a switch block ({@code yield}): in an assertion
+     * (an expression) they can only be identifiers, the names of variables or members ({@code to.mkdirs()}, Step 44).
+     * Not {@code var}: the type of the parameter of a lambda ({@code (var x) -> ...}).
+     */
+    private static final java.util.Set<AntlrToken> CONTEXTUAL_KEYWORDS = java.util.EnumSet.of(
+            AntlrToken.MODULE, AntlrToken.OPEN, AntlrToken.REQUIRES, AntlrToken.EXPORTS, AntlrToken.OPENS, AntlrToken.TO,
+            AntlrToken.USES, AntlrToken.PROVIDES, AntlrToken.WITH, AntlrToken.TRANSITIVE, AntlrToken.RECORD,
+            AntlrToken.SEALED, AntlrToken.PERMITS, AntlrToken.YIELD);
+
     public static AntlrToken getAntlrToken(String token) {
         CharStream input = CharStreams.fromString(token);
 
@@ -31,7 +42,8 @@ public class Antlr4Utils {
         String tokenSymbolName = parser.getVocabulary().getSymbolicName(parser.getCurrentToken().getType());
 
         try {
-            return AntlrToken.valueOf(tokenSymbolName);
+            AntlrToken antlrToken = AntlrToken.valueOf(tokenSymbolName);
+            return CONTEXTUAL_KEYWORDS.contains(antlrToken) ? AntlrToken.IDENTIFIER : antlrToken;
         } catch (IllegalArgumentException e) {
             // Not a JUnit assertion
             if (Arrays.stream(JUnitAssertionType.values()).anyMatch(assertionType -> assertionType.name().equals(tokenSymbolName))) {
