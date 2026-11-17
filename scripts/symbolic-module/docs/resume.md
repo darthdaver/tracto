@@ -53,6 +53,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 46 | on the corpus: unchanged (1,302 complete, 0 worse); 160 oracles lose test methods (`@ParameterizedTest`, `@RepeatedTest`) from their candidates (10 steps) and invoked methods (1,346 entries): the test methods of the split class and of the superclasses are not candidates |
 | After Step 47 | on the corpus: identical (1,302 complete; no oracle has these shapes); a probe on real code (jsoup `traverse((node, depth) ->`, typed `(Node node, int depth) ->`, eec `listFiles((dir, name) ->`): 3 of 3 complete (Step 46: 2 lose a step, 1 dropped): lambdas with a parameter list, two names in a row separated in the partial oracle |
 | After Step 48 | on the corpus: unchanged (1,302 complete, 0 worse); the private methods of `Object` removed from the candidates (`registerNatives` 24 steps, `wait0` 20) and from the invoked methods of every oracle: the private methods inherited by the test class |
+| After Step 49 | on the corpus: identical (1,302 complete): the simple name of a class whose key has qualified type arguments (a latent `StringIndexOutOfBoundsException`, the `Range [131, 126)` of v1) |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -257,8 +258,8 @@ examples to start from.
      now be split per test class (section 7);
    - ~~the protected-member filter compares package names with `String.contains`~~: **Step 37 done**
      (`docs/fixes/step-37-member-access.md`);
-   - an error path takes a substring of a message that contains an identity hash (`Range [131, 126) out of bounds`,
-     cryptofs `ChunkSaverTest`);
+   - ~~an error path takes a substring of a message that contains an identity hash (`Range [131, 126) out of bounds`,
+     cryptofs `ChunkSaverTest`)~~: **Step 49 done** (`docs/fixes/step-49-simple-class-name.md`);
    - ~~the test methods annotated `@ParameterizedTest` (or `@RepeatedTest`, `@TestFactory`, `@TestTemplate`) are offered
      as candidates~~: **Step 46 done** (`docs/fixes/step-46-test-methods.md`);
    - ~~the private members of the JDK classes are offered after a value of that type~~ (`String.isMalformed3`,

@@ -29,7 +29,7 @@ public, protected and package-private (same package) ones, as Java gives them to
 ## Tests
 
 `InheritedMemberAccessTokensTest` (end-to-end): a test class resolved as a whole and one that is not, extending a class
-of another package (`protectedInherited`, `inheritedPublic`, a package-private and a private method); after
+of another package (`inheritedProtected`, `inheritedPublic`, a package-private and a private method); after
 `assertEquals(two,` and `assertDoesNotThrow(()->`: `twice` (private, of the test class), `inheritedProtected`,
 `inheritedPublic`, `hashCode`, `toString` offered; `superSecret`, `otherPackageHelper`, `wait0`, `registerNatives` not.
 Against the code of Step 47: `superSecret`, `otherPackageHelper`, `wait0` offered (the resolved class). Mutations

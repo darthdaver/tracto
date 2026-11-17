@@ -643,6 +643,18 @@ public class TokensUtils {
      * @param token the next token
      * @return the partial oracle followed by the token
      */
+    /**
+     * The simple name of the class of a key of the class references: its qualified name, with type arguments
+     * ({@code java.util.List<com.acme.Item>} → {@code List}, Step 49). Before, the text between the last dot and the last
+     * {@code <}: a qualified type argument put the dot after the {@code <}, and the substring failed (the error
+     * {@code Range [131, 126) out of bounds} of dataset v1, on a key holding the description of an object).
+     */
+    static String simpleClassName(String classNameKey) {
+        int typeArguments = classNameKey.indexOf('<');
+        String rawName = typeArguments == -1 ? classNameKey : classNameKey.substring(0, typeArguments);
+        return rawName.substring(rawName.lastIndexOf('.') + 1);
+    }
+
     static String appendToken(String partialSnippet, String token) {
         if (!AntlrToken.isAtomicKeywordToken(Antlr4Utils.getAntlrToken(token))) {
             // Two names in a row (a declaration: `(Item a) ->`, `x instanceof Item a`) are separated (Step 47: before,
@@ -1396,9 +1408,7 @@ public class TokensUtils {
         if (!light) {
             for (Map.Entry<String, List<Path>> entry : tokenReferences.currentClasses.entrySet()) {
                 String classNameKey = entry.getKey();
-                int lastDotIndex = classNameKey.lastIndexOf('.');
-                int lastDiamondIndex = classNameKey.lastIndexOf('<');
-                String className = lastDiamondIndex == -1 ? classNameKey.substring(lastDotIndex + 1) : classNameKey.substring(lastDotIndex + 1, lastDiamondIndex);
+                String className = simpleClassName(classNameKey);
                 List<Path> classPaths = entry.getValue();
                 for (final Path classPath : classPaths) {
                     try {
@@ -1422,9 +1432,7 @@ public class TokensUtils {
 
         for (Map.Entry<String,List<Path>> entry: tokenReferences.returnClasses.entrySet()) {
             String classNameKey = entry.getKey();
-            int lastDotIndex = classNameKey.lastIndexOf('.');
-            int lastDiamondIndex = classNameKey.lastIndexOf('<');
-            String className = lastDiamondIndex == -1 ? classNameKey.substring(lastDotIndex + 1) : classNameKey.substring(lastDotIndex + 1, lastDiamondIndex);
+            String className = simpleClassName(classNameKey);
             List<Path> classPaths = entry.getValue();
             for (final Path classPath: classPaths) {
                 try {
@@ -3130,9 +3138,7 @@ public class TokensUtils {
                     // Get the package declaration of the matched class and the test class
                     Optional<PackageDeclaration> matchedPackageDeclaration = cu.getPackageDeclaration();
                     Optional<PackageDeclaration> testPackageDeclaration = testCu.getPackageDeclaration();
-                    int lastDotIndex = classNameKey.lastIndexOf('.');
-                    int lastDiamondIndex = classNameKey.lastIndexOf('<');
-                    String className = lastDiamondIndex == -1 ? classNameKey.substring(lastDotIndex + 1) : classNameKey.substring(lastDotIndex + 1, lastDiamondIndex);
+                    String className = simpleClassName(classNameKey);
                     List<TypeDeclaration> matchedTypeDeclarations = JavaParserUtils.getTypeDeclarationsFromCompilationUnitAndName(cu, className);
                     // For each matched type declaration, collect its inner types as possible next class identifiers
                     for (TypeDeclaration targetTypeDeclaration: matchedTypeDeclarations) {
