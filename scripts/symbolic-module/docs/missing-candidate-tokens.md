@@ -372,6 +372,9 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
   interface at its position; two names in a row are separated in the partial oracle (`(Itema` before). Corpus
   identical; a probe on real code (real test prefixes, the target replaced by such a lambda; `tools/ab/probe_s47.py`):
   3 of 3 complete (jsoup `NodeVisitor`, eec `File.listFiles(FilenameFilter)`). Left: generic or array parameter types.
+- Step 48: the private methods inherited by the test class (`Object.registerNatives`, `Object.wait0`, a private method
+  of a superclass) are not offered without a receiver (`MemberAccess.ofTestClass`): corpus unchanged (1,302 complete),
+  44 steps lose them from their candidates and every oracle from its invoked methods.
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles

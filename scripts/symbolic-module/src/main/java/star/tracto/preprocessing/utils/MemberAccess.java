@@ -33,20 +33,32 @@ import java.util.Optional;
  * @param testPackage the package of the test class ({@code ""} for the default package)
  * @param testClass the qualified name of the test class
  * @param staticOnly whether only the static members are accessible (after the name of a class)
+ * @param inherited whether the members are the ones of the test class and of its superclasses, without a receiver: a
+ *                  protected member of a superclass is accessible (Step 48)
  */
-public record MemberAccess(String testPackage, String testClass, boolean staticOnly) {
+public record MemberAccess(String testPackage, String testClass, boolean staticOnly, boolean inherited) {
 
-    /** No constraint (the members of the test class itself and of its superclasses, collected apart). */
-    public static final MemberAccess ANY = new MemberAccess(null, null, false);
+    /** No constraint. */
+    public static final MemberAccess ANY = new MemberAccess(null, null, false, false);
 
     /** The access to the members of a value from a test class. */
     public static MemberAccess ofValue(TypeDeclaration<?> testClass) {
-        return new MemberAccess(packageOf(testClass), qualifiedName(testClass), false);
+        return new MemberAccess(packageOf(testClass), qualifiedName(testClass), false, false);
     }
 
     /** The access to the members of a class, by its name, from a test class. */
     public static MemberAccess ofClassName(TypeDeclaration<?> testClass) {
-        return new MemberAccess(packageOf(testClass), qualifiedName(testClass), true);
+        return new MemberAccess(packageOf(testClass), qualifiedName(testClass), true, false);
+    }
+
+    /**
+     * The access to the members of the test class and of its superclasses, without a receiver (Step 48): any member of
+     * the test class (and of the classes nested in it), the inherited ones Java gives a subclass (public, protected,
+     * package-private of the same package), not the private ones of a superclass (before, any member: {@code Object.wait0},
+     * {@code Object.registerNatives}, the private methods of a superclass of the project).
+     */
+    public static MemberAccess ofTestClass(TypeDeclaration<?> testClass) {
+        return new MemberAccess(packageOf(testClass), qualifiedName(testClass), false, true);
     }
 
     /** Whether a method can be accessed. */
@@ -86,6 +98,9 @@ public record MemberAccess(String testPackage, String testClass, boolean staticO
 
     private boolean allows(AccessSpecifier access, String declaringPackage, String declaringType) {
         if (access == AccessSpecifier.PUBLIC || isNestedInTestClass(declaringType)) {
+            return true;
+        }
+        if (inherited && access == AccessSpecifier.PROTECTED) {
             return true;
         }
         return access != AccessSpecifier.PRIVATE && declaringPackage.equals(testPackage);

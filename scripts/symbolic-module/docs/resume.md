@@ -52,6 +52,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 45 | on the corpus: unchanged (1,302 complete, 0 worse; `LAMBDA_PARAM` added in 23 steps); the last oracle lost by v3 recovered (jsoup `ElementsTest` 198 of 198): lambdas as arguments of any call, values created with type arguments |
 | After Step 46 | on the corpus: unchanged (1,302 complete, 0 worse); 160 oracles lose test methods (`@ParameterizedTest`, `@RepeatedTest`) from their candidates (10 steps) and invoked methods (1,346 entries): the test methods of the split class and of the superclasses are not candidates |
 | After Step 47 | on the corpus: identical (1,302 complete; no oracle has these shapes); a probe on real code (jsoup `traverse((node, depth) ->`, typed `(Node node, int depth) ->`, eec `listFiles((dir, name) ->`): 3 of 3 complete (Step 46: 2 lose a step, 1 dropped): lambdas with a parameter list, two names in a row separated in the partial oracle |
+| After Step 48 | on the corpus: unchanged (1,302 complete, 0 worse); the private methods of `Object` removed from the candidates (`registerNatives` 24 steps, `wait0` 20) and from the invoked methods of every oracle: the private methods inherited by the test class |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -262,8 +263,11 @@ examples to start from.
      as candidates~~: **Step 46 done** (`docs/fixes/step-46-test-methods.md`);
    - ~~the private members of the JDK classes are offered after a value of that type~~ (`String.isMalformed3`,
      `Object.wait0`): **Step 37 done**, the rule "not protected" let every private member through;
+   - ~~the private methods of the superclasses of the test class (`Object.wait0`, `registerNatives`) offered without a
+     receiver~~: **Step 48 done** (`docs/fixes/step-48-inherited-private-methods.md`);
    - `java.lang` and the JDK classes come from the newest and the oldest JDK of `lib` when the Java version of the
-     repository is not pinned to one JDK (`JavaUtils`): classes of both are offered (`Compiler`, `IO`);
+     repository is not pinned to one JDK (`JavaUtils`): classes of both are offered (`Compiler`, `IO`). Not in the nine
+     projects (all detected); to measure during the generation (Step 48 doc);
    - ~~after the name of a class (`String.`), its instance and protected methods are offered too~~: **Step 37 done**
      (`MemberAccess`: the access rule of Java; `X::` offers the instance methods);
    - after a value, the fields of the classes nested in its type are collected too, the inherited fields are not (found
