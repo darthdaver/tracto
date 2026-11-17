@@ -361,6 +361,12 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
   body; the values created with type arguments (`new ArrayList<String>().`, `new Box<>(x).`): corpus unchanged
   (1,302), `LAMBDA_PARAM` added in 23 steps; jsoup `ElementsTest`: 198 of 198. The 15 oracles lost by v3: all
   recovered (Steps 44-45).
+- Step 46: the test methods (`@ParameterizedTest`, `@RepeatedTest`, `@TestFactory`, `@TestTemplate`, `@Theory`,
+  qualified too; before, `@Test` only) are not candidates: the prefixes the split class keeps and the ones inherited
+  from a superclass: corpus unchanged (1,302 complete), 10 steps lose a test method from their candidates and 160
+  oracles from their invoked methods. Not taken: the lambdas with several or parenthesized parameters (`(a, b) ->`,
+  `(a) ->`, proposed after Step 45), none in the 9,148 oracles of v3 nor in the 117,824 one-line assertions of the
+  nine repositories: a known limit, to take up if the generation shows it.
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles
@@ -436,8 +442,8 @@ several causes):
 8. **Type inference of the chains** (451 in v1, 436 alone; the largest but the hardest).
 9. **Dependencies** (85): design (section 6) with the answer of the author on the inference setting.
 10. **Pre-existing defects**, each its own step: ~~candidates depending on the processing history~~ (Step 36); ~~the protected-member
-   filter (`String.contains` on package names)~~ (Step 37); a substring of an error message holding an identity hash; the test methods annotated `@ParameterizedTest` (or other test annotations than `@Test`)
-   offered as candidates; ~~the private members of the JDK classes offered after a value of that type (`String.isMalformed3`)~~ (Step 37); ~~the `LAMBDA_PARAM` placeholder offered outside lambdas~~ (same cause, Step 36).
+   filter (`String.contains` on package names)~~ (Step 37); a substring of an error message holding an identity hash; ~~the test methods annotated `@ParameterizedTest` (or other test annotations than `@Test`)
+   offered as candidates~~ (Step 46); ~~the private members of the JDK classes offered after a value of that type (`String.isMalformed3`)~~ (Step 37); ~~the `LAMBDA_PARAM` placeholder offered outside lambdas~~ (same cause, Step 36).
 
 Proposed to the author on 2026-11-05 (not decided): cut the first training dataset after steps 1-3 (about 470 oracles
 at most, the causes overlap), measured with the full test of `docs/resume.md` section 7.

@@ -3362,6 +3362,17 @@ public class TokensUtils {
         }
     }
 
+    /**
+     * Whether a method has an annotation, by simple name (a qualified annotation too); {@code "Test"} stands for every
+     * annotation of a test method of JUnit ({@code @ParameterizedTest}, ..., Step 46: {@link TestClassScope#isTestMethod}).
+     */
+    private static boolean hasAnnotation(MethodDeclaration method, String name) {
+        if (name.equals("Test")) {
+            return TestClassScope.isTestMethod(method);
+        }
+        return method.getAnnotations().stream().anyMatch(a -> a.getName().getIdentifier().equals(name));
+    }
+
     private static void collectResolvedMethodDeclaration(
             HashMap<String, List<MethodUsage>> methodUsageIdentifiers,
             Set<ResolvedMethodDeclaration> resolvedMethodDeclarations,
@@ -3379,8 +3390,7 @@ public class TokensUtils {
                 // Check if the method has the required annotations
                 boolean annotationCheck = true;
                 for (Pair<String, Boolean> annotation : annotations) {
-                    boolean hasAnnotation = methodDeclaration.getAnnotations().stream()
-                            .anyMatch(a -> a.getNameAsString().equals(annotation.getValue0()));
+                    boolean hasAnnotation = hasAnnotation(methodDeclaration, annotation.getValue0());
                     if (hasAnnotation != annotation.getValue1()) {
                         annotationCheck = false;
                         break;
@@ -3416,8 +3426,7 @@ public class TokensUtils {
                 // Check if the method has the required annotations
                 boolean annotationCheck = true;
                 for (Pair<String, Boolean> annotation : annotations) {
-                    boolean hasAnnotation = methodDeclaration.getAnnotations().stream()
-                            .anyMatch(a -> a.getNameAsString().equals(annotation.getValue0()));
+                    boolean hasAnnotation = hasAnnotation(methodDeclaration, annotation.getValue0());
                     if (hasAnnotation != annotation.getValue1()) {
                         annotationCheck = false;
                         break;

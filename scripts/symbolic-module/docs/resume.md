@@ -50,6 +50,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | **Dataset v3** (full test with the dependencies, 2026-11-16, Step 43 `ffa67c0`) | **0.2%** on the nine projects (9,028 complete of 9,043; dataset v2: 8,784, +244, 0 regressions, 0 dropped) |
 | After Step 44 | on the corpus: unchanged (1,302 complete, 0 worse, additions only); the 7 classes of the 15 oracles lost by v3: 14 recovered, 0 worse: parenthesized values, inherited fields, `to` as a name, string literal members, qualified class names |
 | After Step 45 | on the corpus: unchanged (1,302 complete, 0 worse; `LAMBDA_PARAM` added in 23 steps); the last oracle lost by v3 recovered (jsoup `ElementsTest` 198 of 198): lambdas as arguments of any call, values created with type arguments |
+| After Step 46 | on the corpus: unchanged (1,302 complete, 0 worse); 160 oracles lose test methods (`@ParameterizedTest`, `@RepeatedTest`) from their candidates (10 steps) and invoked methods (1,346 entries): the test methods of the split class and of the superclasses are not candidates |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -256,9 +257,8 @@ examples to start from.
      (`docs/fixes/step-37-member-access.md`);
    - an error path takes a substring of a message that contains an identity hash (`Range [131, 126) out of bounds`,
      cryptofs `ChunkSaverTest`);
-   - the test methods annotated `@ParameterizedTest` (or `@RepeatedTest`, `@TestFactory`, `@TestTemplate`) are offered
-     as candidates: only `@Test` is excluded (`TokensUtils.collectMethodUsages` / `collectResolvedMethodDeclaration`,
-     `TestClassScope.addMethods`); seen in jsoup `TokenQueueTest`. Cheap;
+   - ~~the test methods annotated `@ParameterizedTest` (or `@RepeatedTest`, `@TestFactory`, `@TestTemplate`) are offered
+     as candidates~~: **Step 46 done** (`docs/fixes/step-46-test-methods.md`);
    - ~~the private members of the JDK classes are offered after a value of that type~~ (`String.isMalformed3`,
      `Object.wait0`): **Step 37 done**, the rule "not protected" let every private member through;
    - `java.lang` and the JDK classes come from the newest and the oldest JDK of `lib` when the Java version of the

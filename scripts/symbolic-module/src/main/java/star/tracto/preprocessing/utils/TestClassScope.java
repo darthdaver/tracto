@@ -104,10 +104,23 @@ final class TestClassScope {
         return methods;
     }
 
+    /**
+     * The annotations that make a method a test method of JUnit (Step 46): before, only {@code @Test} by its simple name,
+     * so that the parameterized tests (jsoup {@code TokenQueueTest}), the repeated tests, the test factories and
+     * templates, the theories of JUnit 4 and the qualified {@code @org.junit.Test} were offered as candidates.
+     */
+    private static final Set<String> TEST_ANNOTATIONS = Set.of("Test", "ParameterizedTest", "RepeatedTest", "TestFactory",
+            "TestTemplate", "Theory");
+
+    /** Whether a method is a test method (annotated with an annotation of {@link #TEST_ANNOTATIONS}, simple or qualified). */
+    static boolean isTestMethod(MethodDeclaration method) {
+        return method.getAnnotations().stream().anyMatch(annotation -> TEST_ANNOTATIONS.contains(annotation.getName().getIdentifier()));
+    }
+
     /** Adds the methods of a type visible within the test class (all of them if the type is the test class itself). */
     private static void addMethods(List<Method> methods, TypeDeclaration<?> type, boolean testClass, boolean samePackage) {
         for (MethodDeclaration method : type.getMethods()) {
-            if (method.getAnnotationByName("Test").isPresent()) {
+            if (isTestMethod(method)) {
                 continue;
             }
             if (!testClass && !isInherited(method, type, samePackage)) {
