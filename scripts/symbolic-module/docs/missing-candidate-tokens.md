@@ -367,6 +367,11 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
   oracles from their invoked methods. Not taken: the lambdas with several or parenthesized parameters (`(a, b) ->`,
   `(a) ->`, proposed after Step 45), none in the 9,148 oracles of v3 nor in the 117,824 one-line assertions of the
   nine repositories: a known limit, to take up if the generation shows it.
+- Step 47 (asked by the author): the lambdas with a parameter list, `(a, b) ->`, `(a) ->`, `(Item a, Special b) ->`,
+  `final`, `var`: each name is a new name (`LAMBDA_PARAM:<name>`) with the type of the parameter of the functional
+  interface at its position; two names in a row are separated in the partial oracle (`(Itema` before). Corpus
+  identical; a probe on real code (real test prefixes, the target replaced by such a lambda; `tools/ab/probe_s47.py`):
+  3 of 3 complete (jsoup `NodeVisitor`, eec `File.listFiles(FilenameFilter)`). Left: generic or array parameter types.
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles

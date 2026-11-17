@@ -112,4 +112,15 @@ final class TokensFixture {
         }
         throw new AssertionError("no token step after " + partialSnippet);
     }
+
+    /** The target of the token step that follows the given partial oracle ({@code IDENTIFIER:a}, {@code LAMBDA_PARAM:a}). */
+    static String targetAfter(JsonNode datapoint, String partialSnippet) {
+        assertNotNull(datapoint, "no tokens datapoint");
+        for (JsonNode step : datapoint.get("tokenSteps")) {
+            if (step.get("partialSnippet").asText().equals(partialSnippet)) {
+                return step.get("target").asText();
+            }
+        }
+        throw new AssertionError("no token step after " + partialSnippet);
+    }
 }

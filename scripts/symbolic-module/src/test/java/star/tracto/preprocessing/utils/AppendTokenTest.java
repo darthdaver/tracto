@@ -30,4 +30,12 @@ class AppendTokenTest {
         assertEquals("assertEquals(a)", TokensUtils.appendToken("assertEquals(a", ")"));
         assertEquals("assertEquals(\"x\"", TokensUtils.appendToken("assertEquals(", "\"x\""));
     }
+
+    @Test
+    void twoNamesInARowAreSeparated() {
+        // The declarations of the parameters of a lambda and of a pattern variable (Step 47)
+        assertEquals("assertTrue(test((Item a", TokensUtils.appendToken("assertTrue(test((Item", "a"));
+        assertEquals("assertTrue(x instanceof Item a", TokensUtils.appendToken("assertTrue(x instanceof Item", "a"));
+        assertEquals("assertTrue(test((final Item", TokensUtils.appendToken("assertTrue(test((final ", "Item"));
+    }
 }

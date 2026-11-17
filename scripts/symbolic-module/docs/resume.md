@@ -51,6 +51,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 44 | on the corpus: unchanged (1,302 complete, 0 worse, additions only); the 7 classes of the 15 oracles lost by v3: 14 recovered, 0 worse: parenthesized values, inherited fields, `to` as a name, string literal members, qualified class names |
 | After Step 45 | on the corpus: unchanged (1,302 complete, 0 worse; `LAMBDA_PARAM` added in 23 steps); the last oracle lost by v3 recovered (jsoup `ElementsTest` 198 of 198): lambdas as arguments of any call, values created with type arguments |
 | After Step 46 | on the corpus: unchanged (1,302 complete, 0 worse); 160 oracles lose test methods (`@ParameterizedTest`, `@RepeatedTest`) from their candidates (10 steps) and invoked methods (1,346 entries): the test methods of the split class and of the superclasses are not candidates |
+| After Step 47 | on the corpus: identical (1,302 complete; no oracle has these shapes); a probe on real code (jsoup `traverse((node, depth) ->`, typed `(Node node, int depth) ->`, eec `listFiles((dir, name) ->`): 3 of 3 complete (Step 46: 2 lose a step, 1 dropped): lambdas with a parameter list, two names in a row separated in the partial oracle |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
