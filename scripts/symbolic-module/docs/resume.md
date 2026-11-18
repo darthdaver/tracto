@@ -54,6 +54,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 47 | on the corpus: identical (1,302 complete; no oracle has these shapes); a probe on real code (jsoup `traverse((node, depth) ->`, typed `(Node node, int depth) ->`, eec `listFiles((dir, name) ->`): 3 of 3 complete (Step 46: 2 lose a step, 1 dropped): lambdas with a parameter list, two names in a row separated in the partial oracle |
 | After Step 48 | on the corpus: unchanged (1,302 complete, 0 worse); the private methods of `Object` removed from the candidates (`registerNatives` 24 steps, `wait0` 20) and from the invoked methods of every oracle: the private methods inherited by the test class |
 | After Step 49 | on the corpus: identical (1,302 complete): the simple name of a class whose key has qualified type arguments (a latent `StringIndexOutOfBoundsException`, the `Range [131, 126)` of v1) |
+| **Dataset v4** (full test with the dependencies, 2026-11-17, Step 49 `e70d8ac`) | **0.0%** on the nine projects (9,043 complete of 9,043; dataset v3: 9,028, +15, 0 regressions, 0 dropped) |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -271,8 +272,11 @@ examples to start from.
      projects (all detected); to measure during the generation (Step 48 doc);
    - ~~after the name of a class (`String.`), its instance and protected methods are offered too~~: **Step 37 done**
      (`MemberAccess`: the access rule of Java; `X::` offers the instance methods);
-   - after a value, the fields of the classes nested in its type are collected too, the inherited fields are not (found
-     in Step 37); no member is offered after a string literal (`"a".length()`);
+   - after a value, the fields of the classes nested in its type are collected too (found in Step 37; the inherited
+     fields and the members of a string literal: Step 44 done). Since Step 44 also from the nested and anonymous classes
+     of its supertypes (dataset v4: `Throwable.SentinelHolder.STACK_TRACE_SENTINEL` after every exception value,
+     jsoup `Element.NodeList.validChildren` after `doc.`, the fields of the classes nested in `Evaluator`, the `i` of
+     the anonymous iterator of `Path.iterator()` in cryptofs): noise only, never a lost target;
    - ~~the body of a method without a source is garbage taken from the text of its `MethodUsage`~~: **Step 35 done**
      (`docs/fixes/step-35-sourceless-bodies.md`);
    - the imports and the package of the focal class are added to the classes of the test class (not visible there
@@ -382,6 +386,33 @@ prefixes (Mockito, OkHttp, JUnit `assumeTrue`, ...; esapi +1,015, cryptofs +1,49
 `java.lang.OutOfMemoryError`, nothing written outside the run; peak memory 12.9 GB RSS (jsoup tokens stage,
 `-Xmx12g`; v2 10.6 GB); jsoup took 4.8 h, eec 2.6 h, the others under 50 min. The datasets (35 GB)
 are in `tmp/ab/v3/<project>/out/raw-tokens-dataset-training/`.
+
+**Done on 2026-11-17 (dataset v4):** the jar of Step 49 (`e70d8ac`, `tmp/ab/jar-v4.jar`), the configuration of v3
+(`ab.py run v4 ... --deps -j 9 --jvm-options=-Xmx12g`), compared with dataset v3. `compare_tokens.py`
+(`tmp/ab/v4-compare.txt`): **0 regressions**; the oracles datasets identical in every project (9,148 oracles); lost 15
+→ **0** (jsoup −5, esapi −4, plexus −3, eec −2, cryptofs −1, each "loses a step → complete": Steps 44 and 45).
+`missing_tokens.py` (`tmp/ab/v4-missing.txt`): **0.0% lost** (9,043 complete of 9,043, 118,070 steps, 0 missing
+tokens, 0 dropped). The candidates, step by step against v3 (scratchpad `v4_diff.py`, one test class file at a time:
+the whole datasets do not fit in memory): no step count changed, no target token removed from its step;
+- added: the names of the root packages (Step 44: `com`, `org`, `java`, `javax`, `jdk`, `sun`, ... and the roots of
+  the project, `test` in uuid, `de` in steve) where a class name can start: 31,548 of the 118,070 steps (26.7%); the
+  inherited fields after a value (Step 44: jsoup `p.` ▸ `EmptyNodes`, crawler `sm.` ▸ the `W3C_*` constants of
+  `AbstractSiteMap`, eec `color4.` ▸ `OPAQUE` of `java.awt.Transparency`, esapi `validationRule.` ▸ the protected
+  `allowNull`, ffmpeg `ffprobe.` ▸ the package-private `runFunc`); the members of `String` after a literal and of a
+  parenthesized value (Step 44); `LAMBDA_PARAM` in 50 steps (Steps 45 and 47: `getFix(Mockito.mock(`, `toArray(`,
+  `map(`, `auth(`);
+- removed: `registerNatives` and `wait0` (Step 48), the test methods (Step 46), after `(value).` the class names and
+  methods offered before (Step 44: esapi `(new CipherSpec()).`, jsoup `(e3).`), after `new X<` the methods and fields
+  (Step 45: ffmpeg `new IsNull<`, cryptofs `new HashMap<`, eec `new ListMapSheet<`), after `"...".` the local
+  variables (Step 44);
+- a defect found: the inherited fields include the fields of the nested and anonymous classes of the supertypes
+  (`Throwable.SentinelHolder.STACK_TRACE_SENTINEL`, private class, after every exception value: 61 steps; jsoup
+  `Element.NodeList.validChildren` 289, the fields of the classes nested in `Evaluator` (`a`, `b`, `index`, `key`,
+  `pattern`, `value`) after a subclass of `Evaluator`, the `i` of the anonymous iterator of `Path` in cryptofs 25).
+  The same defect as for the type itself (section 6, item 10): noise, no target lost.
+
+Every stage exited 0, nothing written outside the run; peak memory 12.8 GB RSS (jsoup tokens stage); jsoup took 4.7 h,
+eec 2.5 h, the others under 50 min. The datasets (36 GB) are in `tmp/ab/v4/<project>/out/raw-tokens-dataset-training/`.
 
 Step 21's own A/B (2026-11-05, server): A = Step 20, B = Step 21, nine projects, `tmp/ab/step21-A|B` on
 the server: 20.8% lost on both sides (7,170 complete of 9,049 by `missing_tokens.py`), 0 regressions, no status change
