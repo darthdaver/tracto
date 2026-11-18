@@ -219,52 +219,57 @@
    "date": "2026-11-17T14:46:20",
    "jar_sha256": "1f71d7e52d0ae3b22631a0e32b751ef7dbb3aad12a0a182dd9ff9533c31500b2",
    "reason": "Step 48: the private methods inherited by the test class are not offered: registerNatives (24 steps) and wait0 (20) removed from the candidates, and from the invoked methods of every oracle (4,332 entries); no target lost, nothing added"
+  },
+  {
+   "date": "2026-11-18T11:22:03",
+   "jar_sha256": "40ac2ebb4f9d39c6404da28937ac1b2eba28055532a789e2e5400bd673414a4b",
+   "reason": "Step 50: the fields of the classes nested in a type or its supertypes are not candidates after a value (113 steps lose candidates, removals only, no target)"
   }
  ],
  "oracles": {
   "crawler": {
    "BasicURLNormalizerTestSTARSplitTest|testBasicNormalizerExceptionCaught_split_0|assertNull(normalizer.filter(weirdUrl), \"normalizing: \" + weirdUrl);": {
-    "digest": "20f7fe19ad20f53e",
+    "digest": "866ca698fbfbaa7b",
     "missing": [],
     "status": "complete"
    },
    "BasicURLNormalizerTestSTARSplitTest|testBasicNormalizer_split_0|assertEquals(expectedNormalizedUrl, normalizer.filter(weirdUrl), \"normalizing: \" + weirdUrl);": {
-    "digest": "1d1a8c427ea9fad7",
+    "digest": "cfa479a81bf789a5",
     "missing": [],
     "status": "complete"
    },
    "BasicURLNormalizerTestSTARSplitTest|testHostToUnicode_split_0|assertEquals(normal, normalizer.filter(weird), \"normalizing: \" + weird);": {
-    "digest": "0fc93f3a48c31b90",
+    "digest": "41fb7727d263be88",
     "missing": [],
     "status": "complete"
    },
    "BasicURLNormalizerTestSTARSplitTest|testHostToUnicode_split_1|assertEquals(normal2, normalizer.filter(weird2), \"normalizing: \" + weird2);": {
-    "digest": "cfec0cc366d7e6a3",
+    "digest": "735fcccd59f573a2",
     "missing": [],
     "status": "complete"
    },
    "BasicURLNormalizerTestSTARSplitTest|testNoIdnNormalization_split_0|assertEquals(normal, normalizer.filter(weird), \"normalizing: \" + weird);": {
-    "digest": "f8dcfc31e5bc184c",
+    "digest": "1dd95f8ea3ffd49c",
     "missing": [],
     "status": "complete"
    },
    "BasicURLNormalizerTestSTARSplitTest|testQueryParameters_split_0|assertEquals(urlNorm, normalizer.filter(url), \"normalizing: \" + url);": {
-    "digest": "5aad507aa3ed8e24",
+    "digest": "61a245675ccf9403",
     "missing": [],
     "status": "complete"
    },
    "BasicURLNormalizerTestSTARSplitTest|testRemoveSessionQueryParameters_split_0|assertEquals(normal, normalizer.filter(weird), \"normalizing: \" + weird);": {
-    "digest": "3f0c085cd5a1ef36",
+    "digest": "b7787ba2d55883e3",
     "missing": [],
     "status": "complete"
    },
    "BasicURLNormalizerTestSTARSplitTest|testRemoveSessionQueryParameters_split_1|assertEquals(normal2, normalizer.filter(weird2), \"normalizing: \" + weird2);": {
-    "digest": "42b1bccd25c2106c",
+    "digest": "59c3a6345faaaa37",
     "missing": [],
     "status": "complete"
    },
    "BasicURLNormalizerTestSTARSplitTest|testRemoveSessionQueryParameters_split_2|assertEquals(normal3, normalizer.filter(weird3), \"normalizing: \" + weird3);": {
-    "digest": "630ce77dae22506f",
+    "digest": "7cf1a1981345f0f8",
     "missing": [],
     "status": "complete"
    },
@@ -424,7 +429,7 @@
     "status": "complete"
    },
    "NewsAttributesTestSTARSplitTest|testNewsAttributesAsMap_split_6|assertArrayEquals(Arrays.stream(attributes.getGenres()).map(NewsAttributes.NewsGenre::toString).toArray(String[]::new), map.get(NewsAttributes.GENRES));": {
-    "digest": "d3fa975700a37af2",
+    "digest": "52a3840cbd0ec59a",
     "missing": [],
     "status": "complete"
    },
@@ -464,117 +469,117 @@
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_0|assertTrue(rules.isAllowed(url1));": {
-    "digest": "7db7966baa1eef71",
+    "digest": "f9460af808e0af1d",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_10|assertTrue(rules.isAllowed(url5.toString()));": {
-    "digest": "5c9b7cd94bdc2b00",
+    "digest": "42cf24b4cafaf598",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_11|assertFalse(rules.isAllowed(url6.toString()));": {
-    "digest": "dfb4eb1ae5b05640",
+    "digest": "f0f7365e35493d83",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_12|assertTrue(rules.isAllowAll());": {
-    "digest": "4e359feefe30d448",
+    "digest": "c949f8f92d954e9e",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_13|assertTrue(rules.isAllowed(url4));": {
-    "digest": "bb520b89079c63c3",
+    "digest": "9634267cd04670b8",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_14|assertTrue(rules.isAllowed(url4.toString()));": {
-    "digest": "98ccb249feadfdaf",
+    "digest": "8ada0e13658a1f55",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_15|assertTrue(rules.isAllowNone());": {
-    "digest": "46be75b4ae2544d8",
+    "digest": "d903e024a3f970ea",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_16|assertFalse(rules.isAllowed(url1));": {
-    "digest": "b7c7912555053bed",
+    "digest": "cc1dd8af14d29437",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_17|assertFalse(rules.isAllowed(url1.toString()));": {
-    "digest": "21a4e635ad13bb62",
+    "digest": "12c25be828c0a90e",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_1|assertFalse(rules.isAllowed(url2));": {
-    "digest": "bba3da529046f227",
+    "digest": "545b115fa6aa9f7e",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_2|assertTrue(rules.isAllowed(url3));": {
-    "digest": "c1c737aecf3f5724",
+    "digest": "c844b08868bb28e5",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_3|assertFalse(rules.isAllowed(url4));": {
-    "digest": "d2f314493c695d09",
+    "digest": "de9b56799ec33cc8",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_4|assertTrue(rules.isAllowed(url5));": {
-    "digest": "d2cf95e42296c20d",
+    "digest": "b858d9c6e93580e0",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_5|assertFalse(rules.isAllowed(url6));": {
-    "digest": "36132c51095a9302",
+    "digest": "3f0ceb88b40dbcd2",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_6|assertTrue(rules.isAllowed(url1.toString()));": {
-    "digest": "665100297fb60a4a",
+    "digest": "5844c5dca45782d6",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_7|assertFalse(rules.isAllowed(url2.toString()));": {
-    "digest": "fac29689e37b044f",
+    "digest": "b7d813e670e86f8b",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_8|assertTrue(rules.isAllowed(url3.toString()));": {
-    "digest": "d8c5bf5e4814e978",
+    "digest": "4bcdbb1b74744713",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testIsAllowed_split_9|assertFalse(rules.isAllowed(url4.toString()));": {
-    "digest": "dd3bb58285a2da26",
+    "digest": "de76e2f2c21b8e03",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testSerialization_split_0|assertTrue(expectedRules.equals(actualRules));": {
-    "digest": "af4b87963794a896",
+    "digest": "55b70fe143a63fe7",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testUrlsNotNormalized_split_0|assertTrue(rules.isAllowed(urlNotNormalized));": {
-    "digest": "fe163b4871e40546",
+    "digest": "816607c85a91b18f",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testUrlsNotNormalized_split_1|assertFalse(rules.isAllowed(urlNormalized));": {
-    "digest": "010b77df454abd88",
+    "digest": "b042d869d75387de",
     "missing": [],
     "status": "complete"
    },
    "SimpleRobotRulesTestSTARSplitTest|testUrlsNotNormalized_split_2|assertTrue(rules.isAllowed(baseURL));": {
-    "digest": "67441b57202bffd4",
+    "digest": "c5c7d04e97198c33",
     "missing": [],
     "status": "complete"
    },
    "SuffixTrieTestSTARSplitTest|testSuffixTrie_split_0|assertFalse(trie.contains(s));": {
-    "digest": "edbd5c28ca30867e",
+    "digest": "1f76553cd234fc37",
     "missing": [],
     "status": "complete"
    },
@@ -589,32 +594,32 @@
     "status": "complete"
    },
    "SuffixTrieTestSTARSplitTest|testSuffixTrie_split_1|assertTrue(trie.contains(s));": {
-    "digest": "6a9b8c1b463ee032",
+    "digest": "bf2ee23e40b040e0",
     "missing": [],
     "status": "complete"
    },
    "SuffixTrieTestSTARSplitTest|testSuffixTrie_split_2|assertTrue(trie.contains(s2));": {
-    "digest": "98ad0d90ef0d292b",
+    "digest": "c8860b8b57d7c33f",
     "missing": [],
     "status": "complete"
    },
    "SuffixTrieTestSTARSplitTest|testSuffixTrie_split_3|assertFalse(trie.contains(\"\"));": {
-    "digest": "fe360f06cf34b71c",
+    "digest": "82debcfce41f1b02",
     "missing": [],
     "status": "complete"
    },
    "SuffixTrieTestSTARSplitTest|testSuffixTrie_split_4|assertEquals(4, trie.getLongestSuffix(\"www.subdomain.example.com\").offset);": {
-    "digest": "d0d27851002a30a2",
+    "digest": "f2a6a39c2ca55c09",
     "missing": [],
     "status": "complete"
    },
    "SuffixTrieTestSTARSplitTest|testSuffixTrie_split_5|assertTrue(trie.contains(\"\"));": {
-    "digest": "9cec1132d9a7b3b3",
+    "digest": "31daabae218ac71a",
     "missing": [],
     "status": "complete"
    },
    "SuffixTrieTestSTARSplitTest|testSuffixTrie_split_6|assertEquals(0, trie.getLongestSuffix(\"\").offset);": {
-    "digest": "8bb03e299033fc4c",
+    "digest": "65dd381d955359da",
     "missing": [],
     "status": "complete"
    },
@@ -731,12 +736,12 @@
     "status": "complete"
    },
    "CleartextFileChannelTestSTARSplitTest|testMapThrowsUnsupportedOperationException_split_0|assertThrows(UnsupportedOperationException.class, () -> inTest.map(MapMode.PRIVATE, 3727L, 3727L));": {
-    "digest": "44148ff5606d66ce",
+    "digest": "5d7132bb8c63f767",
     "missing": [],
     "status": "complete"
    },
    "CleartextFileChannelTestSTARSplitTest|testSize_split_0|assertEquals(100, inTest.size());": {
-    "digest": "3f87a8c2b41c25cb",
+    "digest": "45bb02fe148fbebe",
     "missing": [],
     "status": "complete"
    },
@@ -831,7 +836,7 @@
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testGetTargetPath_split_0|assertEquals(old.resolveSibling(expected), result);": {
-    "digest": "de04b34f7abad628",
+    "digest": "fbd786b4bc3e91ab",
     "missing": [],
     "status": "complete"
    },
@@ -851,7 +856,7 @@
     "status": "complete"
    },
    "FilePathMigrationTestSTARSplitTest|testMalformedGetDecodedCiphertext_split_1|assertTrue(e.getMessage().contains(oldPath.toString()));": {
-    "digest": "dc3425c998a1df06",
+    "digest": "6d2b5023e034e941",
     "missing": [],
     "status": "complete"
    },
@@ -876,12 +881,12 @@
     "status": "complete"
    },
    "LongFileNameProviderTestSTARSplitTest|testDeflateMultipleTimes_split_0|assertDoesNotThrow(() -> prov.deflate(canonicalFileName));": {
-    "digest": "d7a3bfe793e65923",
+    "digest": "48177b11b5006eff",
     "missing": [],
     "status": "complete"
    },
    "LongFileNameProviderTestSTARSplitTest|testInflateNonExisting_split_0|assertThrows(NoSuchFileException.class, () -> prov.inflate(Paths.get(\"/does/not/exist\")));": {
-    "digest": "3afcb1cb3058c0e4",
+    "digest": "e129be87c89db3c1",
     "missing": [],
     "status": "complete"
    },
@@ -901,7 +906,7 @@
     "status": "complete"
    },
    "LongFileNameProviderTestSTARSplitTest|testPersistedStringEqualsLongName_split_0|assertEquals(Files.readString(deflated.c9sPath.resolve(\"name.c9s\"), StandardCharsets.UTF_8), deflated.longName);": {
-    "digest": "7b0c20309150eb3b",
+    "digest": "7d914a27dfb0bc24",
     "missing": [],
     "status": "complete"
    },
@@ -911,7 +916,7 @@
     "status": "complete"
    },
    "MigratorsTestSTARSplitTest|throwsExceptionIfNeitherMasterkeyNorVaultConfigExists_split_1|assertThat(thrown.getMessage(), CoreMatchers.containsString(\"Did not find vault.cryptomator nor masterkey.cryptomator\"));": {
-    "digest": "d7eb23686e4a03f2",
+    "digest": "85393914e1dbc43b",
     "missing": [],
     "status": "complete"
    },
@@ -966,7 +971,7 @@
     "status": "complete"
    },
    "OrphanContentDirTestSTARSplitTest|testFixWithNonCryptomatorFiles_split_0|assertTrue(Files.exists(stepParentDir.path().resolve(\"unrelated.file\")));": {
-    "digest": "13a82b060fe62968",
+    "digest": "9364f598e19bba20",
     "missing": [],
     "status": "complete"
    },
@@ -1096,7 +1101,7 @@
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testFileSteal_split_1|assertTrue(filePath.endsWith((Path) e2.context()));": {
-    "digest": "5e6384657056c12f",
+    "digest": "ce4980a28b4c0f18",
     "missing": [],
     "status": "complete"
    },
@@ -1166,7 +1171,7 @@
     "status": "complete"
    },
    "RealUseTokenTestSTARSplitTest|testMoveToBefore_split_5|assertTrue(targetPath.endsWith((Path) e2.context()));": {
-    "digest": "348cb7e5fef2d8b1",
+    "digest": "db8ddee83f0274f3",
     "missing": [],
     "status": "complete"
    },
@@ -2023,7 +2028,7 @@
     "status": "complete"
    },
    "HeaderStyleTestSTARSplitTest|testAnnoOnClassAndMethodTest_split_4|assertEquals(styles.getFont(style).getColor(), Styles.toColor(\"blue\"));": {
-    "digest": "f4b1d23e78d82fbb",
+    "digest": "b7a9a86f01a8f794",
     "missing": [],
     "status": "complete"
    },
@@ -2053,7 +2058,7 @@
     "status": "complete"
    },
    "HeaderStyleTestSTARSplitTest|testAnnoOnClassTest_split_4|assertEquals(styles.getFont(style).getColor(), Styles.toColor(\"red\"));": {
-    "digest": "8c22a8e9ccdbe9a5",
+    "digest": "d0a46627e8d21d14",
     "missing": [],
     "status": "complete"
    },
@@ -2098,7 +2103,7 @@
     "status": "complete"
    },
    "HeaderStyleTestSTARSplitTest|testFontColor_split_4|assertEquals(styles.getFont(style).getColor(), Styles.toColor(\"#ff0000\"));": {
-    "digest": "eb69274d06a16f9e",
+    "digest": "a56f33c684cb2aa5",
     "missing": [],
     "status": "complete"
    },
@@ -2525,7 +2530,7 @@
     "status": "complete"
    },
    "DateValidationRuleTestSTARSplitTest|testSanitizeErrorListContainsError_split_2|assertEquals(testParseEx, wrapper.getCause());": {
-    "digest": "6cae82fbaa380ed7",
+    "digest": "8aa03c78e57415fd",
     "missing": [],
     "status": "complete"
    },
@@ -3529,7 +3534,7 @@
     "status": "complete"
    },
    "CommentTestSTARSplitTest|testHtmlNoPretty_split_0|assertEquals(\"<!-- a simple comment --><html><head></head><body></body></html>\", doc.html());": {
-    "digest": "c099db443bf60094",
+    "digest": "094c54965a1110fa",
     "missing": [],
     "status": "complete"
    },
@@ -3544,17 +3549,17 @@
     "status": "complete"
    },
    "CommentTestSTARSplitTest|testToString_split_1|assertEquals(\"<div>\\n <!-- comment-->\\n</div>\", doc.body().html());": {
-    "digest": "10847cc0698b1b29",
+    "digest": "160dc75fe07906ef",
     "missing": [],
     "status": "complete"
    },
    "CommentTestSTARSplitTest|testToString_split_2|assertEquals(\"<p>One<!-- comment -->Two</p>\", doc.body().html());": {
-    "digest": "6ddce368910c6bde",
+    "digest": "6a7c2f5aa4fede5b",
     "missing": [],
     "status": "complete"
    },
    "CommentTestSTARSplitTest|testToString_split_3|assertEquals(\"OneTwo\", doc.text());": {
-    "digest": "d290ba0aca33495b",
+    "digest": "809e721774cb467e",
     "missing": [],
     "status": "complete"
    },
@@ -3639,7 +3644,7 @@
     "status": "complete"
    },
    "FormElementTestSTARSplitTest|controlsAddedAfterParseAreLinkedWithForms_split_1|assertEquals(1, form.elements().size());": {
-    "digest": "21584a89464e0eab",
+    "digest": "dd263477e6f8b0d4",
     "missing": [],
     "status": "complete"
    },
@@ -3704,7 +3709,7 @@
     "status": "complete"
    },
    "FormElementTestSTARSplitTest|formDataUsesFirstAttribute_split_0|assertEquals(\"test=foo\", form.formData().get(0).toString());": {
-    "digest": "05833cdef163d3c1",
+    "digest": "6275b06e0bd54eb5",
     "missing": [],
     "status": "complete"
    },
@@ -3719,32 +3724,32 @@
     "status": "complete"
    },
    "FormElementTestSTARSplitTest|formSubmissionCarriesCookiesFromSession_split_0|assertEquals(echoUrl, echo.location());": {
-    "digest": "9ea2050b5ddabeb1",
+    "digest": "b1131bf1d192c8ea",
     "missing": [],
     "status": "complete"
    },
    "FormElementTestSTARSplitTest|formSubmissionCarriesCookiesFromSession_split_1|assertEquals(\"EchoServlet\", els.get(0).nextElementSibling().text());": {
-    "digest": "cb053a024713aabe",
+    "digest": "47597ee514165b86",
     "missing": [],
     "status": "complete"
    },
    "FormElementTestSTARSplitTest|formSubmissionCarriesCookiesFromSession_split_2|assertEquals(\"Root\", els.get(1).nextElementSibling().text());": {
-    "digest": "d1fc2e1e42c7a23e",
+    "digest": "ee098cdf9790c776",
     "missing": [],
     "status": "complete"
    },
    "FormElementTestSTARSplitTest|formSubmissionCarriesCookiesFromSession_split_3|assertTrue(cookieDoc.connection().response().url().toExternalForm().contains(\"CookieServlet\"));": {
-    "digest": "14fde6709f1711c1",
+    "digest": "3e1b153a66992056",
     "missing": [],
     "status": "complete"
    },
    "FormElementTestSTARSplitTest|formSubmissionCarriesCookiesFromSession_split_4|assertTrue(formDoc.connection().response().url().toExternalForm().contains(\"upload-form\"));": {
-    "digest": "a12679a7fb11d1c1",
+    "digest": "4c1fab47e0fe463c",
     "missing": [],
     "status": "complete"
    },
    "FormElementTestSTARSplitTest|formSubmissionCarriesCookiesFromSession_split_5|assertTrue(echo.connection().response().url().toExternalForm().contains(\"EchoServlet\"));": {
-    "digest": "ba1d27d86e980cc7",
+    "digest": "fe2b12e8bf0e25b7",
     "missing": [],
     "status": "complete"
    },
@@ -3754,12 +3759,12 @@
     "status": "complete"
    },
    "FormElementTestSTARSplitTest|formsAddedAfterParseAreFormElements_split_1|assertEquals(1, form.elements().size());": {
-    "digest": "21584a89464e0eab",
+    "digest": "dd263477e6f8b0d4",
     "missing": [],
     "status": "complete"
    },
    "FormElementTestSTARSplitTest|hasAssociatedControls_split_0|assertEquals(8, form.elements().size());": {
-    "digest": "47949ee66f7fef88",
+    "digest": "37c3fda6797b18ef",
     "missing": [],
     "status": "complete"
    },
@@ -3779,7 +3784,7 @@
     "status": "complete"
    },
    "FormElementTestSTARSplitTest|removeFormElement_split_3|assertNull(doc.selectFirst(\"input[name=pass]\"));": {
-    "digest": "9f5bec99aba9144b",
+    "digest": "4a6df36a438d5d81",
     "missing": [],
     "status": "complete"
    },
@@ -3914,7 +3919,7 @@
     "status": "complete"
    },
    "NodeIteratorTestSTARSplitTest|canIterateFirstEmptySibling_split_0|assertEquals(\"\", p1.ownText());": {
-    "digest": "b2d2eb84e11b8ea7",
+    "digest": "8e9dfdeb5d019939",
     "missing": [],
     "status": "complete"
    },
@@ -3934,7 +3939,7 @@
     "status": "complete"
    },
    "NodeIteratorTestSTARSplitTest|canIterateJustOneSibling_split_0|assertEquals(\"Two\", p2.text());": {
-    "digest": "2129d25ec23fd109",
+    "digest": "ad44e4b07920e0e9",
     "missing": [],
     "status": "complete"
    },
@@ -4014,12 +4019,12 @@
     "status": "complete"
    },
    "PrinterTestSTARSplitTest|dontCollapseTextAfterNonElements_split_0|assertEquals(\"Hello there\", body.text());": {
-    "digest": "c46ce3b53343574a",
+    "digest": "19de0b0e31af1d81",
     "missing": [],
     "status": "complete"
    },
    "PrinterTestSTARSplitTest|dontCollapseTextAfterNonElements_split_1|assertEquals(\"<div>\\n <div></div>\\n Hello <!-- -_- -->\\n  there\\n</div>\", body.html());": {
-    "digest": "500193456e9c3e08",
+    "digest": "da10b4579cb0ddd8",
     "missing": [],
     "status": "complete"
    },
@@ -4029,7 +4034,7 @@
     "status": "complete"
    },
    "PrinterTestSTARSplitTest|outline_split_1|assertEquals(html, doc.outerHtml());": {
-    "digest": "9956fff926c585d8",
+    "digest": "aa86f99ce26424ed",
     "missing": [],
     "status": "complete"
    },
@@ -4039,7 +4044,7 @@
     "status": "complete"
    },
    "PrinterTestSTARSplitTest|passthru_split_1|assertEquals(html, doc.outerHtml());": {
-    "digest": "914518b53c311e9e",
+    "digest": "6f0a7e2a13da4069",
     "missing": [],
     "status": "complete"
    },
@@ -4049,17 +4054,17 @@
     "status": "complete"
    },
    "PrinterTestSTARSplitTest|pretty_split_1|assertEquals(html, doc.outerHtml());": {
-    "digest": "98b7268fb3c24977",
+    "digest": "d06e33ec1b8ba96f",
     "missing": [],
     "status": "complete"
    },
    "PrinterTestSTARSplitTest|sequentialTextNodesCollapseAdjacentWhitespace_split_0|assertEquals(6, doc.body().textNodes().size());": {
-    "digest": "35f7729b5ddffed0",
+    "digest": "28500f49b2468fcb",
     "missing": [],
     "status": "complete"
    },
    "PrinterTestSTARSplitTest|sequentialTextNodesCollapseAdjacentWhitespace_split_1|assertEquals(\"Before After\", doc.body().html());": {
-    "digest": "87093fecdbe84cbc",
+    "digest": "b543bfc3155e4946",
     "missing": [],
     "status": "complete"
    },
@@ -4074,27 +4079,27 @@
     "status": "complete"
    },
    "PrinterTestSTARSplitTest|sequentialTextNodesDontCollapse_split_2|assertEquals(\"Hello there.\", div.text());": {
-    "digest": "eefba0e2f1688918",
+    "digest": "64145f09cbb886be",
     "missing": [],
     "status": "complete"
    },
    "PrinterTestSTARSplitTest|sequentialTextNodesDontCollapse_split_3|assertEquals(\"<div></div>\\nHello there.\", div.html());": {
-    "digest": "6178bd5fa720e0ac",
+    "digest": "ea88207d21df5f91",
     "missing": [],
     "status": "complete"
    },
    "PrinterTestSTARSplitTest|sequentialTextNodesDontCollapse_split_4|assertEquals(\"<div>\\n <div></div>\\n Hello there.\\n</div>\", div.outerHtml());": {
-    "digest": "e2bcfd901a9f7c20",
+    "digest": "9a206a847124ddc9",
     "missing": [],
     "status": "complete"
    },
    "PrinterTestSTARSplitTest|spaceAfterSpanInBlock_split_0|assertEquals(\"Span Text Follow Span Text Follow\", body.text());": {
-    "digest": "66103c9a587015e1",
+    "digest": "d82438c42e744f41",
     "missing": [],
     "status": "complete"
    },
    "PrinterTestSTARSplitTest|spaceAfterSpanInBlock_split_1|assertEquals(\"<div>\\n <span>Span</span> Text <span>Follow</span>\\n</div>\\n<p><span>Span</span> Text <span>Follow</span></p>\", body.html());": {
-    "digest": "d2c4c24ce28ecb67",
+    "digest": "5af9c151ce0f73bb",
     "missing": [],
     "status": "complete"
    },
@@ -4104,7 +4109,7 @@
     "status": "complete"
    },
    "QueryParserTestSTARSplitTest|consecutiveCombinators_split_1|assertEquals(\"Could not parse query 'div>>p': unexpected token at '>p'\", exception1.getMessage());": {
-    "digest": "43ef6cca8237d028",
+    "digest": "359455a4830e2a63",
     "missing": [],
     "status": "complete"
    },
@@ -4114,7 +4119,7 @@
     "status": "complete"
    },
    "QueryParserTestSTARSplitTest|consecutiveCombinators_split_3|assertEquals(\"Could not parse query '+ + div': unexpected token at '+ div'\", exception2.getMessage());": {
-    "digest": "0ffaeaa4374c38ae",
+    "digest": "120176c90cfbc40a",
     "missing": [],
     "status": "complete"
    },
@@ -4124,7 +4129,7 @@
     "status": "complete"
    },
    "QueryParserTestSTARSplitTest|exceptOnEmptySelector_split_1|assertEquals(\"String must not be empty\", exception.getMessage());": {
-    "digest": "9c9c6ff7621b95dc",
+    "digest": "096b74afa1d8512b",
     "missing": [],
     "status": "complete"
    },
@@ -4134,7 +4139,7 @@
     "status": "complete"
    },
    "QueryParserTestSTARSplitTest|exceptOnNullSelector_split_1|assertEquals(\"String must not be empty\", exception.getMessage());": {
-    "digest": "1bdc088bee9145d2",
+    "digest": "0dd5007336f9f473",
     "missing": [],
     "status": "complete"
    },
@@ -4144,7 +4149,7 @@
     "status": "complete"
    },
    "QueryParserTestSTARSplitTest|exceptOnUnhandledEvaluator_split_1|assertEquals(\"Could not parse query 'div / foo': unexpected token at '/ foo'\", exception.getMessage());": {
-    "digest": "f6608cb1796740ee",
+    "digest": "d3d295043d36b456",
     "missing": [],
     "status": "complete"
    },
@@ -4154,7 +4159,7 @@
     "status": "complete"
    },
    "QueryParserTestSTARSplitTest|exceptionOnUncloseAttribute_split_1|assertEquals(\"Did not find balanced marker at 'href=\\\"]'\", exception.getMessage());": {
-    "digest": "f02a0deb391c81c1",
+    "digest": "2a071f1637d2826d",
     "missing": [],
     "status": "complete"
    },
@@ -4164,7 +4169,7 @@
     "status": "complete"
    },
    "QueryParserTestSTARSplitTest|hasNodeSelector_split_1|assertEquals(q, e.toString());": {
-    "digest": "658c844e5f6a1292",
+    "digest": "a7ae1fa6eec31efe",
     "missing": [],
     "status": "complete"
    },
@@ -4174,7 +4179,7 @@
     "status": "complete"
    },
    "QueryParserTestSTARSplitTest|okOnSpacesForeAndAft_split_0|assertEquals(\"span div\", parse.toString());": {
-    "digest": "da3c0b7c72de0331",
+    "digest": "1fcbace122ea5c69",
     "missing": [],
     "status": "complete"
    },
@@ -4239,7 +4244,7 @@
     "status": "complete"
    },
    "QueryParserTestSTARSplitTest|structuralEvaluatorsToString_split_0|assertEquals(q, parse.toString());": {
-    "digest": "64bd00b5504a12e5",
+    "digest": "f8362dd357b42a95",
     "missing": [],
     "status": "complete"
    },
@@ -4294,7 +4299,7 @@
     "status": "complete"
    },
    "QueryParserTestSTARSplitTest|testParsesSingleQuoteInContains_split_1|assertEquals(\"Did not find balanced marker at 'One \\\" One)'\", exception.getMessage());": {
-    "digest": "5936ec845f30f7ac",
+    "digest": "f1ca24359512f9d8",
     "missing": [],
     "status": "complete"
    },
@@ -4304,7 +4309,7 @@
     "status": "complete"
    },
    "QueryParserTestSTARSplitTest|trailingParens_split_1|assertEquals(\"Could not parse query 'div:has(p))': unexpected token at ')'\", exception.getMessage());": {
-    "digest": "b1c62d2d37cb8897",
+    "digest": "252907dff992f826",
     "missing": [],
     "status": "complete"
    },
@@ -4429,7 +4434,7 @@
     "status": "complete"
    },
    "StructuralEvaluatorTestSTARSplitTest|selectorMemoIsClearedOnReset_split_1|assertTrue(se2.threadMemo.get().isEmpty());": {
-    "digest": "29ff850699388f25",
+    "digest": "2934dc2a92aa5584",
     "missing": [],
     "status": "complete"
    },
@@ -4449,7 +4454,7 @@
     "status": "complete"
    },
    "TokenQueueTestSTARSplitTest|chompBalancedThrowIllegalArgumentException_split_1|assertEquals(\"Did not find balanced marker at 'something(or another)) else'\", expected.getMessage());": {
-    "digest": "f13608de1c2dcd0b",
+    "digest": "a8599ad16db1a78e",
     "missing": [],
     "status": "complete"
    },
@@ -4494,7 +4499,7 @@
     "status": "complete"
    },
    "TokenQueueTestSTARSplitTest|consumeCssIdentifierWithEmptyInput_split_1|assertEquals(\"CSS identifier expected, but end of input found\", exception.getMessage());": {
-    "digest": "1f37e9f065b00ade",
+    "digest": "c0d42b811ee35390",
     "missing": [],
     "status": "complete"
    },
@@ -6270,7 +6275,7 @@
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|constructor_canOnlyTakeAFile_shouldThrowFileNotFoundException_split_1|assertEquals(String.format(\"%s (Is a directory)\", blankFolder.getPath()), fileNotFoundException.getMessage());": {
-    "digest": "de7dcf57e2043b0c",
+    "digest": "1015554410f716ad",
     "missing": [],
     "status": "complete"
    },
@@ -6350,12 +6355,12 @@
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|writeStamp_givenNegativeTimestamps_shouldThrowIOException_split_1|assertTrue(ioException.getMessage().contains(\"trying to overwrite existing value\"));": {
-    "digest": "05bee216ec6ee15d",
+    "digest": "dcf7d28a0d2af1ce",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|writeStamp_givenNegativeTimestamps_shouldThrowIOException_split_2|assertTrue(ioException.getMessage().contains(\"with an earlier timestamp\"));": {
-    "digest": "310c9a85bd8c49d9",
+    "digest": "342126d18aa09c22",
     "missing": [],
     "status": "complete"
    },
@@ -6365,12 +6370,12 @@
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|writeStamp_givenNewerTimestampedFile_writeNegativeTimestamp_shouldThrowException_split_1|assertTrue(ioException.getMessage().contains(\"trying to overwrite existing value\"));": {
-    "digest": "20ff8f845d45801f",
+    "digest": "3c6360200e75563d",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|writeStamp_givenNewerTimestampedFile_writeNegativeTimestamp_shouldThrowException_split_2|assertTrue(ioException.getMessage().contains(\"with an earlier timestamp\"));": {
-    "digest": "01508501b323d383",
+    "digest": "5bc281ee086f89ed",
     "missing": [],
     "status": "complete"
    },

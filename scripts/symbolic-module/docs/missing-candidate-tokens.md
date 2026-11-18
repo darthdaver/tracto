@@ -380,6 +380,9 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
   corpus identical.
 - Dataset v4 (full test of 2026-11-17, Step 49): **0 lost** of 9,043 (v3: 15), 0 regressions, 0 dropped; details
   below and in `docs/resume.md`, section 7.
+- Step 50: the fields of the classes nested in the type of a value or in its supertypes (static, inner, local,
+  anonymous) are not offered after the value (`declaredFields`): corpus 1,302 complete, 113 steps lose candidates
+  (removals only, no target), e.g. `Throwable.SentinelHolder.STACK_TRACE_SENTINEL` after an exception value.
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles
@@ -420,7 +423,7 @@ the other 14.
 `compare_tokens.py`; 9,043 complete of 9,043 and 0 missing tokens in 118,070 steps by `missing_tokens.py`), 0 dropped,
 0 regressions against dataset v3, the oracles datasets identical (details in `docs/resume.md`, section 7). The 15
 oracles lost by v3 are complete (Steps 44 and 45). Noise left among the candidates: the fields of the classes nested in
-a type or in its supertypes (`Throwable.SentinelHolder.STACK_TRACE_SENTINEL` after an exception value); the root
+a type or in its supertypes (`Throwable.SentinelHolder.STACK_TRACE_SENTINEL` after an exception value; Step 50 done); the root
 package names are offered in 26.7% of the steps (Step 44, needed for `new java.awt.Color(...)`).
 Noted while checking the oracles datasets: `fullyQualifiedIdentifiers` mixes three forms (`Lorg/slf4j/Logger;` when
 resolved, `org.slf4j.Logger` when not, `java/lang/String;` without the `L` for some JDK types): a pre-existing

@@ -55,6 +55,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 48 | on the corpus: unchanged (1,302 complete, 0 worse); the private methods of `Object` removed from the candidates (`registerNatives` 24 steps, `wait0` 20) and from the invoked methods of every oracle: the private methods inherited by the test class |
 | After Step 49 | on the corpus: identical (1,302 complete): the simple name of a class whose key has qualified type arguments (a latent `StringIndexOutOfBoundsException`, the `Range [131, 126)` of v1) |
 | **Dataset v4** (full test with the dependencies, 2026-11-17, Step 49 `e70d8ac`) | **0.0%** on the nine projects (9,043 complete of 9,043; dataset v3: 9,028, +15, 0 regressions, 0 dropped) |
+| After Step 50 | on the corpus: unchanged (1,302 complete, 0 worse, removals only, no target): 113 steps lose the fields of the classes nested in the type of a value or in its supertypes (`Throwable.SentinelHolder.STACK_TRACE_SENTINEL`, jsoup `Element.NodeList.validChildren`, `FileChannel.MapMode.READ_ONLY`) |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -272,11 +273,10 @@ examples to start from.
      projects (all detected); to measure during the generation (Step 48 doc);
    - ~~after the name of a class (`String.`), its instance and protected methods are offered too~~: **Step 37 done**
      (`MemberAccess`: the access rule of Java; `X::` offers the instance methods);
-   - after a value, the fields of the classes nested in its type are collected too (found in Step 37; the inherited
-     fields and the members of a string literal: Step 44 done). Since Step 44 also from the nested and anonymous classes
-     of its supertypes (dataset v4: `Throwable.SentinelHolder.STACK_TRACE_SENTINEL` after every exception value,
-     jsoup `Element.NodeList.validChildren` after `doc.`, the fields of the classes nested in `Evaluator`, the `i` of
-     the anonymous iterator of `Path.iterator()` in cryptofs): noise only, never a lost target;
+   - ~~after a value, the fields of the classes nested in its type are collected too~~ (found in Step 37; the inherited
+     fields and the members of a string literal: Step 44; since Step 44 also from the supertypes, found in dataset v4:
+     `Throwable.SentinelHolder.STACK_TRACE_SENTINEL` after every exception value): **Step 50 done**
+     (`docs/fixes/step-50-nested-class-fields.md`);
    - ~~the body of a method without a source is garbage taken from the text of its `MethodUsage`~~: **Step 35 done**
      (`docs/fixes/step-35-sourceless-bodies.md`);
    - the imports and the package of the focal class are added to the classes of the test class (not visible there

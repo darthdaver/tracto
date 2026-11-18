@@ -2713,14 +2713,15 @@ public class TokensUtils {
                         collectMethodUsages(methodIdentifiers, publicObjectMethods(), modifiers, List.of(new Pair("Test", Boolean.valueOf(false))));
                     }
                     //updateHashMapOfMethodUsageReferencesFromIdentifiers(methodReferences, methodIdentifiers);
-                    List<FieldDeclaration> fieldDeclarations =  resolvedType.asReferenceType().getTypeDeclaration().get().toAst().get().findAll(FieldDeclaration.class);
+                    // The fields declared in the type, not in the classes nested in it (Step 50)
+                    List<FieldDeclaration> fieldDeclarations = declaredFields(resolvedType.asReferenceType().getTypeDeclaration().get().toAst().get());
                     updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, fieldDeclarations, modifiers, TypeDeclaration.class, 0);
                     // The inherited fields, those the test class can access (Step 44: `structEval.` ▸ `threadMemo`, a
                     // package-private field of a superclass in the package of the test class)
                     for (ResolvedReferenceType ancestor : ancestors) {
                         Optional<Node> ancestorDeclaration = ancestor.getTypeDeclaration().flatMap(declaration -> declaration.toAst());
                         if (ancestorDeclaration.isPresent()) {
-                            updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, ancestorDeclaration.get().findAll(FieldDeclaration.class), modifiers, TypeDeclaration.class, 0);
+                            updateHashMapOfFieldTypeIdentifiers(fieldIdentifiers, declaredFields(ancestorDeclaration.get()), modifiers, TypeDeclaration.class, 0);
                         }
                     }
                     //updateHashMapOfFieldTypeReferencesFromIdentifiers(fieldReferences, fieldIdentifiers);
@@ -2737,6 +2738,17 @@ public class TokensUtils {
                 }
             }
         }
+    }
+
+    /**
+     * The fields declared in a type (Step 50): not the fields of the classes nested in it (static, inner, local or
+     * anonymous), which a value of the type cannot reach. Empty when the node is not a type declaration.
+     */
+    static List<FieldDeclaration> declaredFields(Node typeDeclaration) {
+        if (typeDeclaration instanceof TypeDeclaration<?> declaration) {
+            return declaration.getFields();
+        }
+        return List.of();
     }
 
     /**
