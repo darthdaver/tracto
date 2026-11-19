@@ -16,6 +16,7 @@ import star.tracto.utils.javaParser.JavaParserUtils;
 
 
 import javax.tools.*;
+import java.io.IOException;
 import java.nio.file.*;
 import java.util.*;
 
@@ -299,7 +300,7 @@ public final class PrefixInference {
                     }
                 }
                 if (message.isEmpty()) {
-                    boolean focalCall = invokesFocal(unit, method, fullBody, data.focalClass());
+                    boolean focalCall = invokesFocal(method, fullBody, data.focalClass());
                     if (trace) {
                         System.out.printf(PREFIX_TRACE_FOCAL, data.focalClass().identifier(), focalCall ? "sì" : "no");
                     }
@@ -327,34 +328,60 @@ public final class PrefixInference {
         return result;
     }
 
+    /** Loads the request fields shared by all rounds for one test. */
+    public static Map<String, String> oracleCycleTemplate(Path repo, TestClazzDatapoints<OracleDatapoint> data,
+                                                          OracleDatapoint point) throws Exception {
+        PreparedTest test = prepareTest(repo, data, point);
+        Map<String, String> request = new LinkedHashMap<>();
+        request.put(TEST, test.method().getDeclarationAsString() + METHOD_BODY_START + OracleInsertion.MASK + CLOSE_BLOCK_LINE);
+        request.put(FOCAL_SOURCE_FIELD, Files.readString(test.focalFile()));
+        return request;
+    }
+
+    /** Publishes the test already compiled during the last successful round. */
+    public static void publishValidatedBody(Path segmentOutput, Path caseOutput) throws IOException {
+        Path source = segmentOutput.resolve(FINAL_BODY_DIRECTORY);
+        Path destination = caseOutput.resolve(FINAL_BODY_DIRECTORY);
+        try (var paths = Files.walk(source)) {
+            for (Path path : paths.toList()) {
+                Path target = destination.resolve(source.relativize(path));
+                if (Files.isDirectory(path)) {
+                    Files.createDirectories(target);
+                } else {
+                    Files.copy(path, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        }
+    }
+
     /**
      * Compiles a complete test body (prefix segments and oracles) and checks the focal-class call.
      * On success the generated test class is saved under {@code output/final}.
      */
     public static Result validateBody(Path repo, Path output, String classpath,
                                       TestClazzDatapoints<OracleDatapoint> data, OracleDatapoint point,
-                                      String body) throws Exception {
+                                      BlockStmt body) throws Exception {
         long start = System.nanoTime();
         Path finalOutput = Files.createDirectories(output.resolve(FINAL_BODY_DIRECTORY));
         PreparedTest test = prepareTest(repo, data, point);
         String status = ERROR;
         String message;
         try {
-            message = compile(test.unit(), test.method(), body, finalOutput, classpath,
+            test.method().setBody(body.clone());
+            message = compile(test.unit(), finalOutput, classpath,
                     packageRoot(test.focalFile(), data.focalClass().packageIdentifier()),
                     packageRoot(test.testFile(), data.testClass().packageIdentifier()));
-            if (message.isEmpty() && !invokesFocal(test.unit(), test.method(), body, data.focalClass())) {
+            if (message.isEmpty() && !invokesFocal(test.method(), data.focalClass())) {
                 message = PREFIX_MISSING_FOCAL_CALL;
             }
             if (message.isEmpty()) {
-                test.method().setBody(StaticJavaParser.parseBlock(OPEN_BLOCK_LINE + body + CLOSE_BLOCK_LINE));
                 Files.writeString(finalOutput.resolve(test.type().getNameAsString() + JAVA_EXTENSION),
                         test.unit().toString());
                 status = OK;
                 message = PREFIX_FINAL_COMPILED;
             }
         } catch (Exception error) { message = error.toString(); }
-        var result = new Result(test.method().getNameAsString(), body, status,
+        var result = new Result(test.method().getNameAsString(), OracleInsertion.contents(body), status,
                 (System.nanoTime() - start) / 1_000_000, message);
         new ObjectMapper().writerWithDefaultPrettyPrinter().writeValue(finalOutput.resolve(RESULT_FILE).toFile(), result);
         return result;
@@ -382,7 +409,7 @@ public final class PrefixInference {
         String diagnostic = compile(test.unit(), test.method(), candidate, output, classpath,
                 packageRoot(test.focalFile(), data.focalClass().packageIdentifier()),
                 packageRoot(test.testFile(), data.testClass().packageIdentifier()));
-        if (!diagnostic.isEmpty() || !invokesFocal(test.unit(), test.method(), candidate, data.focalClass())) {
+        if (!diagnostic.isEmpty() || !invokesFocal(test.method(), candidate, data.focalClass())) {
             return Optional.empty();
         }
         return Optional.of(corrected);
@@ -513,7 +540,7 @@ public final class PrefixInference {
                 Set<String> java = candidates.java();
                 Set<String> generic = candidates.generic();
                 boolean complete = complete(prefix);
-                boolean focal = complete && invokesFocal(unit, method, prefix, data.focalClass());
+                boolean focal = complete && invokesFocal(method, prefix, data.focalClass());
                 if (focal && compile(unit, method, prefix, output, classpath, session).isEmpty()) {
                     java.add(END);
                     if (!rejected.contains(END)) System.out.println(PREFIX_END_AVAILABLE_LOG);
@@ -748,17 +775,21 @@ public final class PrefixInference {
         return JAVA_ASSERT.equals(value) || ASSERT_CLASS.equals(value) || Arrays.stream(JUnitAssertionType.values()).anyMatch(a -> a.getAssertionMethodName().equals(value));
     }
     /** Controlla se una chiamata si risolve verso la classe sotto test. */
-    private static boolean invokesFocal(CompilationUnit unit, MethodDeclaration method, String prefix, Clazz focal) {
+    private static boolean invokesFocal(MethodDeclaration method, String prefix, Clazz focal) {
         var old = method.getBody().orElseThrow();
         try {
             method.setBody(StaticJavaParser.parseBlock(OPEN_BLOCK_LINE + prefix + CLOSE_BLOCK_LINE));
-            String fqn = focal.packageIdentifier().isEmpty() ? focal.identifier() : focal.packageIdentifier() + DOT + focal.identifier();
-            return method.findAll(MethodCallExpr.class).stream().anyMatch(call -> {
-                if (call.findAncestor(com.github.javaparser.ast.expr.LambdaExpr.class).isPresent()) return false;
-                try { return call.resolve().declaringType().getQualifiedName().equals(fqn); }
-                catch (RuntimeException ignored) { return false; }
-            });
+            return invokesFocal(method, focal);
         } finally { method.setBody(old); }
+    }
+
+    private static boolean invokesFocal(MethodDeclaration method, Clazz focal) {
+        String fqn = focal.packageIdentifier().isEmpty() ? focal.identifier() : focal.packageIdentifier() + DOT + focal.identifier();
+        return method.findAll(MethodCallExpr.class).stream().anyMatch(call -> {
+            if (call.findAncestor(com.github.javaparser.ast.expr.LambdaExpr.class).isPresent()) return false;
+            try { return call.resolve().declaringType().getQualifiedName().equals(fqn); }
+            catch (RuntimeException ignored) { return false; }
+        });
     }
     /** Compila la classe con il prefix inserito e restituisce la diagnostica. */
     private static String compile(CompilationUnit unit, MethodDeclaration method, String prefix, Path output,
@@ -772,22 +803,28 @@ public final class PrefixInference {
         var old = method.getBody().orElseThrow();
         try {
             method.setBody(StaticJavaParser.parseBlock(OPEN_BLOCK_LINE + prefix + CLOSE_BLOCK_LINE));
-            String name = unit.getPrimaryTypeName().orElse(unit.getType(0).getNameAsString());
-            Path source = output.resolve(VALIDATION_SOURCE_DIRECTORY).resolve(name + JAVA_EXTENSION);
-            Files.createDirectories(source.getParent()); Files.writeString(source, unit.toString());
-            Path classes = Files.createDirectories(output.resolve(VALIDATION_CLASSES_DIRECTORY));
-            JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-            DiagnosticCollector<JavaFileObject> errors = new DiagnosticCollector<>();
-            try (var files = compiler.getStandardFileManager(errors, Locale.ROOT, java.nio.charset.StandardCharsets.UTF_8)) {
-                String sep = java.io.File.pathSeparator;
-                var options = List.of(JAVAC_NO_PROCESSING, JAVAC_NO_IMPLICIT, JAVAC_CLASSPATH, classpath,
-                        JAVAC_SOURCEPATH, sourceRoot + sep + testRoot, JAVAC_OUTPUT, classes.toString());
-                boolean ok = compiler.getTask(null, files, errors, options, null,
-                        files.getJavaFileObjects(source.toFile())).call();
-                return ok ? EMPTY_STRING : errors.getDiagnostics().stream().filter(d -> d.getKind() == Diagnostic.Kind.ERROR)
-                        .map(d -> d.getMessage(Locale.ROOT)).collect(java.util.stream.Collectors.joining(DIAGNOSTIC_SEPARATOR));
-            }
+            return compile(unit, output, classpath, sourceRoot, testRoot);
         } finally { method.setBody(old); }
+    }
+
+    private static String compile(CompilationUnit unit, Path output, String classpath,
+                                  Path sourceRoot, Path testRoot) throws IOException {
+        String name = unit.getPrimaryTypeName().orElse(unit.getType(0).getNameAsString());
+        Path source = output.resolve(VALIDATION_SOURCE_DIRECTORY).resolve(name + JAVA_EXTENSION);
+        Files.createDirectories(source.getParent());
+        Files.writeString(source, unit.toString());
+        Path classes = Files.createDirectories(output.resolve(VALIDATION_CLASSES_DIRECTORY));
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        DiagnosticCollector<JavaFileObject> errors = new DiagnosticCollector<>();
+        try (var files = compiler.getStandardFileManager(errors, Locale.ROOT, java.nio.charset.StandardCharsets.UTF_8)) {
+            String sep = java.io.File.pathSeparator;
+            var options = List.of(JAVAC_NO_PROCESSING, JAVAC_NO_IMPLICIT, JAVAC_CLASSPATH, classpath,
+                    JAVAC_SOURCEPATH, sourceRoot + sep + testRoot, JAVAC_OUTPUT, classes.toString());
+            boolean ok = compiler.getTask(null, files, errors, options, null,
+                    files.getJavaFileObjects(source.toFile())).call();
+            return ok ? EMPTY_STRING : errors.getDiagnostics().stream().filter(d -> d.getKind() == Diagnostic.Kind.ERROR)
+                    .map(d -> d.getMessage(Locale.ROOT)).collect(java.util.stream.Collectors.joining(DIAGNOSTIC_SEPARATOR));
+        }
     }
 }
 

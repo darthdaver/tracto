@@ -167,16 +167,45 @@ class Server:
         if not isinstance(scenario, str):
             return make_response(json.dumps({'error': 'Invalid scenario'}), 400)
         guidance = ''.join('// Scenario: ' + line + '\n' for line in scenario.splitlines())
-        if data.get('continuation') == 'true':
+        cycle_body = data.get('oracleCycleBody')
+        if 'oracleCycleBody' in data and not isinstance(cycle_body, str):
+            return make_response(json.dumps({'error': 'Invalid oracle cycle body'}), 400)
+        if cycle_body is not None:
+            instruction = (
+                '// Generate the Java test body with exactly one '
+                '/*<MASK_PLACEHOLDER>*/ at the next assertion position. '
+                'If the assertion result is needed later, use a local declaration such as '
+                'Exception error = /*<MASK_PLACEHOLDER>*/; instead of a standalone placeholder.\n'
+                '// Return only the body contents, without the outer braces or Markdown.\n'
+                '// Preserve all existing statements and assertions in their original scopes. '
+                'Add setup only if needed. Do not write new assertions yourself.\n'
+            )
+            if cycle_body:
+                guidance += (
+                    '// Return only STOP if the existing body checks the intended behavior. '
+                    'Otherwise return the entire updated body with the next placeholder.\n'
+                    '// Existing body:\n'
+                    + ''.join('// ' + line + '\n' for line in cycle_body.splitlines())
+                )
+            else:
+                guidance += '// Prepare inputs and call the focal class before the first assertion.\n'
+        else:
+            instruction = (
+                '// Complete only the Java test body. Set up inputs and call '
+                'a method of the focal class. Do not include assertions or Markdown.\n'
+            )
+        if cycle_body is None and data.get('continuation') == 'true':
             # Prefix/oracle cycle: the body already holds setup and assertions.
             guidance += ('// The test body below already contains setup and assertions. Add only the next '
                          'setup and call, or output nothing if the test is already complete.\n')
-        prompt = ('<|fim_prefix|>// Complete only the Java test body. Set up inputs and call '
-                  'a method of the focal class. Do not include assertions or Markdown.\n'
-                  '// Focal class:\n' + data['focalSource'] + '\n' + guidance
+        prompt = ('<|fim_prefix|>' + instruction
+                  + '// Focal class:\n' + data['focalSource'] + '\n' + guidance
                   + before + '<|fim_suffix|>' + after + '<|fim_middle|>')
         ids = self._tokenizer.encode(prompt, add_special_tokens=False)
-        if len(ids) + PREFIX_BLOCK_MAX_NEW_TOKENS > self._max_src_length:
+        max_new_tokens = PREFIX_BLOCK_MAX_NEW_TOKENS
+        if cycle_body:
+            max_new_tokens += len(self._tokenizer.encode(cycle_body, add_special_tokens=False))
+        if len(ids) + max_new_tokens > self._max_src_length:
             return make_response(json.dumps({'error': 'Prefix block context is too long'}), 422)
 
         input_ids = torch.tensor([ids], device=self._device)
@@ -190,7 +219,7 @@ class Server:
             output = self._model.generate(
                 input_ids=input_ids,
                 attention_mask=torch.ones_like(input_ids),
-                max_new_tokens=PREFIX_BLOCK_MAX_NEW_TOKENS,
+                max_new_tokens=max_new_tokens,
                 do_sample=False,
                 eos_token_id=list(stops),
                 pad_token_id=self._tokenizer.eos_token_id)

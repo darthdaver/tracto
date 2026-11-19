@@ -2604,7 +2604,7 @@ public class TestUtils {
      * @param repoSourcePath the source root of the repository
      * @param focalClass the focal class
      * @param testClass the test class that contains the prefix method
-     * @param prefixMethod the prefix method, already holding the generated body. Its body receives the mask comment.
+     * @param prefixMethod the generated method with the active oracle position
      * @param config the oracles dataset configuration (mask placeholder and target strategy)
      * @return the test prefix, as the datapoints of the oracles dataset store it
      */
@@ -2612,8 +2612,7 @@ public class TestUtils {
                                                   MethodDeclaration prefixMethod, OraclesDatasetConfig config) {
         Pair<Callable, List<Callable>> invokedMethodsPair = processInvokedMethods(repoSourcePath, focalClass, testClass,
                 prefixMethod, new HashMap<>(), config);
-        prefixMethod.getBody().orElseThrow().addOrphanComment(new BlockComment(config.mask()));
-        return processCallable(testClass, prefixMethod, invokedMethodsPair.getValue1());
+        return processCallable(testClass, prefixMethod, invokedMethodsPair.getValue1(), false, true);
     }
 
     /**
@@ -2664,6 +2663,11 @@ public class TestUtils {
      * @return the {@link Callable} object generated from the method declaration
      */
     public static Callable processCallable(TypeDeclaration typeDeclaration, CallableDeclaration callableDeclaration, List<Callable> invokedMethods, boolean contextualInfo) {
+        return processCallable(typeDeclaration, callableDeclaration, invokedMethods, contextualInfo, false);
+    }
+
+    private static Callable processCallable(TypeDeclaration typeDeclaration, CallableDeclaration callableDeclaration,
+                                            List<Callable> invokedMethods, boolean contextualInfo, boolean generatedPrefix) {
         // Instantiate a method builder to build a MethodTracto object from the method declaration
         CallableBuilder callableBuilder = new CallableBuilder();
         // Set the attributes of the method
@@ -2674,7 +2678,8 @@ public class TestUtils {
         callableBuilder.setThrownExceptions(JavaParserUtils.getExceptionsAsString(callableDeclaration.getThrownExceptions()));
         callableBuilder.setJavadoc(JavaParserUtils.getCallableJavadoc(callableDeclaration));
         // Removed any occurrence of `Assert.` in the body of the method (not useful for the oracle generation)
-        callableBuilder.setBody(withoutAssertionClasses(JavaParserUtils.getCallableSourceCode(callableDeclaration)));
+        String source = withoutAssertionClasses(JavaParserUtils.getCallableSourceCode(callableDeclaration));
+        callableBuilder.setBody(generatedPrefix ? star.tracto.preprocessing.OracleInsertion.masked(source) : source);
         // TODO: Manage invoked methods recursion in the improved version of the dataset
         callableBuilder.setInvokedMethods(invokedMethods); // avoid recursion in the first version of the dataset
         if (callableDeclaration instanceof MethodDeclaration && !contextualInfo) {

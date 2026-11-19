@@ -3,12 +3,13 @@ package star.tracto;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.MappingIterator;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.javaparser.StaticJavaParser;
+import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import org.javatuples.Pair;
 import star.tracto.data.records.OraclesDatasetConfig;
+import star.tracto.preprocessing.components.Assignment;
 import star.tracto.preprocessing.utils.TestUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,15 +49,16 @@ public class Client {
     /** Generates one oracle using an updated test-prefix body and exposes the generated statement. */
     public static OracleGenerationResult generateOracleForPrefix(
             Path repoRootPath, Path nextTokenPath, String mlModelApiUrl,
-            TestClazzDatapoints<OracleDatapoint> original, OracleDatapoint originalPoint, String prefixBody)
+            TestClazzDatapoints<OracleDatapoint> original, String prefixIdentifier, BlockStmt prefixBody,
+            Assignment assignment)
             throws IOException {
         // The prefix is rebuilt as the dataset stores it (method source with the mask, methods invoked by
         // the generated statements), so that the oracle model sees the same prompt format as in training
         // and no information of the reference test.
         // TokensUtils writes each token step here before calling the model server.
         Files.createDirectories(nextTokenPath);
-        Callable updatedPrefix = generatedPrefix(repoRootPath, original, originalPoint.testPrefix().identifier(), prefixBody);
-        OracleDatapoint updatedPoint = new OracleDatapoint(updatedPrefix, originalPoint.target(), originalPoint.assignment());
+        Callable updatedPrefix = generatedPrefix(repoRootPath, original, prefixIdentifier, prefixBody);
+        OracleDatapoint updatedPoint = new OracleDatapoint(updatedPrefix, "", assignment);
         TestClazzDatapoints<OracleDatapoint> updated = new TestClazzDatapoints<>(original.junitVersion(),
                 original.testClass(), original.focalClass(), List.of(updatedPoint));
         Pair<List<List<String>>, HashMap<String, HashMap<String, List<String>>>> result =
@@ -72,7 +74,7 @@ public class Client {
 
     /** Builds the dataset test prefix of a generated body, in the copy of the test class saved by the dataset. */
     private static Callable generatedPrefix(Path repoRootPath, TestClazzDatapoints<OracleDatapoint> data,
-                                            String prefixIdentifier, String prefixBody) throws IOException {
+                                            String prefixIdentifier, BlockStmt prefixBody) throws IOException {
         Path testFile = repoRootPath.resolve(data.testClass().prefixFilePath().substring(1));
         Path focalFile = repoRootPath.resolve(data.focalClass().filePath().substring(1));
         CompilationUnit testUnit = JavaParserUtils.getCompilationUnit(testFile);
@@ -81,7 +83,7 @@ public class Client {
         TypeDeclaration<?> focalType = focalUnit.getPrimaryType().orElse(focalUnit.getType(0));
         MethodDeclaration prefixMethod = testType.getMethodsByName(prefixIdentifier).stream().findFirst()
                 .orElseThrow(() -> new IllegalStateException("Test prefix not found: " + prefixIdentifier));
-        prefixMethod.setBody(StaticJavaParser.parseBlock("{\n" + prefixBody + "\n}"));
+        prefixMethod.setBody(prefixBody.clone());
         String fqnFocalClass = data.focalClass().packageIdentifier() + "." + data.focalClass().identifier();
         Path repoSourcePath = Path.of(focalFile.toString().replace(FilesUtils.getFQNPath(fqnFocalClass).toString(), ""));
         return TestUtils.processGeneratedPrefix(repoSourcePath, focalType, testType, prefixMethod, datasetConfig());

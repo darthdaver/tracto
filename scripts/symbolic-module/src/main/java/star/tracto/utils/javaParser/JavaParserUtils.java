@@ -139,7 +139,7 @@ public class JavaParserUtils {
             typeSolver.add(new JavaParserTypeSolver(projectPath, parserConfiguration));
             roots.add(projectPath);
         }
-        String[] classpathElements = classpath.split(":");
+        String[] classpathElements = classpath.split(java.io.File.pathSeparator);
         for (String classPathElement : classpathElements) {
             if (classPathElement.endsWith(".jar")) {
                 try {

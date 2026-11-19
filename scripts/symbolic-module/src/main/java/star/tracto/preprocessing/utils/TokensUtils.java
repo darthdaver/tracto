@@ -2,6 +2,7 @@ package star.tracto.preprocessing.utils;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.javaparser.StaticJavaParser;
+import star.tracto.preprocessing.OracleInsertion;
 import com.github.javaparser.ast.*;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.type.Type;
@@ -710,11 +711,6 @@ public class TokensUtils {
                     if (testPrefix.getNameAsString().equals(targetTestPrefix.identifier())) {
                         // The prefix/oracle cycle provides a newer prefix than the persisted prefix source file:
                         // the source of the whole method, as in the dataset (signature, body, mask placeholder).
-                        if (generationMode == star.tracto.data.enums.OracleGenerationMode.PREFIX_ORACLE_CYCLE
-                                && targetTestPrefix.body() != null && !targetTestPrefix.body().isBlank()) {
-                            testPrefix.setBody(StaticJavaParser.parseMethodDeclaration(targetTestPrefix.body())
-                                    .getBody().orElseThrow());
-                        }
                         long startTime = System.currentTimeMillis();
                         prefixFound = true;
                         List<Triplet<TokenIdentifiersCollector, TokenReferencesCollector, Set<String>>> tokenIdentifiersStack = new ArrayList<>();
@@ -734,7 +730,15 @@ public class TokensUtils {
                             // Setup error map for the test case
                             clazzDatapointsErrors.get(testPrefix.getNameAsString()).putIfAbsent(targetAssertion, new ArrayList<>());
                             // Setup the root token identifiers amd references collector
-                            setUpRootTokenIdentifiers(tcCu, testPrefix, targetAssertion, targetPosition(splitTestCu, testPrefix));
+                            Optional<Node> position;
+                            if (generationMode == star.tracto.data.enums.OracleGenerationMode.PREFIX_ORACLE_CYCLE) {
+                                testPrefix.setBody(StaticJavaParser.parseMethodDeclaration(
+                                        OracleInsertion.parseable(targetTestPrefix.body())).getBody().orElseThrow());
+                                position = Optional.of(OracleInsertion.position(testPrefix.getBody().orElseThrow()));
+                            } else {
+                                position = targetPosition(splitTestCu, testPrefix);
+                            }
+                            setUpRootTokenIdentifiers(tcCu, testPrefix, targetAssertion, position);
                             setupRootTokenReferences(rootTokenReferencesCollector, rootTokenIdentifiersCollector);
                             TokenIdentifiersCollector currentTokenIdentifiersCollector = cloneRootTokenIdentifiers();
                             TokenReferencesCollector currentTokenReferences = new TokenReferencesCollector(); //cloneRootTokenReferences();

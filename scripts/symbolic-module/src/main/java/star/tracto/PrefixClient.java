@@ -1,6 +1,9 @@
 package star.tracto;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.javaparser.ast.stmt.BlockStmt;
+import com.github.javaparser.ast.stmt.Statement;
+import star.tracto.preprocessing.OracleInsertion;
 import star.tracto.preprocessing.PrefixInference;
 import star.tracto.preprocessing.components.*;
 import star.tracto.preprocessing.utils.TokensUtilsTestPrefix;
@@ -16,6 +19,7 @@ public final class PrefixClient {
 
     private static final String OK = "OK";
     private static final String LIMIT = "LIMIT";
+    private static final int MAX_CYCLE_ORACLES = 4;
 
     /** Coordinates generation, saves the report, and validates the outcome. */
     public static void main(String[] args) throws Exception {
@@ -50,18 +54,15 @@ public final class PrefixClient {
         Map<String, String> scenarios = scenarioFile == null || scenarioFile.isBlank() ? Map.of() : mapper.readValue(
                 Path.of(scenarioFile).toFile(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {});
 
-        boolean realOracle = Boolean.parseBoolean(setting("TRACTO_PREFIX_REAL_ORACLE", "false"));
-        // The oracle has its own model server; without a dedicated port it would reuse the prefix model.
         String oraclePort = setting("TRACTO_PREFIX_ORACLE_PORT", null);
-        if (realOracle && mode == PrefixGenerationMode.PREFIX_ORACLE_CYCLE && oraclePort == null) {
+        if (mode == PrefixGenerationMode.PREFIX_ORACLE_CYCLE && oraclePort == null) {
             System.out.println("WARNING: TRACTO_PREFIX_ORACLE_PORT is not set: the oracle uses the prefix model server.");
         }
         return new Options(Path.of(args[0]), Path.of(args[1]), Path.of(args[2]), Path.of(args[3]),
                 args[4], args[5], oraclePort == null ? args[4] : oraclePort,
                 maxSteps, mode, replay, selectedCases, scenarios,
                 Boolean.parseBoolean(setting("TRACTO_PREFIX_REPAIR", "false")),
-                Boolean.parseBoolean(setting("TRACTO_PREFIX_REPAIR_RECEIVER", "false")),
-                realOracle);
+                Boolean.parseBoolean(setting("TRACTO_PREFIX_REPAIR_RECEIVER", "false")));
     }
 
     /** Reads an option from a system property (IntelliJ launcher) or from the environment (CMD launcher). */
@@ -185,58 +186,66 @@ public final class PrefixClient {
                 options.maxSteps());
     }
 
-    /**
-     * Exercises the interleaved control flow without invoking the assertion model.
-     * The dataset target acts as a deterministic stand-in for the oracle response.
-     */
+    /** Alternates a model A insertion proposal with one oracle from original Tracto. */
     private static PrefixInference.Result generatePrefixOracleCycle(
             TestClazzDatapoints<OracleDatapoint> testClass, OracleDatapoint testCase,
             String originalName, Path caseOutput, Options options,
-            String classpath, ObjectMapper mapper) throws Exception {
-        final int maxSegments = 4;
+            String classpath, ObjectMapper mapper) {
         long start = System.nanoTime();
+        String testName = testCase.testPrefix().identifier();
+        BlockStmt acceptedBody = new BlockStmt();
         String accumulatedBody = "";
-        boolean finished = false;
-        for (int segment = 1; segment <= maxSegments; segment++) {
-            System.out.printf("[PREFIX_ORACLE_CYCLE][PREFIX] segment=%d for %s%n", segment, originalName);
-            Path segmentOutput = caseOutput.resolve("segment-" + segment);
-            // generateBlock validates the new segment together with the body generated so far
-            // and returns only the new statements (empty when the model ends the cycle).
-            PrefixInference.Result result = PrefixInference.generateBlock(
-                    options.repo(), segmentOutput, classpath, testClass, testCase,
-                    options.repair(), options.repairReceiver(), request -> generateBlockResponse(
-                            options.port(), request, mapper, segmentOutput, options.scenarios(),
-                            originalName, options.replay()),
-                    accumulatedBody);
-            if (!OK.equals(result.status())) {
-                return new PrefixInference.Result(result.test(), joinBodies(accumulatedBody, result.prefix()),
-                        result.status(), elapsedMillis(start),
-                        "segment " + segment + ": " + result.message());
+        int segment = 1;
+        try {
+            var request = PrefixInference.oracleCycleTemplate(options.repo(), testClass, testCase);
+            PrefixInference.Result validated = null;
+            Path validatedOutput = null;
+            for (; segment <= MAX_CYCLE_ORACLES + 1; segment++) {
+                Path segmentOutput = Files.createDirectories(caseOutput.resolve("segment-" + segment));
+                request.put("oracleCycleBody", accumulatedBody);
+                mapper.writeValue(segmentOutput.resolve("block-request.json").toFile(), request);
+                String proposal = generateBlockResponse(options.port(), request, mapper, segmentOutput,
+                        options.scenarios(), originalName, options.replay()).strip();
+                Files.writeString(segmentOutput.resolve("block-response.txt"), proposal);
+                if ("STOP".equals(proposal)) {
+                    if (validated == null) throw new IllegalArgumentException("STOP before the first oracle");
+                    PrefixInference.publishValidatedBody(validatedOutput, caseOutput);
+                    return new PrefixInference.Result(testName, accumulatedBody, OK,
+                            elapsedMillis(start), validated.message());
+                }
+                if (segment > MAX_CYCLE_ORACLES) {
+                    return new PrefixInference.Result(testName, accumulatedBody, LIMIT,
+                            elapsedMillis(start), "Oracle limit reached");
+                }
+                BlockStmt proposedBody = OracleInsertion.parseBody(proposal);
+                var insertion = OracleInsertion.position(proposedBody);
+                if (!OracleInsertion.extendsBody(acceptedBody, proposedBody)
+                        || !assertionsIn(acceptedBody).equals(assertionsIn(proposedBody))) {
+                    throw new IllegalArgumentException("Model A must preserve existing code and leave the new assertion to Tracto");
+                }
+                String oracle = generatePrefixOracle(testClass, testName, segmentOutput, options,
+                        proposedBody, OracleInsertion.assignment(insertion));
+                OracleInsertion.insert(insertion, oracle);
+                var result = PrefixInference.validateBody(options.repo(), segmentOutput, classpath, testClass,
+                        testCase, proposedBody);
+                if (!OK.equals(result.status())) {
+                    throw new IllegalArgumentException(result.message());
+                }
+                acceptedBody = proposedBody;
+                accumulatedBody = result.prefix();
+                validated = result;
+                validatedOutput = segmentOutput;
             }
-            String generatedSegment = result.prefix().strip();
-            if (generatedSegment.isEmpty()) {
-                finished = true;
-                break;
-            }
-            accumulatedBody = joinBodies(accumulatedBody, generatedSegment);
-            String oracle = generatePrefixOracle(testClass, testCase, segmentOutput, options, accumulatedBody);
-            accumulatedBody = joinBodies(accumulatedBody, oracle);
-            if (!options.realOracle()) {
-                // The simulated oracle is the dataset target: one segment only.
-                finished = true;
-                break;
-            }
+        } catch (Exception error) {
+            return new PrefixInference.Result(testName, accumulatedBody, "ERROR",
+                    elapsedMillis(start), "Segment " + segment + ": " + error);
         }
-        if (accumulatedBody.isBlank()) {
-            return new PrefixInference.Result(testCase.testPrefix().identifier(), accumulatedBody, "ERROR",
-                    elapsedMillis(start), "PREFIX_ORACLE_CYCLE generated no segment");
-        }
-        // The whole test (prefix segments and oracles) must compile, not only each segment.
-        PrefixInference.Result complete = PrefixInference.validateBody(options.repo(), caseOutput, classpath,
-                testClass, testCase, accumulatedBody);
-        String ending = finished ? "PREFIX_ORACLE_CYCLE FINISHED." : "PREFIX_ORACLE_CYCLE segment limit reached.";
-        return new PrefixInference.Result(complete.test(), accumulatedBody, complete.status(),
-                elapsedMillis(start), complete.message() + " " + ending);
+        throw new IllegalStateException("Oracle cycle ended without a result");
+    }
+
+    private static List<String> assertionsIn(BlockStmt body) {
+        return body.findAll(Statement.class, JavaParserUtils::isAssertionStatement)
+                .stream().map(Statement::toString).toList();
     }
 
     /** Milliseconds elapsed since the given {@link System#nanoTime()} value. */
@@ -246,29 +255,16 @@ public final class PrefixClient {
 
     /** Generates one oracle and records it for the current interleaved context. */
     private static String generatePrefixOracle(TestClazzDatapoints<OracleDatapoint> testClass,
-                                               OracleDatapoint testCase, Path caseOutput,
-                                               Options options, String body) throws Exception {
-        if (!options.realOracle()) {
-            String oracle = testCase.statement(testCase.target());
-            Files.writeString(caseOutput.resolve("simulated-oracle.txt"), oracle);
-            System.out.printf("[PREFIX_ORACLE_CYCLE][ORACLE] simulated target=%s%n", oracle);
-            return oracle;
-        }
+                                               String prefixIdentifier, Path caseOutput,
+                                               Options options, BlockStmt body, Assignment assignment) throws Exception {
         String endpoint = oracleEndpoint(options.oraclePort(), caseOutput, options.config());
         Client.OracleGenerationResult oracle = Client.generateOracleForPrefix(
-                options.repo(), caseOutput.resolve("oracle-next-token"), endpoint, testClass, testCase, body);
+                options.repo(), caseOutput.resolve("oracle-next-token"), endpoint, testClass, prefixIdentifier, body, assignment);
         Files.writeString(caseOutput.resolve("generated-oracle.txt"), oracle.generatedOracle());
         System.out.printf("[PREFIX_ORACLE_CYCLE][ORACLE] model status=%s value=%s%n",
                 oracle.status(), oracle.generatedOracle());
         if (!"OK".equals(oracle.status())) throw new IllegalStateException("Oracle generation failed: " + oracle.message());
         return oracle.generatedOracle();
-    }
-
-    /** Joins two generated code fragments while preserving statement boundaries. */
-    private static String joinBodies(String first, String second) {
-        if (first == null || first.isBlank()) return second == null ? "" : second;
-        if (second == null || second.isBlank()) return first;
-        return first.stripTrailing() + "\n" + second.stripLeading();
     }
 
 
@@ -302,8 +298,7 @@ public final class PrefixClient {
     private record Options(Path repo, Path dataset, Path output, Path javaContext, String port, String config,
                            String oraclePort,
                            int maxSteps, PrefixGenerationMode mode, Iterator<String> replay, Set<String> selectedCases,
-                           Map<String, String> scenarios, boolean repair, boolean repairReceiver,
-                           boolean realOracle) {}
+                           Map<String, String> scenarios, boolean repair, boolean repairReceiver) {}
 
     /** Generated results and case names found in the dataset. */
     private record DatasetResult(List<PrefixInference.Result> results, Set<String> foundCases) {}
