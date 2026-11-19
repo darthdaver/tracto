@@ -156,7 +156,8 @@ public class JavaUtils {
         runtimeJdkVersion.ifPresent(symbolSolverJdkVersions::add);
         List<Path> classpath = new ArrayList<>(sourceFolders(symbolSolverJdkVersions));
         classpath.addAll(assertionLibraryFolders());
-        return classpath.stream().map(Path::toString).collect(Collectors.joining(":"));
+        return classpath.stream().map(Path::toString)
+                .collect(Collectors.joining(java.io.File.pathSeparator));
     }
 
     /**

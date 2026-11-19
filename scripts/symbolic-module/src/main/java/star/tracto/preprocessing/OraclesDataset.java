@@ -273,7 +273,7 @@ public class OraclesDataset {
      */
     private static Path testClassPathToSourceClassNormPath(Path testClassPath) {
         // Normalize the test class path string
-        String testFileNormStr = testClassPath.toString().toLowerCase();
+        String testFileNormStr = testClassPath.toString().replace('\\', '/').toLowerCase();
         // Split the normalized test class path string
         String[] testFileNormStrSplitted = testFileNormStr.split("/");
         // Get the test class name

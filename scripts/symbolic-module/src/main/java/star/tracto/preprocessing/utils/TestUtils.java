@@ -2597,6 +2597,26 @@ public class TestUtils {
     }
 
     /**
+     * Builds the test prefix of a generated body in the same format as the oracles dataset: the methods invoked by the
+     * generated statements, and the source of the method with the mask placeholder where the next oracle goes.
+     * Used by the prefix/oracle cycle, whose prefix is not the one of the reference test.
+     *
+     * @param repoSourcePath the source root of the repository
+     * @param focalClass the focal class
+     * @param testClass the test class that contains the prefix method
+     * @param prefixMethod the prefix method, already holding the generated body. Its body receives the mask comment.
+     * @param config the oracles dataset configuration (mask placeholder and target strategy)
+     * @return the test prefix, as the datapoints of the oracles dataset store it
+     */
+    public static Callable processGeneratedPrefix(Path repoSourcePath, TypeDeclaration focalClass, TypeDeclaration testClass,
+                                                  MethodDeclaration prefixMethod, OraclesDatasetConfig config) {
+        Pair<Callable, List<Callable>> invokedMethodsPair = processInvokedMethods(repoSourcePath, focalClass, testClass,
+                prefixMethod, new HashMap<>(), config);
+        prefixMethod.getBody().orElseThrow().addOrphanComment(new BlockComment(config.mask()));
+        return processCallable(testClass, prefixMethod, invokedMethodsPair.getValue1());
+    }
+
+    /**
      * Process the class or interface type and generate the corresponding {@link Clazz} object.
      *
      * @param classOrInterfaceType the class or interface type to process

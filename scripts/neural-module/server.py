@@ -21,6 +21,9 @@ import predictor
 from predictor import TokenNotFoundException
 
 
+# Limit for a whole test-prefix block; --max_tgt_length (64) is meant for next-token answers.
+PREFIX_BLOCK_MAX_NEW_TOKENS = 256
+
 # Generic literal tokens
 LITERALS = [
     "DECIMAL_LITERAL", "HEX_LITERAL", "OCT_LITERAL", "BINARY_LITERAL",
@@ -43,6 +46,8 @@ class Server:
         self._max_src_length = int(max_src_length)
         self._max_tgt_length = int(max_tgt_length)
         self._request_queue = Queue()
+        # /api/next_token and /api/prefix_block share the model: generations must not overlap.
+        self._model_lock = threading.Lock()
         self._safe_dir = os.environ.get("SAFE_JSON_DIR", None)
         self._ready = False
         self.setup_routes()
@@ -146,15 +151,67 @@ class Server:
         response.headers['Content-Type'] = 'text/plain'
         return response
 
+    def prefix_block(self):
+        """Genera l'intero corpo di un test prefix con il modello originale."""
+        import torch
+
+        data = request.get_json(silent=True)
+        placeholder = '/*<MASK_PLACEHOLDER>*/'
+        if (not isinstance(data, dict) or not isinstance(data.get('test'), str)
+                or data['test'].count(placeholder) != 1
+                or not isinstance(data.get('focalSource'), str)):
+            return make_response(json.dumps({'error': 'Invalid prefix block request'}), 400)
+
+        before, after = data['test'].split(placeholder, 1)
+        scenario = data.get('scenario', '')
+        if not isinstance(scenario, str):
+            return make_response(json.dumps({'error': 'Invalid scenario'}), 400)
+        guidance = ''.join('// Scenario: ' + line + '\n' for line in scenario.splitlines())
+        if data.get('continuation') == 'true':
+            # Prefix/oracle cycle: the body already holds setup and assertions.
+            guidance += ('// The test body below already contains setup and assertions. Add only the next '
+                         'setup and call, or output nothing if the test is already complete.\n')
+        prompt = ('<|fim_prefix|>// Complete only the Java test body. Set up inputs and call '
+                  'a method of the focal class. Do not include assertions or Markdown.\n'
+                  '// Focal class:\n' + data['focalSource'] + '\n' + guidance
+                  + before + '<|fim_suffix|>' + after + '<|fim_middle|>')
+        ids = self._tokenizer.encode(prompt, add_special_tokens=False)
+        if len(ids) + PREFIX_BLOCK_MAX_NEW_TOKENS > self._max_src_length:
+            return make_response(json.dumps({'error': 'Prefix block context is too long'}), 422)
+
+        input_ids = torch.tensor([ids], device=self._device)
+        stops = {self._tokenizer.eos_token_id}
+        for marker in ('<|fim_pad|>', '<|fim_suffix|>', '<|im_end|>'):
+            encoded = self._tokenizer.encode(marker, add_special_tokens=False)
+            if len(encoded) == 1 and encoded[0] != self._tokenizer.unk_token_id:
+                stops.add(encoded[0])
+        stops.discard(None)
+        with self._model_lock, torch.inference_mode():
+            output = self._model.generate(
+                input_ids=input_ids,
+                attention_mask=torch.ones_like(input_ids),
+                max_new_tokens=PREFIX_BLOCK_MAX_NEW_TOKENS,
+                do_sample=False,
+                eos_token_id=list(stops),
+                pad_token_id=self._tokenizer.eos_token_id)
+        generated = output[0, len(ids):].tolist()
+        if generated and generated[-1] in stops:
+            generated.pop()
+        response = make_response(json.dumps({'body': self._tokenizer.decode(
+            generated, skip_special_tokens=True).strip()}), 200)
+        response.headers['Content-Type'] = 'application/json'
+        return response
+
     def process_request(self):
         while True:
             task = self._request_queue.get()
             filepath = task['filepath']
             try:
-                token = predictor.predict_next_token(
-                    self._device, filepath, self._model, self._tokenizer,
-                    self._max_src_length, self._max_tgt_length
-                )
+                with self._model_lock:
+                    token = predictor.predict_next_token(
+                        self._device, filepath, self._model, self._tokenizer,
+                        self._max_src_length, self._max_tgt_length
+                    )
                 task['token'] = token
                 print("Processed request for:", filepath)
             except TokenNotFoundException as e:
@@ -171,6 +228,7 @@ class Server:
     def setup_routes(self):
         self._app.add_url_rule('/health', 'health', self.health, methods=['GET'])
         self._app.add_url_rule('/api/next_token', 'next_token', self.next_token, methods=['GET'])
+        self._app.add_url_rule('/api/prefix_block', 'prefix_block', self.prefix_block, methods=['POST'])
 
     def mark_ready(self):
         """Mark the server as ready to accept requests."""
