@@ -1,18 +1,18 @@
 package star.tracto.preprocessing;
 
 import com.github.javaparser.StaticJavaParser;
-import com.github.javaparser.ast.Node;
-import com.github.javaparser.ast.NodeList;
+import com.github.javaparser.ast.nodeTypes.NodeWithStatements;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.VariableDeclarationExpr;
 import com.github.javaparser.ast.stmt.BlockStmt;
+import com.github.javaparser.ast.stmt.EmptyStmt;
 import com.github.javaparser.ast.stmt.ExpressionStmt;
+import com.github.javaparser.ast.stmt.IfStmt;
 import com.github.javaparser.ast.stmt.SwitchEntry;
 import star.tracto.preprocessing.components.Assignment;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 /** Represents the active oracle placeholder as a statement for syntactic scope analysis. */
 public final class OracleInsertion {
@@ -76,40 +76,96 @@ public final class OracleInsertion {
         }
     }
 
-    /** Checks that existing statements keep their order and scope while allowing new statements. */
-    public static boolean extendsBody(BlockStmt existing, BlockStmt proposed) {
-        return preserves(existing, proposed);
+    static BlockStmt withoutOracle(BlockStmt proposed) {
+        BlockStmt body = proposed.clone();
+        ExpressionStmt placeholder = position(body);
+        if (placeholder.getExpression() instanceof VariableDeclarationExpr declaration) {
+            var variable = declaration.getVariable(0);
+            var type = variable.getType();
+            if (type.isVarType()) {
+                throw new IllegalArgumentException("Use an explicit type for a local receiving the oracle result");
+            }
+            String value = !type.isPrimitiveType() ? "null" : type.asString().equals("boolean") ? "false" : "0";
+            variable.setInitializer(StaticJavaParser.parseExpression(value));
+        } else {
+            placeholder.replace(new EmptyStmt());
+        }
+        return body;
     }
 
-    private static boolean preserves(Node existing, Node proposed) {
-        if (existing.getClass() != proposed.getClass()) return false;
-        for (var property : existing.getMetaModel().getAllPropertyMetaModels()) {
-            if (property.is("comment")) continue;
-            Object before = property.getValue(existing);
-            Object after = property.getValue(proposed);
-            if (property.is("elseStmt") && before == null) continue;
-            if (property.is("statements")) {
-                if (!preservesStatements((NodeList<?>) before, (NodeList<?>) after)) return false;
-            } else if (before instanceof Node beforeNode && after instanceof Node afterNode) {
-                if (!preserves(beforeNode, afterNode)) return false;
-            } else if (before instanceof NodeList<?> beforeList && after instanceof NodeList<?> afterList) {
-                if (beforeList.size() != afterList.size()) return false;
-                for (int i = 0; i < beforeList.size(); i++) {
-                    if (!preserves(beforeList.get(i), afterList.get(i))) return false;
+    /** Describes each statement list and the numbered boundaries the model can select. */
+    public static String insertionPoints(BlockStmt body) {
+        var blocks = statementLists(body);
+        var description = new StringBuilder();
+        for (int block = 0; block < blocks.size(); block++) {
+            var container = blocks.get(block);
+            var statements = container.getStatements();
+            description.append("Block ").append(block).append(" (").append(blockDescription(container))
+                    .append("), slot 0 before its first statement\n");
+            for (int index = 0; index < statements.size(); index++) {
+                var statement = statements.get(index);
+                description.append("  slot ").append(index + 1).append(" after ")
+                        .append(statement.toString().lines().findFirst().orElse(""));
+                if (statement instanceof IfStmt conditional && conditional.getElseStmt().isEmpty()) {
+                    description.append(" (may add ELSE)");
                 }
-            } else if (!Objects.equals(before, after)) {
-                return false;
+                description.append('\n');
             }
         }
-        return true;
+        return description.toString();
     }
 
-    private static boolean preservesStatements(NodeList<?> existing, NodeList<?> proposed) {
-        int matched = 0;
-        for (Node candidate : proposed) {
-            if (matched < existing.size() && preserves(existing.get(matched), candidate)) matched++;
+    private static String blockDescription(NodeWithStatements<?> container) {
+        if (container instanceof SwitchEntry entry) return entry.toString().lines().findFirst().orElse("switch case");
+        var block = (BlockStmt) container;
+        var parent = block.getParentNode().orElse(null);
+        if (parent instanceof IfStmt conditional) {
+            return (conditional.getThenStmt() == block ? "if " : "else for if ") + conditional.getCondition();
         }
-        return matched == existing.size();
+        return parent == null ? "test body" : parent.toString().lines().findFirst().orElse("");
+    }
+
+    /** Applies an insertion to a copy, leaving all accepted statements intact. */
+    public static BlockStmt applyProposal(BlockStmt accepted, String proposal) {
+        String[] lines = proposal.split("\\R", 2);
+        String[] address = lines[0].strip().split("\\s+");
+        boolean addElse = address.length == 4 && "ELSE".equals(address[3]);
+        if (lines.length != 2 || !(address.length == 3 || addElse) || !"AT".equals(address[0])) {
+            throw new IllegalArgumentException("Start the proposal with AT <block> <slot>, then give only new Java");
+        }
+        int block = Integer.parseInt(address[1]);
+        int slot = Integer.parseInt(address[2]);
+        BlockStmt merged = accepted.clone();
+        var blocks = statementLists(merged);
+        if (block < 0 || block >= blocks.size() || slot < 0 || slot > blocks.get(block).getStatements().size()) {
+            throw new IllegalArgumentException("Insertion point is out of range: " + lines[0]);
+        }
+        var statements = blocks.get(block).getStatements();
+        var added = parseBody(lines[1]);
+        if (addElse) {
+            if (slot == 0 || !(statements.get(slot - 1) instanceof IfStmt conditional)
+                    || conditional.getElseStmt().isPresent()) {
+                throw new IllegalArgumentException("ELSE requires a slot immediately after an if without an else");
+            }
+            conditional.setElseStmt(added);
+        } else {
+            for (var statement : added.getStatements()) {
+                statements.add(slot++, statement.clone());
+            }
+        }
+        position(merged);
+        return merged;
+    }
+
+    private static List<NodeWithStatements<?>> statementLists(BlockStmt body) {
+        var blocks = new ArrayList<NodeWithStatements<?>>();
+        body.stream().forEach(node -> {
+            if (node instanceof BlockStmt block) blocks.add(block);
+            else if (node instanceof SwitchEntry entry && entry.getType() == SwitchEntry.Type.STATEMENT_GROUP) {
+                blocks.add(entry);
+            }
+        });
+        return blocks;
     }
 
     public static String contents(BlockStmt body) {

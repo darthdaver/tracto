@@ -28,6 +28,8 @@ NEXT_TOKEN_ENDPOINT = '/api/next_token'
 PREFIX_MASK = '/*<MASK_PLACEHOLDER>*/'
 ORACLE_CYCLE_BODY = 'oracleCycleBody'
 ORACLE_CYCLE_DRAFT = 'oracleCycleDraft'
+ORACLE_CYCLE_INSERTION_POINTS = 'oracleCycleInsertionPoints'
+ORACLE_CYCLE_DIAGNOSTIC = 'oracleCycleDiagnostic'
 PREFIX_READY = 'READY'
 PREFIX_STOP = 'STOP'
 
@@ -178,31 +180,43 @@ class Server:
             return make_response(json.dumps({'error': 'Invalid oracle cycle body'}), 400)
         line_mode = ORACLE_CYCLE_DRAFT in data
         draft = data.get(ORACLE_CYCLE_DRAFT)
+        insertion_points = data.get(ORACLE_CYCLE_INSERTION_POINTS)
+        diagnostic = data.get(ORACLE_CYCLE_DIAGNOSTIC, '')
         if line_mode and (cycle_body is None or not isinstance(draft, str)):
             return make_response(json.dumps({'error': 'Invalid oracle cycle draft'}), 400)
+        if cycle_body is not None and (not isinstance(insertion_points, str) or not isinstance(diagnostic, str)):
+            return make_response(json.dumps({'error': 'Invalid oracle cycle insertion points or diagnostic'}), 400)
         if cycle_body is not None:
             instruction = (
-                f'// Generate the Java test body with exactly one {PREFIX_MASK} at the next assertion position. '
+                '// Start with AT <block> <slot>, choosing a boundary from the list below. '
+                'Then return only the new Java statements to insert there.\n'
+                '// To add an else to an existing if at a slot marked may add ELSE, use '
+                'AT <block> <slot> ELSE and return only the statements of its new else body.\n'
+                f'// Include exactly one {PREFIX_MASK} at the next assertion position. '
                 'If the assertion result is needed later, use a local declaration such as '
-                f'Exception error = {PREFIX_MASK}; instead of a standalone placeholder.\n'
-                '// Preserve all existing statements and assertions in their original scopes. '
-                'Add setup only if needed. Do not write new assertions yourself.\n'
+                f'Exception error = {PREFIX_MASK}; with an explicit type.\n'
+                '// Do not repeat existing code or generate an assertion yourself. '
+                'For consecutive assertions, return the header and placeholder only.\n'
             )
             if line_mode:
                 instruction += (
-                    '// Return exactly one next Java source line of the new body. '
+                    '// Return exactly one next line of the insertion, starting with the AT header. '
                     'Continue the draft at the cursor. Do not repeat draft lines or use Markdown.\n'
-                    '// Once the entire body is complete with one placeholder and all inner blocks closed, '
+                    '// Once the insertion is complete with one placeholder and all new blocks closed, '
                     f'return {PREFIX_READY} on its own line.\n'
                 )
                 before += draft
             else:
-                instruction += '// Return only the body contents, without the outer braces or Markdown.\n'
+                instruction += '// Return the header and insertion without surrounding braces or Markdown.\n'
+            guidance += '// Insertion points:\n' + ''.join('// ' + line + '\n' for line in insertion_points.splitlines())
+            if diagnostic:
+                guidance += '// Correct the previous insertion using this diagnostic:\n' + ''.join(
+                    '// ' + line + '\n' for line in diagnostic.splitlines())
             if cycle_body:
                 if not draft:
                     guidance += f'// Return only {PREFIX_STOP} if the existing body checks the intended behavior.\n'
                 guidance += (
-                    '// Existing body to preserve:\n'
+                    '// Existing body for context:\n'
                     + ''.join('// ' + line + '\n' for line in cycle_body.splitlines())
                 )
             else:
@@ -221,8 +235,6 @@ class Server:
                   + before + '<|fim_suffix|>' + after + '<|fim_middle|>')
         ids = self._tokenizer.encode(prompt, add_special_tokens=False)
         max_new_tokens = PREFIX_BLOCK_MAX_NEW_TOKENS
-        if cycle_body and not line_mode:
-            max_new_tokens += len(self._tokenizer.encode(cycle_body, add_special_tokens=False))
         if len(ids) + max_new_tokens > self._max_src_length:
             return make_response(json.dumps({'error': 'Prefix block context is too long'}), 422)
 

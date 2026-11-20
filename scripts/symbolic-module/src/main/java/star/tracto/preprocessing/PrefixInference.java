@@ -387,6 +387,17 @@ public final class PrefixInference {
         return result;
     }
 
+    /** Compiles the proposed setup with a temporary substitute for the pending oracle. */
+    public static String validateOraclePrefix(Path repo, Path output, String classpath,
+                                              TestClazzDatapoints<OracleDatapoint> data, OracleDatapoint point,
+                                              BlockStmt body) throws Exception {
+        PreparedTest test = prepareTest(repo, data, point);
+        test.method().setBody(OracleInsertion.withoutOracle(body));
+        return compile(test.unit(), output, classpath,
+                packageRoot(test.focalFile(), data.focalClass().packageIdentifier()),
+                packageRoot(test.testFile(), data.testClass().packageIdentifier()));
+    }
+
     /** Joins two Java statement sequences, keeping them on separate lines. */
     private static String joinBodies(String first, String second) {
         if (first == null || first.isBlank()) return second == null ? EMPTY_STRING : second.strip();

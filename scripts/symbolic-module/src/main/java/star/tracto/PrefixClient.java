@@ -1,6 +1,7 @@
 package star.tracto;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.javaparser.ParseProblemException;
 import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.Statement;
 import star.tracto.preprocessing.OracleInsertion;
@@ -24,6 +25,8 @@ public final class PrefixClient {
     private static final int DEFAULT_MAX_STEPS = 128;
     private static final String CYCLE_BODY = "oracleCycleBody";
     private static final String CYCLE_DRAFT = "oracleCycleDraft";
+    private static final String CYCLE_INSERTION_POINTS = "oracleCycleInsertionPoints";
+    private static final String CYCLE_DIAGNOSTIC = "oracleCycleDiagnostic";
     private static final String READY = "READY";
     private static final String STOP = "STOP";
     private static final String BLOCK_REQUEST_FILE = "block-request.json";
@@ -223,35 +226,44 @@ public final class PrefixClient {
             for (; segment <= MAX_CYCLE_ORACLES + 1; segment++) {
                 Path segmentOutput = Files.createDirectories(caseOutput.resolve("segment-" + segment));
                 request.put(CYCLE_BODY, accumulatedBody);
-                String proposal;
-                if (options.mode() == PrefixGenerationMode.PREFIX_ORACLE_CYCLE_LINES) {
-                    mapper.writeValue(segmentOutput.resolve(BLOCK_REQUEST_FILE).toFile(), request);
-                    var generated = generateLineProposal(request, segmentOutput, originalName, options, mapper);
-                    if (generated.isEmpty()) {
-                        return new PrefixInference.Result(testName, accumulatedBody, LIMIT, elapsedMillis(start),
-                                "Prefix line limit reached in segment " + segment);
+                request.put(CYCLE_INSERTION_POINTS, OracleInsertion.insertionPoints(acceptedBody));
+                request.remove(CYCLE_DIAGNOSTIC);
+                BlockStmt proposedBody;
+                for (int attempt = 0; ; attempt++) {
+                    Path attemptOutput = attempt == 0 ? segmentOutput
+                            : Files.createDirectories(segmentOutput.resolve("prefix-repair"));
+                    try {
+                        var generated = readCycleProposal(request, attemptOutput, originalName, options, mapper);
+                        if (generated.isEmpty()) {
+                            return new PrefixInference.Result(testName, accumulatedBody, LIMIT, elapsedMillis(start),
+                                    "Prefix line limit reached in segment " + segment);
+                        }
+                        String proposal = generated.get();
+                        Files.writeString(attemptOutput.resolve(BLOCK_RESPONSE_FILE), proposal);
+                        if (STOP.equals(proposal)) {
+                            if (validated == null) throw new IllegalArgumentException("STOP before the first oracle");
+                            PrefixInference.publishValidatedBody(validatedOutput, caseOutput);
+                            return new PrefixInference.Result(testName, accumulatedBody, OK,
+                                    elapsedMillis(start), validated.message());
+                        }
+                        if (segment > MAX_CYCLE_ORACLES) {
+                            return new PrefixInference.Result(testName, accumulatedBody, LIMIT,
+                                    elapsedMillis(start), "Oracle limit reached");
+                        }
+                        proposedBody = OracleInsertion.applyProposal(acceptedBody, proposal);
+                        if (assertionCount(proposedBody) != assertionCount(acceptedBody)) {
+                            throw new IllegalArgumentException("Leave the new assertion to Tracto");
+                        }
+                        String diagnostic = PrefixInference.validateOraclePrefix(options.repo(),
+                                attemptOutput.resolve("prefix-validation"), classpath, testClass, testCase, proposedBody);
+                        if (!diagnostic.isEmpty()) throw new IllegalArgumentException(diagnostic);
+                        break;
+                    } catch (IllegalArgumentException | ParseProblemException invalidPrefix) {
+                        if (attempt != 0) throw invalidPrefix;
+                        request.put(CYCLE_DIAGNOSTIC, invalidPrefix.getMessage());
                     }
-                    proposal = generated.get();
-                } else {
-                    proposal = requestCycleReply(request, segmentOutput, originalName, options, mapper).strip();
                 }
-                Files.writeString(segmentOutput.resolve(BLOCK_RESPONSE_FILE), proposal);
-                if (STOP.equals(proposal)) {
-                    if (validated == null) throw new IllegalArgumentException("STOP before the first oracle");
-                    PrefixInference.publishValidatedBody(validatedOutput, caseOutput);
-                    return new PrefixInference.Result(testName, accumulatedBody, OK,
-                            elapsedMillis(start), validated.message());
-                }
-                if (segment > MAX_CYCLE_ORACLES) {
-                    return new PrefixInference.Result(testName, accumulatedBody, LIMIT,
-                            elapsedMillis(start), "Oracle limit reached");
-                }
-                BlockStmt proposedBody = OracleInsertion.parseBody(proposal);
                 var insertion = OracleInsertion.position(proposedBody);
-                if (!OracleInsertion.extendsBody(acceptedBody, proposedBody)
-                        || !assertionsIn(acceptedBody).equals(assertionsIn(proposedBody))) {
-                    throw new IllegalArgumentException("Model A must preserve existing code and leave the new assertion to Tracto");
-                }
                 String oracle = generatePrefixOracle(testClass, testName, segmentOutput, options,
                         proposedBody, OracleInsertion.assignment(insertion));
                 OracleInsertion.insert(insertion, oracle);
@@ -270,6 +282,15 @@ public final class PrefixClient {
                     elapsedMillis(start), "Segment " + segment + ": " + error);
         }
         throw new IllegalStateException("Oracle cycle ended without a result");
+    }
+
+    private static Optional<String> readCycleProposal(Map<String, String> request, Path output, String originalName,
+                                                       Options options, ObjectMapper mapper) throws Exception {
+        if (options.mode() == PrefixGenerationMode.PREFIX_ORACLE_CYCLE_LINES) {
+            mapper.writeValue(output.resolve(BLOCK_REQUEST_FILE).toFile(), request);
+            return generateLineProposal(request, output, originalName, options, mapper);
+        }
+        return Optional.of(requestCycleReply(request, output, originalName, options, mapper).strip());
     }
 
     /** Collects a draft one physical line at a time before it enters the shared oracle cycle. */
@@ -310,9 +331,8 @@ public final class PrefixClient {
         return generateBlockResponse(request, output, originalName, options, mapper);
     }
 
-    private static List<String> assertionsIn(BlockStmt body) {
-        return body.findAll(Statement.class, JavaParserUtils::isAssertionStatement)
-                .stream().map(Statement::toString).toList();
+    private static int assertionCount(BlockStmt body) {
+        return body.findAll(Statement.class, JavaParserUtils::isAssertionStatement).size();
     }
 
     /** Milliseconds elapsed since the given {@link System#nanoTime()} value. */
