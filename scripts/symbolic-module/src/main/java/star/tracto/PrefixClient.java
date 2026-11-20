@@ -19,7 +19,22 @@ public final class PrefixClient {
 
     private static final String OK = "OK";
     private static final String LIMIT = "LIMIT";
+    private static final String ERROR = "ERROR";
     private static final int MAX_CYCLE_ORACLES = 4;
+    private static final int DEFAULT_MAX_STEPS = 128;
+    private static final String CYCLE_BODY = "oracleCycleBody";
+    private static final String CYCLE_DRAFT = "oracleCycleDraft";
+    private static final String READY = "READY";
+    private static final String STOP = "STOP";
+    private static final String BLOCK_REQUEST_FILE = "block-request.json";
+    private static final String BLOCK_RESPONSE_FILE = "block-response.txt";
+    private static final String REPAIR_REQUEST_FILE = "repair-request.json";
+    private static final String ORACLE_TOKEN_DIRECTORY = "oracle-next-token";
+    private static final String TOKEN_STEP_FILE = "token-step.json";
+    private static final String PREFIX_BLOCK_ENDPOINT = "/api/prefix_block";
+    private static final String NEXT_TOKEN_ENDPOINT = "/api/next_token";
+    private static final String LOCAL_SERVER = "http://127.0.0.1:";
+    private static final String TRACE_PROPERTY = "tracto.prefix.trace";
 
     /** Coordinates generation, saves the report, and validates the outcome. */
     public static void main(String[] args) throws Exception {
@@ -38,10 +53,14 @@ public final class PrefixClient {
     /** Reads launcher arguments, filters, scenarios, and optional replay responses. */
     private static Options readOptions(String[] args, ObjectMapper mapper) throws Exception {
         if (args.length < 6) {
-            throw new IllegalArgumentException("repo dataset output java-context port config [maxSteps] [--block|--interleaved] [choices.json]");
+            throw new IllegalArgumentException("repo dataset output java-context port config [maxSteps] "
+                    + "[--block|--interleaved|--interleaved-lines] [choices.json]");
         }
-        int maxSteps = args.length > 6 ? Integer.parseInt(args[6]) : 128;
+        int maxSteps = args.length > 6 ? Integer.parseInt(args[6]) : DEFAULT_MAX_STEPS;
         PrefixGenerationMode mode = readGenerationMode(args);
+        if (mode == PrefixGenerationMode.PREFIX_ORACLE_CYCLE_LINES && maxSteps < 1) {
+            throw new IllegalArgumentException("Line generation requires a positive maxSteps");
+        }
         int replayIndex = mode == PrefixGenerationMode.TOKEN ? 7 : 8;
         Iterator<String> replay = args.length > replayIndex
                 ? Arrays.asList(mapper.readValue(Path.of(args[replayIndex]).toFile(), String[].class)).iterator()
@@ -55,7 +74,7 @@ public final class PrefixClient {
                 Path.of(scenarioFile).toFile(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {});
 
         String oraclePort = setting("TRACTO_PREFIX_ORACLE_PORT", null);
-        if (mode == PrefixGenerationMode.PREFIX_ORACLE_CYCLE && oraclePort == null) {
+        if (mode.usesOracleCycle() && oraclePort == null) {
             System.out.println("WARNING: TRACTO_PREFIX_ORACLE_PORT is not set: the oracle uses the prefix model server.");
         }
         return new Options(Path.of(args[0]), Path.of(args[1]), Path.of(args[2]), Path.of(args[3]),
@@ -79,6 +98,7 @@ public final class PrefixClient {
         return switch (args[7]) {
             case "--block" -> PrefixGenerationMode.BLOCK;
             case "--prefix-oracle-cycle", "--interleaved" -> PrefixGenerationMode.PREFIX_ORACLE_CYCLE;
+            case "--interleaved-lines" -> PrefixGenerationMode.PREFIX_ORACLE_CYCLE_LINES;
             default -> throw new IllegalArgumentException("Unknown prefix mode: " + args[7]);
         };
     }
@@ -170,15 +190,15 @@ public final class PrefixClient {
                                                           String classpath, ObjectMapper mapper) throws Exception {
         if (options.mode() == PrefixGenerationMode.BLOCK) {
             return PrefixInference.generateBlock(options.repo(), caseOutput, classpath, testClass, testCase,
-                    options.repair(), options.repairReceiver(), request -> generateBlockResponse(
-                            options.port(), request, mapper, caseOutput, options.scenarios(), originalName, options.replay()));
+                    options.repair(), options.repairReceiver(), request ->
+                            generateBlockResponse(request, caseOutput, originalName, options, mapper));
         }
 
-        if (options.mode() == PrefixGenerationMode.PREFIX_ORACLE_CYCLE) {
+        if (options.mode().usesOracleCycle()) {
             return generatePrefixOracleCycle(testClass, testCase, originalName, caseOutput,
                     options, classpath, mapper);
         }
-        String endpoint = nextTokenEndpoint(options.port(), options.config(), caseOutput);
+        String endpoint = tokenEndpoint(options.port(), options.config(), caseOutput, "prefix");
         return PrefixInference.generate(options.repo(), caseOutput, classpath, testClass, testCase,
                 step -> options.replay() == null
                         ? TokensUtilsTestPrefix.getNextToken(step, caseOutput, endpoint)
@@ -202,12 +222,21 @@ public final class PrefixClient {
             Path validatedOutput = null;
             for (; segment <= MAX_CYCLE_ORACLES + 1; segment++) {
                 Path segmentOutput = Files.createDirectories(caseOutput.resolve("segment-" + segment));
-                request.put("oracleCycleBody", accumulatedBody);
-                mapper.writeValue(segmentOutput.resolve("block-request.json").toFile(), request);
-                String proposal = generateBlockResponse(options.port(), request, mapper, segmentOutput,
-                        options.scenarios(), originalName, options.replay()).strip();
-                Files.writeString(segmentOutput.resolve("block-response.txt"), proposal);
-                if ("STOP".equals(proposal)) {
+                request.put(CYCLE_BODY, accumulatedBody);
+                String proposal;
+                if (options.mode() == PrefixGenerationMode.PREFIX_ORACLE_CYCLE_LINES) {
+                    mapper.writeValue(segmentOutput.resolve(BLOCK_REQUEST_FILE).toFile(), request);
+                    var generated = generateLineProposal(request, segmentOutput, originalName, options, mapper);
+                    if (generated.isEmpty()) {
+                        return new PrefixInference.Result(testName, accumulatedBody, LIMIT, elapsedMillis(start),
+                                "Prefix line limit reached in segment " + segment);
+                    }
+                    proposal = generated.get();
+                } else {
+                    proposal = requestCycleReply(request, segmentOutput, originalName, options, mapper).strip();
+                }
+                Files.writeString(segmentOutput.resolve(BLOCK_RESPONSE_FILE), proposal);
+                if (STOP.equals(proposal)) {
                     if (validated == null) throw new IllegalArgumentException("STOP before the first oracle");
                     PrefixInference.publishValidatedBody(validatedOutput, caseOutput);
                     return new PrefixInference.Result(testName, accumulatedBody, OK,
@@ -237,10 +266,48 @@ public final class PrefixClient {
                 validatedOutput = segmentOutput;
             }
         } catch (Exception error) {
-            return new PrefixInference.Result(testName, accumulatedBody, "ERROR",
+            return new PrefixInference.Result(testName, accumulatedBody, ERROR,
                     elapsedMillis(start), "Segment " + segment + ": " + error);
         }
         throw new IllegalStateException("Oracle cycle ended without a result");
+    }
+
+    /** Collects a draft one physical line at a time before it enters the shared oracle cycle. */
+    private static Optional<String> generateLineProposal(Map<String, String> request, Path segmentOutput,
+                                                         String originalName, Options options, ObjectMapper mapper)
+            throws Exception {
+        var lineRequest = new LinkedHashMap<>(request);
+        var draft = new StringBuilder();
+        for (int lines = 0; lines <= options.maxSteps(); lines++) {
+            Path lineOutput = Files.createDirectories(segmentOutput.resolve("line-" + (lines + 1)));
+            lineRequest.put(CYCLE_DRAFT, draft.toString());
+            String response = requestCycleReply(lineRequest, lineOutput, originalName, options, mapper).stripTrailing();
+            Files.writeString(lineOutput.resolve(BLOCK_RESPONSE_FILE), response);
+            if (response.isBlank() || response.lines().count() != 1) {
+                throw new IllegalArgumentException("Expected one Java line, READY or STOP");
+            }
+            switch (response.strip()) {
+                case READY -> {
+                    if (draft.isEmpty()) throw new IllegalArgumentException("READY before the first line");
+                    return Optional.of(draft.toString());
+                }
+                case STOP -> {
+                    if (!draft.isEmpty()) throw new IllegalArgumentException("STOP after starting a prefix draft");
+                    return Optional.of(STOP);
+                }
+                default -> {
+                    if (lines == options.maxSteps()) return Optional.empty();
+                    draft.append(response).append('\n');
+                }
+            }
+        }
+        throw new IllegalStateException("Prefix line generation ended without a result");
+    }
+
+    private static String requestCycleReply(Map<String, String> request, Path output, String originalName,
+                                            Options options, ObjectMapper mapper) throws Exception {
+        mapper.writeValue(output.resolve(BLOCK_REQUEST_FILE).toFile(), request);
+        return generateBlockResponse(request, output, originalName, options, mapper);
     }
 
     private static List<String> assertionsIn(BlockStmt body) {
@@ -257,13 +324,14 @@ public final class PrefixClient {
     private static String generatePrefixOracle(TestClazzDatapoints<OracleDatapoint> testClass,
                                                String prefixIdentifier, Path caseOutput,
                                                Options options, BlockStmt body, Assignment assignment) throws Exception {
-        String endpoint = oracleEndpoint(options.oraclePort(), caseOutput, options.config());
+        Path tokenOutput = caseOutput.resolve(ORACLE_TOKEN_DIRECTORY);
+        String endpoint = tokenEndpoint(options.oraclePort(), options.config(), tokenOutput, "interleaved");
         Client.OracleGenerationResult oracle = Client.generateOracleForPrefix(
-                options.repo(), caseOutput.resolve("oracle-next-token"), endpoint, testClass, prefixIdentifier, body, assignment);
+                options.repo(), tokenOutput, endpoint, testClass, prefixIdentifier, body, assignment);
         Files.writeString(caseOutput.resolve("generated-oracle.txt"), oracle.generatedOracle());
         System.out.printf("[PREFIX_ORACLE_CYCLE][ORACLE] model status=%s value=%s%n",
                 oracle.status(), oracle.generatedOracle());
-        if (!"OK".equals(oracle.status())) throw new IllegalStateException("Oracle generation failed: " + oracle.message());
+        if (!OK.equals(oracle.status())) throw new IllegalStateException("Oracle generation failed: " + oracle.message());
         return oracle.generatedOracle();
     }
 
@@ -289,7 +357,7 @@ public final class PrefixClient {
             throw new IllegalStateException("Casi richiesti non trovati: " + missingCases);
         }
         if (datasetResult.results().isEmpty()
-                || datasetResult.results().stream().anyMatch(result -> !"OK".equals(result.status()))) {
+                || datasetResult.results().stream().anyMatch(result -> !OK.equals(result.status()))) {
             throw new IllegalStateException("Generazione prefix non completata: consultare " + "results.json");
         }
     }
@@ -304,52 +372,42 @@ public final class PrefixClient {
     private record DatasetResult(List<PrefixInference.Result> results, Set<String> foundCases) {}
 
     /** Builds the server address for incremental generation. */
-    private static String nextTokenEndpoint(String port, String config, Path caseOutput) {
+    private static String tokenEndpoint(String port, String config, Path tokenOutput, String projectId) {
         String stepFile = java.net.URLEncoder.encode(
-                caseOutput.resolve("token-step.json").toAbsolutePath().toString(),
+                tokenOutput.resolve(TOKEN_STEP_FILE).toAbsolutePath().toString(),
                 java.nio.charset.StandardCharsets.UTF_8);
-        return "http://127.0.0.1:" + port + "/api/next_token?filepath=" + stepFile
-                + "&config=" + config + "&project_id=prefix";
-    }
-
-    /** Builds the original Tracto endpoint used for assertion generation. */
-    private static String oracleEndpoint(String port, Path caseOutput, String config) {
-        String stepFile = java.net.URLEncoder.encode(
-                caseOutput.resolve("oracle-next-token/token-step.json").toAbsolutePath().toString(),
-                java.nio.charset.StandardCharsets.UTF_8);
-        return "http://127.0.0.1:" + port + "/api/next_token?filepath=" + stepFile
-                + "&config=" + config + "&project_id=interleaved";
+        return LOCAL_SERVER + port + NEXT_TOKEN_ENDPOINT + "?filepath=" + stepFile
+                + "&config=" + config + "&project_id=" + projectId;
     }
 
     /** Uses a saved response or sends the request with its scenario to the model. */
-    private static String generateBlockResponse(String port, Map<String, String> request, ObjectMapper mapper,
-                                                Path caseOutput, Map<String, String> scenarios, String originalName,
-                                                Iterator<String> replay) throws Exception {
+    private static String generateBlockResponse(Map<String, String> request, Path caseOutput, String originalName,
+                                                Options options, ObjectMapper mapper) throws Exception {
         // Replay replaces the initial response; a retry uses the server.
         boolean retry = request.containsKey("diagnostics");
-        if (replay != null && !retry) {
-            if (Boolean.getBoolean("tracto.prefix.trace")) {
+        if (options.replay() != null && !retry) {
+            if (Boolean.getBoolean(TRACE_PROPERTY)) {
                 System.out.println("using saved model response");
             }
-            return replay.next();
+            return options.replay().next();
         }
-        if (!scenarios.containsKey(originalName)) {
-            return requestBlock(port, request, mapper);
+        if (!options.scenarios().containsKey(originalName)) {
+            return requestBlock(options.port(), request, mapper);
         }
 
         var requestWithScenario = new LinkedHashMap<>(request);
-        requestWithScenario.put("scenario", scenarios.get(originalName));
-        Path requestFile = caseOutput.resolve(retry ? "repair-request.json" : "block-request.json");
+        requestWithScenario.put("scenario", options.scenarios().get(originalName));
+        Path requestFile = caseOutput.resolve(retry ? REPAIR_REQUEST_FILE : BLOCK_REQUEST_FILE);
         mapper.writeValue(requestFile.toFile(), requestWithScenario);
-        return requestBlock(port, requestWithScenario, mapper);
+        return requestBlock(options.port(), requestWithScenario, mapper);
     }
 
     /** Sends JSON to the Python server and returns the generated Java body. */
     private static String requestBlock(String port, Map<String, String> request, ObjectMapper mapper) throws Exception {
-        if (Boolean.getBoolean("tracto.prefix.trace")) {
-            System.out.printf("POST /api/prefix_block port=%s%n", port);
+        if (Boolean.getBoolean(TRACE_PROPERTY)) {
+            System.out.printf("POST %s port=%s%n", PREFIX_BLOCK_ENDPOINT, port);
         }
-        return PrefixServerClient.postBody("http://127.0.0.1:" + Integer.parseInt(port) + "/api/prefix_block",
+        return PrefixServerClient.postBody(LOCAL_SERVER + Integer.parseInt(port) + PREFIX_BLOCK_ENDPOINT,
                 mapper, request);
     }
 }

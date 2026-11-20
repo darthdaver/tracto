@@ -23,6 +23,13 @@ from predictor import TokenNotFoundException
 
 # Limit for a whole test-prefix block; --max_tgt_length (64) is meant for next-token answers.
 PREFIX_BLOCK_MAX_NEW_TOKENS = 256
+PREFIX_BLOCK_ENDPOINT = '/api/prefix_block'
+NEXT_TOKEN_ENDPOINT = '/api/next_token'
+PREFIX_MASK = '/*<MASK_PLACEHOLDER>*/'
+ORACLE_CYCLE_BODY = 'oracleCycleBody'
+ORACLE_CYCLE_DRAFT = 'oracleCycleDraft'
+PREFIX_READY = 'READY'
+PREFIX_STOP = 'STOP'
 
 # Generic literal tokens
 LITERALS = [
@@ -152,39 +159,50 @@ class Server:
         return response
 
     def prefix_block(self):
-        """Genera l'intero corpo di un test prefix con il modello originale."""
+        """Generate a test prefix body or its next line."""
         import torch
 
         data = request.get_json(silent=True)
-        placeholder = '/*<MASK_PLACEHOLDER>*/'
         if (not isinstance(data, dict) or not isinstance(data.get('test'), str)
-                or data['test'].count(placeholder) != 1
+                or data['test'].count(PREFIX_MASK) != 1
                 or not isinstance(data.get('focalSource'), str)):
             return make_response(json.dumps({'error': 'Invalid prefix block request'}), 400)
 
-        before, after = data['test'].split(placeholder, 1)
+        before, after = data['test'].split(PREFIX_MASK, 1)
         scenario = data.get('scenario', '')
         if not isinstance(scenario, str):
             return make_response(json.dumps({'error': 'Invalid scenario'}), 400)
         guidance = ''.join('// Scenario: ' + line + '\n' for line in scenario.splitlines())
-        cycle_body = data.get('oracleCycleBody')
-        if 'oracleCycleBody' in data and not isinstance(cycle_body, str):
+        cycle_body = data.get(ORACLE_CYCLE_BODY)
+        if ORACLE_CYCLE_BODY in data and not isinstance(cycle_body, str):
             return make_response(json.dumps({'error': 'Invalid oracle cycle body'}), 400)
+        line_mode = ORACLE_CYCLE_DRAFT in data
+        draft = data.get(ORACLE_CYCLE_DRAFT)
+        if line_mode and (cycle_body is None or not isinstance(draft, str)):
+            return make_response(json.dumps({'error': 'Invalid oracle cycle draft'}), 400)
         if cycle_body is not None:
             instruction = (
-                '// Generate the Java test body with exactly one '
-                '/*<MASK_PLACEHOLDER>*/ at the next assertion position. '
+                f'// Generate the Java test body with exactly one {PREFIX_MASK} at the next assertion position. '
                 'If the assertion result is needed later, use a local declaration such as '
-                'Exception error = /*<MASK_PLACEHOLDER>*/; instead of a standalone placeholder.\n'
-                '// Return only the body contents, without the outer braces or Markdown.\n'
+                f'Exception error = {PREFIX_MASK}; instead of a standalone placeholder.\n'
                 '// Preserve all existing statements and assertions in their original scopes. '
                 'Add setup only if needed. Do not write new assertions yourself.\n'
             )
+            if line_mode:
+                instruction += (
+                    '// Return exactly one next Java source line of the new body. '
+                    'Continue the draft at the cursor. Do not repeat draft lines or use Markdown.\n'
+                    '// Once the entire body is complete with one placeholder and all inner blocks closed, '
+                    f'return {PREFIX_READY} on its own line.\n'
+                )
+                before += draft
+            else:
+                instruction += '// Return only the body contents, without the outer braces or Markdown.\n'
             if cycle_body:
+                if not draft:
+                    guidance += f'// Return only {PREFIX_STOP} if the existing body checks the intended behavior.\n'
                 guidance += (
-                    '// Return only STOP if the existing body checks the intended behavior. '
-                    'Otherwise return the entire updated body with the next placeholder.\n'
-                    '// Existing body:\n'
+                    '// Existing body to preserve:\n'
                     + ''.join('// ' + line + '\n' for line in cycle_body.splitlines())
                 )
             else:
@@ -203,7 +221,7 @@ class Server:
                   + before + '<|fim_suffix|>' + after + '<|fim_middle|>')
         ids = self._tokenizer.encode(prompt, add_special_tokens=False)
         max_new_tokens = PREFIX_BLOCK_MAX_NEW_TOKENS
-        if cycle_body:
+        if cycle_body and not line_mode:
             max_new_tokens += len(self._tokenizer.encode(cycle_body, add_special_tokens=False))
         if len(ids) + max_new_tokens > self._max_src_length:
             return make_response(json.dumps({'error': 'Prefix block context is too long'}), 422)
@@ -215,6 +233,7 @@ class Server:
             if len(encoded) == 1 and encoded[0] != self._tokenizer.unk_token_id:
                 stops.add(encoded[0])
         stops.discard(None)
+        line_stop = {'stop_strings': ['\n'], 'tokenizer': self._tokenizer} if line_mode else {}
         with self._model_lock, torch.inference_mode():
             output = self._model.generate(
                 input_ids=input_ids,
@@ -222,12 +241,14 @@ class Server:
                 max_new_tokens=max_new_tokens,
                 do_sample=False,
                 eos_token_id=list(stops),
-                pad_token_id=self._tokenizer.eos_token_id)
+                pad_token_id=self._tokenizer.eos_token_id,
+                **line_stop)
         generated = output[0, len(ids):].tolist()
         if generated and generated[-1] in stops:
             generated.pop()
-        response = make_response(json.dumps({'body': self._tokenizer.decode(
-            generated, skip_special_tokens=True).strip()}), 200)
+        body = self._tokenizer.decode(generated, skip_special_tokens=True)
+        body = body.partition('\n')[0].rstrip() if line_mode else body.strip()
+        response = make_response(json.dumps({'body': body}), 200)
         response.headers['Content-Type'] = 'application/json'
         return response
 
@@ -256,8 +277,8 @@ class Server:
 
     def setup_routes(self):
         self._app.add_url_rule('/health', 'health', self.health, methods=['GET'])
-        self._app.add_url_rule('/api/next_token', 'next_token', self.next_token, methods=['GET'])
-        self._app.add_url_rule('/api/prefix_block', 'prefix_block', self.prefix_block, methods=['POST'])
+        self._app.add_url_rule(NEXT_TOKEN_ENDPOINT, 'next_token', self.next_token, methods=['GET'])
+        self._app.add_url_rule(PREFIX_BLOCK_ENDPOINT, 'prefix_block', self.prefix_block, methods=['POST'])
 
     def mark_ready(self):
         """Mark the server as ready to accept requests."""
