@@ -100,6 +100,10 @@ public final class PrefixClient {
         int maxOracles = configuredMaxOracles != null ? configuredMaxOracles
                 : Integer.parseInt(setting("TRACTO_PREFIX_MAX_ORACLES", Integer.toString(DEFAULT_MAX_ORACLES)));
         if (maxOracles < 1) throw new IllegalArgumentException("The oracle limit must be positive");
+        if (mode.usesOracleCycle()) {
+            // Validates TRACTO_PREFIX_ORACLE_TIMEOUT_SECONDS before the first round, only in the cycle modes
+            star.tracto.preprocessing.utils.TokensUtils.cycleNextTokenReadTimeoutMillis();
+        }
         String javaVersion = configuredJavaVersion != null ? configuredJavaVersion
                 : setting("TRACTO_PREFIX_JAVA_VERSION", DEFAULT_JAVA_VERSION);
         return new Options(Path.of(args[0]), Path.of(args[1]), Path.of(args[2]), Path.of(args[3]),
@@ -246,6 +250,7 @@ public final class PrefixClient {
         CycleState state = new CycleState(caseOutput);
         int segment = 1;
         try {
+            PrefixInference.clearCyclePublications(options.output(), caseOutput);
             var request = PrefixInference.oracleCycleTemplate(options.repo(), testClass, testCase);
             for (; segment <= options.maxOracles() + 1; segment++) {
                 Path segmentOutput = Files.createDirectories(caseOutput.resolve("segment-" + segment));
@@ -343,14 +348,17 @@ public final class PrefixClient {
             oracles++;
         }
 
-        /** Ends the cycle early, publishing the last test that compiled, if any. */
+        /**
+         * Ends the cycle without STOP. The last test that compiled, if any, goes to {@code partial}:
+         * {@code final} holds only the tests completed with STOP.
+         */
         private PrefixInference.Result incomplete(String testName, String status, long start, String message) {
             if (validatedOutput != null) {
                 try {
-                    PrefixInference.publishValidatedBody(validatedOutput, caseOutput);
-                    message += " (published the last validated test, with " + oracles + " oracles)";
+                    PrefixInference.publishPartialBody(validatedOutput, caseOutput);
+                    message += " (the last validated test, with " + oracles + " oracles, is in partial)";
                 } catch (java.io.IOException publishError) {
-                    message += " (could not publish the last validated test: " + publishError + ")";
+                    message += " (could not publish the last validated test in partial: " + publishError + ")";
                 }
             }
             return new PrefixInference.Result(testName, body, status, elapsedMillis(start), message);

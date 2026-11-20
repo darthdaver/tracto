@@ -55,14 +55,28 @@ public class TokensUtils {
     private static final Logger logger = LoggerFactory.getLogger(TokensUtils.class);
     /** Prefix/oracle cycle only: time allowed to open a connection to the next-token server. */
     private static final int CYCLE_NEXT_TOKEN_CONNECT_TIMEOUT_MS = 5_000;
+    private static final String CYCLE_TIMEOUT_SETTING = "TRACTO_PREFIX_ORACLE_TIMEOUT_SECONDS";
+    private static final int CYCLE_DEFAULT_TIMEOUT_SECONDS = 300;
+
     /**
      * Prefix/oracle cycle only: time allowed for one next-token answer (the server prepares the prompt and runs the
      * model): 300 seconds, or the seconds set with {@code TRACTO_PREFIX_ORACLE_TIMEOUT_SECONDS} (system property or
-     * environment variable). The original oracle generation keeps waiting without a limit.
+     * environment variable). Read only by the cycle, never when the class is loaded: the original oracle generation
+     * ignores the setting and keeps waiting without a limit.
+     *
+     * @throws IllegalArgumentException if the setting is not a positive number of seconds
      */
-    private static final int CYCLE_NEXT_TOKEN_READ_TIMEOUT_MS = 1_000 * Integer.parseInt(System.getProperty(
-            "TRACTO_PREFIX_ORACLE_TIMEOUT_SECONDS",
-            Objects.requireNonNullElse(System.getenv("TRACTO_PREFIX_ORACLE_TIMEOUT_SECONDS"), "300")));
+    public static int cycleNextTokenReadTimeoutMillis() {
+        String value = System.getProperty(CYCLE_TIMEOUT_SETTING, System.getenv(CYCLE_TIMEOUT_SETTING));
+        if (value == null || value.isBlank()) return CYCLE_DEFAULT_TIMEOUT_SECONDS * 1_000;
+        try {
+            int seconds = Integer.parseInt(value.strip());
+            if (seconds < 1) throw new NumberFormatException();
+            return Math.multiplyExact(seconds, 1_000);
+        } catch (NumberFormatException | ArithmeticException invalid) {
+            throw new IllegalArgumentException(CYCLE_TIMEOUT_SETTING + " must be a positive number of seconds: " + value);
+        }
+    }
     private static TokenIdentifiersCollector rootTokenIdentifiersCollector;
     private static TokenReferencesCollector rootTokenReferencesCollector;
     private static Set<String> rootUnsolvableTokens = new HashSet<>();
@@ -582,7 +596,7 @@ public class TokensUtils {
             if (prefixOracleCycle) {
                 // In the prefix/oracle cycle a server that stops answering ends the round instead of the whole run
                 mlModelApiConn.setConnectTimeout(CYCLE_NEXT_TOKEN_CONNECT_TIMEOUT_MS);
-                mlModelApiConn.setReadTimeout(CYCLE_NEXT_TOKEN_READ_TIMEOUT_MS);
+                mlModelApiConn.setReadTimeout(cycleNextTokenReadTimeoutMillis());
             }
             mlModelApiConn.connect();
             int responseCode = mlModelApiConn.getResponseCode();

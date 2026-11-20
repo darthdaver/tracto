@@ -72,6 +72,7 @@ public final class PrefixInference {
     private static final String CONTINUATION_FIELD = "continuation";
     private static final String PREFIX_CYCLE_FINISHED = "Nessun nuovo segmento: il ciclo prefix/oracolo è concluso.";
     private static final String FINAL_BODY_DIRECTORY = "final";
+    private static final String PARTIAL_BODY_DIRECTORY = "partial";
     private static final String PREFIX_FINAL_COMPILED = "Il test completo (prefix e oracoli) compila e chiama la classe sotto test.";
     private static final String OPEN_BLOCK_LINE = "{\n";
     private static final String ASSERT_THAT = "assertThat";
@@ -338,10 +339,43 @@ public final class PrefixInference {
         return request;
     }
 
-    /** Publishes the test already compiled during the last successful round. */
+    /** Removes the published results of an earlier run of the same case. */
+    public static void clearCyclePublications(Path output, Path caseOutput) throws IOException {
+        Path caseDirectory = caseOutput.toRealPath();
+        if (!output.toRealPath().equals(caseDirectory.getParent())) {
+            throw new IOException("Cycle case is not directly under its output directory: " + caseOutput);
+        }
+        for (String name : List.of(FINAL_BODY_DIRECTORY, PARTIAL_BODY_DIRECTORY)) {
+            Path publication = caseDirectory.resolve(name);
+            if (Files.notExists(publication, LinkOption.NOFOLLOW_LINKS)) continue;
+            List<Path> paths;
+            try (var contents = Files.walk(publication)) {
+                paths = contents.sorted(Comparator.reverseOrder()).toList();
+            }
+            for (Path path : paths) {
+                if (!Files.isSymbolicLink(path) && !path.toRealPath().startsWith(publication)) {
+                    throw new IOException("Cycle publication points outside its directory: " + path);
+                }
+            }
+            for (Path path : paths) Files.delete(path);
+        }
+    }
+
+    /** Publishes, under {@code final}, the complete test: the one validated in the last round before STOP. */
     public static void publishValidatedBody(Path segmentOutput, Path caseOutput) throws IOException {
+        copyValidatedBody(segmentOutput, caseOutput.resolve(FINAL_BODY_DIRECTORY));
+    }
+
+    /**
+     * Publishes, under {@code partial}, the last test that compiled in a cycle that ended without STOP
+     * (ERROR or LIMIT): {@code final} stays reserved to complete tests.
+     */
+    public static void publishPartialBody(Path segmentOutput, Path caseOutput) throws IOException {
+        copyValidatedBody(segmentOutput, caseOutput.resolve(PARTIAL_BODY_DIRECTORY));
+    }
+
+    private static void copyValidatedBody(Path segmentOutput, Path destination) throws IOException {
         Path source = segmentOutput.resolve(FINAL_BODY_DIRECTORY);
-        Path destination = caseOutput.resolve(FINAL_BODY_DIRECTORY);
         try (var paths = Files.walk(source)) {
             for (Path path : paths.toList()) {
                 Path target = destination.resolve(source.relativize(path));
