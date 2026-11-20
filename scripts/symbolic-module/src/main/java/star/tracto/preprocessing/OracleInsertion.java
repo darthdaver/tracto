@@ -1,7 +1,10 @@
 package star.tracto.preprocessing;
 
 import com.github.javaparser.StaticJavaParser;
+import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.nodeTypes.NodeWithStatements;
+import com.github.javaparser.ast.stmt.Statement;
+import com.github.javaparser.ast.stmt.TryStmt;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.VariableDeclarationExpr;
 import com.github.javaparser.ast.stmt.BlockStmt;
@@ -19,6 +22,9 @@ public final class OracleInsertion {
     public static final String MASK = "/*<MASK_PLACEHOLDER>*/";
     private static final String NAME = "__tracto_oracle__";
     private static final String MARKER = NAME + "()";
+    /** A printed marker statement, with the declaration that may receive its value, on its own line. */
+    private static final java.util.regex.Pattern MARKER_STATEMENT = java.util.regex.Pattern.compile(
+            "(?m)^([ \\t]*)[^\\n;{}]*?\\b" + NAME + "\\(\\);[ \\t]*$");
 
     private OracleInsertion() {}
 
@@ -66,8 +72,35 @@ public final class OracleInsertion {
         return new Assignment(modifiers, variable.getType().toString(), variable.getNameAsString());
     }
 
+    /**
+     * Writes the placeholder as the oracles dataset does: the whole target statement, including the declaration of
+     * a local receiving the assertion result, becomes the bare mask comment. The assignment travels separately.
+     */
     public static String masked(String source) {
-        return source.replace(MARKER, MASK);
+        return MARKER_STATEMENT.matcher(source).replaceAll("$1" + java.util.regex.Matcher.quoteReplacement(MASK));
+    }
+
+    /**
+     * The body shown to the oracle model: as in the dataset ({@code keep-statements-after-last-assertion: false}),
+     * the statements after the placeholder are removed from each enclosing statement list.
+     */
+    public static BlockStmt promptBody(BlockStmt body) {
+        BlockStmt copy = body.clone();
+        Node current = position(copy);
+        while (current != copy) {
+            Node parent = current.getParentNode().orElseThrow();
+            if (parent instanceof NodeWithStatements<?> container) {
+                var statements = container.getStatements();
+                for (int index = 0; index < statements.size(); index++) {
+                    if (statements.get(index) == current) {
+                        while (statements.size() > index + 1) statements.remove(index + 1);
+                        break;
+                    }
+                }
+            }
+            current = parent;
+        }
+        return copy;
     }
 
     public static void insert(ExpressionStmt position, String oracle) {
@@ -106,7 +139,7 @@ public final class OracleInsertion {
                 var statement = statements.get(index);
                 description.append("  slot ").append(index + 1).append(" after ")
                         .append(statement.toString().lines().findFirst().orElse(""));
-                if (statement instanceof IfStmt conditional && conditional.getElseStmt().isEmpty()) {
+                if (statement instanceof IfStmt conditional && lastIf(conditional).getElseStmt().isEmpty()) {
                     description.append(" (may add ELSE)");
                 }
                 description.append('\n');
@@ -122,7 +155,19 @@ public final class OracleInsertion {
         if (parent instanceof IfStmt conditional) {
             return (conditional.getThenStmt() == block ? "if " : "else for if ") + conditional.getCondition();
         }
+        // The catch blocks have a catch clause as parent: only the try and finally blocks belong to the try
+        if (parent instanceof TryStmt statement) return statement.getTryBlock() == block ? "try" : "finally";
+        if (parent instanceof BlockStmt) return "nested block";
         return parent == null ? "test body" : parent.toString().lines().findFirst().orElse("");
+    }
+
+    /** The last if of an else-if chain, the one that can receive a new else. */
+    private static IfStmt lastIf(IfStmt conditional) {
+        IfStmt last = conditional;
+        while (last.getElseStmt().filter(Statement::isIfStmt).isPresent()) {
+            last = last.getElseStmt().get().asIfStmt();
+        }
+        return last;
     }
 
     /** Applies an insertion to a copy, leaving all accepted statements intact. */
@@ -144,10 +189,10 @@ public final class OracleInsertion {
         var added = parseBody(lines[1]);
         if (addElse) {
             if (slot == 0 || !(statements.get(slot - 1) instanceof IfStmt conditional)
-                    || conditional.getElseStmt().isPresent()) {
+                    || lastIf(conditional).getElseStmt().isPresent()) {
                 throw new IllegalArgumentException("ELSE requires a slot immediately after an if without an else");
             }
-            conditional.setElseStmt(added);
+            lastIf(conditional).setElseStmt(added);
         } else {
             for (var statement : added.getStatements()) {
                 statements.add(slot++, statement.clone());

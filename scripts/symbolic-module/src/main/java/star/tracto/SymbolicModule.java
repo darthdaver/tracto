@@ -25,6 +25,7 @@ public class SymbolicModule {
     private static final String TEST = "test";
     private static final String TEST_PREFIX = "test-prefix";
     private static final String PREFIX = "prefix";
+    private static final String RUN_CONFIG = "run-config";
     private static final String STUBS = "stubs";
     private static final String LOMBOK_MEMBERS = "lombok-members";
     private static final String ORACLES = "oracles";
@@ -37,6 +38,10 @@ public class SymbolicModule {
         switch (args[0]) {
             case INFERENCE, TEST -> Client.run(args);
             case TEST_PREFIX, PREFIX -> PrefixClient.main(Arrays.copyOfRange(args, 1, args.length));
+            case RUN_CONFIG -> {
+                if (args.length != 2) throw new IllegalArgumentException("Usage: run-config <generation.json>");
+                GenerationConfig.run(Path.of(args[1]));
+            }
             case STUBS -> StubGenerator.main(Arrays.copyOfRange(args, 1, args.length));
             case LOMBOK_MEMBERS -> LombokMembers.main(Arrays.copyOfRange(args, 1, args.length));
             case ORACLES, TOKENS -> runDataset(args);

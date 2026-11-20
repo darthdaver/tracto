@@ -1,0 +1,14 @@
+{
+  "mode": "prefix-block-cycle",
+  "repository": "./input/project",
+  "dataset": "./input/oracles",
+  "output": "./output/generation",
+  "javaContext": ".",
+  "project": "project",
+  "javaVersion": "auto",
+  "tractoPort": 5000,
+  "prefixPort": 5001,
+  "promptConfig": 1,
+  "maxSteps": 128,
+  "maxOracles": 4
+}

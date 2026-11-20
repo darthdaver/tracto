@@ -2,8 +2,10 @@ package star.tracto;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.javaparser.ParseProblemException;
+import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.stmt.AssertStmt;
 import com.github.javaparser.ast.stmt.BlockStmt;
-import com.github.javaparser.ast.stmt.Statement;
+import star.tracto.data.enums.JUnitAssertionType;
 import star.tracto.preprocessing.OracleInsertion;
 import star.tracto.preprocessing.PrefixInference;
 import star.tracto.preprocessing.components.*;
@@ -21,9 +23,12 @@ public final class PrefixClient {
     private static final String OK = "OK";
     private static final String LIMIT = "LIMIT";
     private static final String ERROR = "ERROR";
-    private static final int MAX_CYCLE_ORACLES = 4;
-    private static final int DEFAULT_MAX_STEPS = 128;
+    static final int DEFAULT_MAX_ORACLES = 4;
+    static final int DEFAULT_MAX_STEPS = 128;
+    /** The JDK sources used by the prefix modes when no Java version is configured. */
+    private static final String DEFAULT_JAVA_VERSION = "21";
     private static final String CYCLE_BODY = "oracleCycleBody";
+    private static final String CYCLE_REJECTED = "oracleCycleRejected";
     private static final String CYCLE_DRAFT = "oracleCycleDraft";
     private static final String CYCLE_INSERTION_POINTS = "oracleCycleInsertionPoints";
     private static final String CYCLE_DIAGNOSTIC = "oracleCycleDiagnostic";
@@ -41,20 +46,31 @@ public final class PrefixClient {
 
     /** Coordinates generation, saves the report, and validates the outcome. */
     public static void main(String[] args) throws Exception {
+        run(args, null, null, null);
+    }
+
+    /**
+     * Runs a prefix mode. Non-null arguments, from a configuration file, take precedence over the
+     * corresponding settings ({@code TRACTO_PREFIX_ORACLE_PORT}, {@code TRACTO_PREFIX_MAX_ORACLES},
+     * {@code TRACTO_PREFIX_JAVA_VERSION}).
+     */
+    static void run(String[] args, String configuredOraclePort, Integer configuredMaxOracles,
+                    String configuredJavaVersion) throws Exception {
         ObjectMapper mapper = new ObjectMapper();
-        Options options = readOptions(args, mapper);
+        Options options = readOptions(args, mapper, configuredOraclePort, configuredMaxOracles, configuredJavaVersion);
         String mode = options.mode().name().toLowerCase(Locale.ROOT);
         System.out.printf("mode=%s responseSource=%s%n", mode,
                 options.replay() != null ? "replay" : "model");
         Files.createDirectories(options.output());
-        String classpath = configureJavaParser(options.repo(), options.javaContext());
+        String classpath = configureJavaParser(options.repo(), options.javaContext(), options.javaVersion());
         DatasetResult datasetResult = processDataset(options, classpath, mapper);
         saveResults(options.output(), datasetResult.results(), mapper);
         validateResults(options.selectedCases(), datasetResult);
     }
 
     /** Reads launcher arguments, filters, scenarios, and optional replay responses. */
-    private static Options readOptions(String[] args, ObjectMapper mapper) throws Exception {
+    private static Options readOptions(String[] args, ObjectMapper mapper, String configuredOraclePort,
+                                       Integer configuredMaxOracles, String configuredJavaVersion) throws Exception {
         if (args.length < 6) {
             throw new IllegalArgumentException("repo dataset output java-context port config [maxSteps] "
                     + "[--block|--interleaved|--interleaved-lines] [choices.json]");
@@ -76,13 +92,19 @@ public final class PrefixClient {
         Map<String, String> scenarios = scenarioFile == null || scenarioFile.isBlank() ? Map.of() : mapper.readValue(
                 Path.of(scenarioFile).toFile(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {});
 
-        String oraclePort = setting("TRACTO_PREFIX_ORACLE_PORT", null);
+        String oraclePort = configuredOraclePort == null
+                ? setting("TRACTO_PREFIX_ORACLE_PORT", null) : configuredOraclePort;
         if (mode.usesOracleCycle() && oraclePort == null) {
             System.out.println("WARNING: TRACTO_PREFIX_ORACLE_PORT is not set: the oracle uses the prefix model server.");
         }
+        int maxOracles = configuredMaxOracles != null ? configuredMaxOracles
+                : Integer.parseInt(setting("TRACTO_PREFIX_MAX_ORACLES", Integer.toString(DEFAULT_MAX_ORACLES)));
+        if (maxOracles < 1) throw new IllegalArgumentException("The oracle limit must be positive");
+        String javaVersion = configuredJavaVersion != null ? configuredJavaVersion
+                : setting("TRACTO_PREFIX_JAVA_VERSION", DEFAULT_JAVA_VERSION);
         return new Options(Path.of(args[0]), Path.of(args[1]), Path.of(args[2]), Path.of(args[3]),
-                args[4], args[5], oraclePort == null ? args[4] : oraclePort,
-                maxSteps, mode, replay, selectedCases, scenarios,
+                args[4], args[5], oraclePort == null ? args[4] : oraclePort, javaVersion,
+                maxSteps, maxOracles, mode, replay, selectedCases, scenarios,
                 Boolean.parseBoolean(setting("TRACTO_PREFIX_REPAIR", "false")),
                 Boolean.parseBoolean(setting("TRACTO_PREFIX_REPAIR_RECEIVER", "false")));
     }
@@ -107,8 +129,9 @@ public final class PrefixClient {
     }
 
     /** Configures JavaParser with the libraries of the analyzed project. */
-    private static String configureJavaParser(Path repo, Path javaContext) throws Exception {
-        JavaUtils.setJavaLibPath(javaContext, java.util.Optional.of(21));
+    private static String configureJavaParser(Path repo, Path javaContext, String javaVersion) throws Exception {
+        // A major version, or `auto` to detect it from the build files of the repository, as in `tracto` mode
+        JavaUtils.setJavaLibPath(javaContext, javaVersion, repo);
         String classpath = JavaUtils.initializeJavaClassPath();
         for (Path library : SymbolicModule.findLibrariesPaths(repo)) {
             classpath += java.io.File.pathSeparator + library;
@@ -209,79 +232,129 @@ public final class PrefixClient {
                 options.maxSteps());
     }
 
-    /** Alternates a model A insertion proposal with one oracle from original Tracto. */
+    /**
+     * Alternates a model A insertion proposal with one oracle from original Tracto.
+     * A rejected round (invalid insertion, prefix that does not compile, or test that does not compile once the
+     * oracle is inserted) is retried once, showing model A the diagnostic and its rejected proposal.
+     */
     private static PrefixInference.Result generatePrefixOracleCycle(
             TestClazzDatapoints<OracleDatapoint> testClass, OracleDatapoint testCase,
             String originalName, Path caseOutput, Options options,
             String classpath, ObjectMapper mapper) {
         long start = System.nanoTime();
         String testName = testCase.testPrefix().identifier();
-        BlockStmt acceptedBody = new BlockStmt();
-        String accumulatedBody = "";
+        CycleState state = new CycleState(caseOutput);
         int segment = 1;
         try {
             var request = PrefixInference.oracleCycleTemplate(options.repo(), testClass, testCase);
-            PrefixInference.Result validated = null;
-            Path validatedOutput = null;
-            for (; segment <= MAX_CYCLE_ORACLES + 1; segment++) {
+            for (; segment <= options.maxOracles() + 1; segment++) {
                 Path segmentOutput = Files.createDirectories(caseOutput.resolve("segment-" + segment));
-                request.put(CYCLE_BODY, accumulatedBody);
-                request.put(CYCLE_INSERTION_POINTS, OracleInsertion.insertionPoints(acceptedBody));
+                request.put(CYCLE_BODY, state.body);
+                request.put(CYCLE_INSERTION_POINTS, OracleInsertion.insertionPoints(state.accepted));
                 request.remove(CYCLE_DIAGNOSTIC);
-                BlockStmt proposedBody;
+                request.remove(CYCLE_REJECTED);
                 for (int attempt = 0; ; attempt++) {
                     Path attemptOutput = attempt == 0 ? segmentOutput
                             : Files.createDirectories(segmentOutput.resolve("prefix-repair"));
+                    String proposal = null;
                     try {
                         var generated = readCycleProposal(request, attemptOutput, originalName, options, mapper);
                         if (generated.isEmpty()) {
-                            return new PrefixInference.Result(testName, accumulatedBody, LIMIT, elapsedMillis(start),
+                            return state.incomplete(testName, LIMIT, start,
                                     "Prefix line limit reached in segment " + segment);
                         }
-                        String proposal = generated.get();
+                        proposal = generated.get();
                         Files.writeString(attemptOutput.resolve(BLOCK_RESPONSE_FILE), proposal);
                         if (STOP.equals(proposal)) {
-                            if (validated == null) throw new IllegalArgumentException("STOP before the first oracle");
-                            PrefixInference.publishValidatedBody(validatedOutput, caseOutput);
-                            return new PrefixInference.Result(testName, accumulatedBody, OK,
-                                    elapsedMillis(start), validated.message());
+                            if (state.validated == null) {
+                                throw new IllegalArgumentException("STOP before the first oracle");
+                            }
+                            PrefixInference.publishValidatedBody(state.validatedOutput, caseOutput);
+                            return new PrefixInference.Result(testName, state.body, OK,
+                                    elapsedMillis(start), state.validated.message());
                         }
-                        if (segment > MAX_CYCLE_ORACLES) {
-                            return new PrefixInference.Result(testName, accumulatedBody, LIMIT,
-                                    elapsedMillis(start), "Oracle limit reached");
+                        if (segment > options.maxOracles()) {
+                            return state.incomplete(testName, LIMIT, start, "Oracle limit reached");
                         }
-                        proposedBody = OracleInsertion.applyProposal(acceptedBody, proposal);
-                        if (assertionCount(proposedBody) != assertionCount(acceptedBody)) {
-                            throw new IllegalArgumentException("Leave the new assertion to Tracto");
-                        }
-                        String diagnostic = PrefixInference.validateOraclePrefix(options.repo(),
-                                attemptOutput.resolve("prefix-validation"), classpath, testClass, testCase, proposedBody);
-                        if (!diagnostic.isEmpty()) throw new IllegalArgumentException(diagnostic);
+                        runRound(proposal, state, attemptOutput, testClass, testCase, testName, options, classpath);
                         break;
-                    } catch (IllegalArgumentException | ParseProblemException invalidPrefix) {
-                        if (attempt != 0) throw invalidPrefix;
-                        request.put(CYCLE_DIAGNOSTIC, invalidPrefix.getMessage());
+                    } catch (IllegalArgumentException | ParseProblemException rejected) {
+                        if (attempt != 0) throw rejected;
+                        request.put(CYCLE_DIAGNOSTIC, String.valueOf(rejected.getMessage()));
+                        if (proposal != null) request.put(CYCLE_REJECTED, proposal);
                     }
                 }
-                var insertion = OracleInsertion.position(proposedBody);
-                String oracle = generatePrefixOracle(testClass, testName, segmentOutput, options,
-                        proposedBody, OracleInsertion.assignment(insertion));
-                OracleInsertion.insert(insertion, oracle);
-                var result = PrefixInference.validateBody(options.repo(), segmentOutput, classpath, testClass,
-                        testCase, proposedBody);
-                if (!OK.equals(result.status())) {
-                    throw new IllegalArgumentException(result.message());
-                }
-                acceptedBody = proposedBody;
-                accumulatedBody = result.prefix();
-                validated = result;
-                validatedOutput = segmentOutput;
             }
         } catch (Exception error) {
-            return new PrefixInference.Result(testName, accumulatedBody, ERROR,
-                    elapsedMillis(start), "Segment " + segment + ": " + error);
+            return state.incomplete(testName, ERROR, start, "Segment " + segment + ": " + error);
         }
         throw new IllegalStateException("Oracle cycle ended without a result");
+    }
+
+    /**
+     * Applies one insertion, asks Tracto for its oracle, and accepts the round only if the whole test compiles.
+     * Rejections that model A can correct are reported as {@link IllegalArgumentException}.
+     */
+    private static void runRound(String proposal, CycleState state, Path output,
+                                 TestClazzDatapoints<OracleDatapoint> testClass, OracleDatapoint testCase,
+                                 String testName, Options options, String classpath) throws Exception {
+        BlockStmt proposedBody = OracleInsertion.applyProposal(state.accepted, proposal);
+        if (assertionCount(proposedBody) != assertionCount(state.accepted)) {
+            throw new IllegalArgumentException("Leave the new assertion to Tracto");
+        }
+        String diagnostic = PrefixInference.validateOraclePrefix(options.repo(),
+                output.resolve("prefix-validation"), classpath, testClass, testCase, proposedBody);
+        if (!diagnostic.isEmpty()) throw new IllegalArgumentException(diagnostic);
+        var insertion = OracleInsertion.position(proposedBody);
+        String oracle = generatePrefixOracle(testClass, testName, output, options,
+                proposedBody, OracleInsertion.assignment(insertion));
+        try {
+            OracleInsertion.insert(insertion, oracle);
+        } catch (ParseProblemException notAStatement) {
+            throw new IllegalArgumentException("The generated oracle is not a Java statement: " + oracle);
+        }
+        var result = PrefixInference.validateBody(options.repo(), output, classpath, testClass,
+                testCase, proposedBody);
+        if (!OK.equals(result.status())) {
+            throw new IllegalArgumentException("With the generated oracle " + oracle
+                    + " the test is invalid: " + result.message());
+        }
+        state.accept(proposedBody, result, output);
+    }
+
+    /** The last validated round of a prefix/oracle cycle. */
+    private static final class CycleState {
+        private final Path caseOutput;
+        private BlockStmt accepted = new BlockStmt();
+        private String body = "";
+        private PrefixInference.Result validated;
+        private Path validatedOutput;
+        private int oracles;
+
+        private CycleState(Path caseOutput) {
+            this.caseOutput = caseOutput;
+        }
+
+        private void accept(BlockStmt proposedBody, PrefixInference.Result result, Path output) {
+            accepted = proposedBody;
+            body = result.prefix();
+            validated = result;
+            validatedOutput = output;
+            oracles++;
+        }
+
+        /** Ends the cycle early, publishing the last test that compiled, if any. */
+        private PrefixInference.Result incomplete(String testName, String status, long start, String message) {
+            if (validatedOutput != null) {
+                try {
+                    PrefixInference.publishValidatedBody(validatedOutput, caseOutput);
+                    message += " (published the last validated test, with " + oracles + " oracles)";
+                } catch (java.io.IOException publishError) {
+                    message += " (could not publish the last validated test: " + publishError + ")";
+                }
+            }
+            return new PrefixInference.Result(testName, body, status, elapsedMillis(start), message);
+        }
     }
 
     private static Optional<String> readCycleProposal(Map<String, String> request, Path output, String originalName,
@@ -304,6 +377,12 @@ public final class PrefixClient {
             lineRequest.put(CYCLE_DRAFT, draft.toString());
             String response = requestCycleReply(lineRequest, lineOutput, originalName, options, mapper).stripTrailing();
             Files.writeString(lineOutput.resolve(BLOCK_RESPONSE_FILE), response);
+            if (response.isBlank() && !draft.isEmpty()) {
+                // An empty line inside the insertion: kept, so that the next request continues after it.
+                if (lines == options.maxSteps()) return Optional.empty();
+                draft.append('\n');
+                continue;
+            }
             if (response.isBlank() || response.lines().count() != 1) {
                 throw new IllegalArgumentException("Expected one Java line, READY or STOP");
             }
@@ -331,8 +410,11 @@ public final class PrefixClient {
         return generateBlockResponse(request, output, originalName, options, mapper);
     }
 
+    /** Counts the assertions anywhere in the body, including those inside lambdas and nested calls. */
     private static int assertionCount(BlockStmt body) {
-        return body.findAll(Statement.class, JavaParserUtils::isAssertionStatement).size();
+        return body.findAll(AssertStmt.class).size()
+                + body.findAll(MethodCallExpr.class,
+                        call -> JUnitAssertionType.isJUnitAssertion(call.getNameAsString())).size();
     }
 
     /** Milliseconds elapsed since the given {@link System#nanoTime()} value. */
@@ -384,8 +466,8 @@ public final class PrefixClient {
 
     /** Options shared while generating cases. */
     private record Options(Path repo, Path dataset, Path output, Path javaContext, String port, String config,
-                           String oraclePort,
-                           int maxSteps, PrefixGenerationMode mode, Iterator<String> replay, Set<String> selectedCases,
+                           String oraclePort, String javaVersion,
+                           int maxSteps, int maxOracles, PrefixGenerationMode mode, Iterator<String> replay, Set<String> selectedCases,
                            Map<String, String> scenarios, boolean repair, boolean repairReceiver) {}
 
     /** Generated results and case names found in the dataset. */

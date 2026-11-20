@@ -30,6 +30,9 @@ ORACLE_CYCLE_BODY = 'oracleCycleBody'
 ORACLE_CYCLE_DRAFT = 'oracleCycleDraft'
 ORACLE_CYCLE_INSERTION_POINTS = 'oracleCycleInsertionPoints'
 ORACLE_CYCLE_DIAGNOSTIC = 'oracleCycleDiagnostic'
+ORACLE_CYCLE_REJECTED = 'oracleCycleRejected'
+# Empty lines skipped before answering with the next line of a line-mode insertion.
+PREFIX_LINE_BLANK_RETRIES = 3
 PREFIX_READY = 'READY'
 PREFIX_STOP = 'STOP'
 
@@ -182,9 +185,11 @@ class Server:
         draft = data.get(ORACLE_CYCLE_DRAFT)
         insertion_points = data.get(ORACLE_CYCLE_INSERTION_POINTS)
         diagnostic = data.get(ORACLE_CYCLE_DIAGNOSTIC, '')
+        rejected = data.get(ORACLE_CYCLE_REJECTED, '')
         if line_mode and (cycle_body is None or not isinstance(draft, str)):
             return make_response(json.dumps({'error': 'Invalid oracle cycle draft'}), 400)
-        if cycle_body is not None and (not isinstance(insertion_points, str) or not isinstance(diagnostic, str)):
+        if cycle_body is not None and (not isinstance(insertion_points, str) or not isinstance(diagnostic, str)
+                                       or not isinstance(rejected, str)):
             return make_response(json.dumps({'error': 'Invalid oracle cycle insertion points or diagnostic'}), 400)
         if cycle_body is not None:
             instruction = (
@@ -210,6 +215,9 @@ class Server:
                 instruction += '// Return the header and insertion without surrounding braces or Markdown.\n'
             guidance += '// Insertion points:\n' + ''.join('// ' + line + '\n' for line in insertion_points.splitlines())
             if diagnostic:
+                if rejected:
+                    guidance += '// Previous insertion, rejected:\n' + ''.join(
+                        '// ' + line + '\n' for line in rejected.splitlines())
                 guidance += '// Correct the previous insertion using this diagnostic:\n' + ''.join(
                     '// ' + line + '\n' for line in diagnostic.splitlines())
             if cycle_body:
@@ -247,18 +255,26 @@ class Server:
         stops.discard(None)
         line_stop = {'stop_strings': ['\n'], 'tokenizer': self._tokenizer} if line_mode else {}
         with self._model_lock, torch.inference_mode():
-            output = self._model.generate(
-                input_ids=input_ids,
-                attention_mask=torch.ones_like(input_ids),
-                max_new_tokens=max_new_tokens,
-                do_sample=False,
-                eos_token_id=list(stops),
-                pad_token_id=self._tokenizer.eos_token_id,
-                **line_stop)
-        generated = output[0, len(ids):].tolist()
-        if generated and generated[-1] in stops:
-            generated.pop()
-        body = self._tokenizer.decode(generated, skip_special_tokens=True)
+            # In line mode an empty line is kept in the context and the generation continues after it,
+            # so that the answer is the next non-empty line.
+            for _ in range(PREFIX_LINE_BLANK_RETRIES + 1 if line_mode else 1):
+                output = self._model.generate(
+                    input_ids=input_ids,
+                    attention_mask=torch.ones_like(input_ids),
+                    max_new_tokens=max_new_tokens,
+                    do_sample=False,
+                    eos_token_id=list(stops),
+                    pad_token_id=self._tokenizer.eos_token_id,
+                    **line_stop)
+                generated = output[0, input_ids.shape[1]:].tolist()
+                finished = bool(generated) and generated[-1] in stops
+                if finished:
+                    generated.pop()
+                body = self._tokenizer.decode(generated, skip_special_tokens=True)
+                if (not line_mode or finished or body.strip()
+                        or output.shape[1] + max_new_tokens > self._max_src_length):
+                    break
+                input_ids = output
         body = body.partition('\n')[0].rstrip() if line_mode else body.strip()
         response = make_response(json.dumps({'body': body}), 200)
         response.headers['Content-Type'] = 'application/json'

@@ -23,6 +23,8 @@ import star.tracto.utils.JavaUtils;
 import star.tracto.utils.javaParser.JavaParserUtils;
 
 import java.io.*;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -83,7 +85,7 @@ public class Client {
         TypeDeclaration<?> focalType = focalUnit.getPrimaryType().orElse(focalUnit.getType(0));
         MethodDeclaration prefixMethod = testType.getMethodsByName(prefixIdentifier).stream().findFirst()
                 .orElseThrow(() -> new IllegalStateException("Test prefix not found: " + prefixIdentifier));
-        prefixMethod.setBody(prefixBody.clone());
+        prefixMethod.setBody(star.tracto.preprocessing.OracleInsertion.promptBody(prefixBody));
         String fqnFocalClass = data.focalClass().packageIdentifier() + "." + data.focalClass().identifier();
         Path repoSourcePath = Path.of(focalFile.toString().replace(FilesUtils.getFQNPath(fqnFocalClass).toString(), ""));
         return TestUtils.processGeneratedPrefix(repoSourcePath, focalType, testType, prefixMethod, datasetConfig());
@@ -105,7 +107,7 @@ public class Client {
         Path repoRootPath = Path.of(args[2]);
         Path outputPath = Path.of(args[3]);
         Path basePath = Path.of(args[4]);
-        Path inputDatasetPath = Path.of(args[5]);;
+        Path inputDatasetPath = Path.of(args[5]);
         int serverPort = Integer.parseInt(args[6]);
         int promptConfig = Integer.parseInt(args[7]);
         // The Java version of the repository: a major version, or `auto` to detect it from its build files
@@ -114,13 +116,17 @@ public class Client {
         Path nextTokenPath = projectOutputPath.resolve("next-token");
         FilesUtils.createDirectories(nextTokenPath);
         FilesUtils.createDirectories(projectOutputPath);
-        String mlModelAPIUrl = String.format("http://127.0.0.1:%s/api/next_token?filepath=%s/token-step.json&config=%s&project_id=%s", serverPort, nextTokenPath, promptConfig, projectIdentifier);
+        String stepFile = URLEncoder.encode(nextTokenPath.resolve("token-step.json").toAbsolutePath().toString(),
+                StandardCharsets.UTF_8);
+        String projectId = URLEncoder.encode(projectIdentifier, StandardCharsets.UTF_8);
+        String mlModelAPIUrl = String.format("http://127.0.0.1:%s/api/next_token?filepath=%s&config=%s&project_id=%s",
+                serverPort, stepFile, promptConfig, projectId);
         JavaUtils.setJavaLibPath(basePath, javaVersion, repoRootPath);
         String classpath = JavaUtils.initializeJavaClassPath();
         // Update classpath with the libraries paths
         List<Path> librariesPaths = SymbolicModule.findLibrariesPaths(repoRootPath);
         for (Path libraryPath : librariesPaths) {
-            classpath += ":" + libraryPath.toString();
+            classpath += File.pathSeparator + libraryPath;
         }
         // Instantiate csv writer to save information about processed test cases and target oracles
         FilesUtils.CSVWriter csvWriter = new FilesUtils.CSVWriter(
