@@ -18,7 +18,8 @@ source "${UTILS_DIR}/bash/init_sdkman.sh"
 
 mode=${1:-"training"}
 GITHUB_REPOS_LIST_FILE=${2:-$GITHUB_REPOS_LIST_FILE}
-resolve_deps=${2:-"false"}
+# The third argument, as in oracles-dataset.sh (the dependencies are resolved by the oracles stage: unused here)
+resolve_deps=${3:-"false"}
 
 # Collect the raw oracles dataset repo ids
 while IFS= read -r -d $'\0' dir; do

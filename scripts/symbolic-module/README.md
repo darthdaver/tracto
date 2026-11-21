@@ -104,6 +104,23 @@ and the JDKs used are recorded in the statistics of the oracles dataset (`javaVe
 
 ## Development
 
+### Generation of the training datasets (Maven repositories)
+
+`tools/gen/generate.py` generates the oracles and the tokens datasets of the Maven repositories of the SEART list, with
+the jar, the configuration and the dependency resolution of the A/B runs (`tools/ab/ab.py`). It replaces the bash
+scripts below for a long generation: the commit of each repository is pinned (`lastCommitSHA` of
+`tracto/resources/seart-github-repos-info.csv`) and cloned without history, the repositories without JUnit tests are
+skipped before their dependencies are resolved, each stage has a heap limit and a timeout, the memory and the free disk
+are checked before a repository starts, and a status per repository makes the run resumable. Details in the docstring
+of the script.
+
+```shell
+python3 tools/gen/generate.py select                                  # the Maven repositories -> tmp/gen/maven-repos.csv
+python3 tools/gen/generate.py run tmp/gen/<label> --jar <tracto-jar> -j 9 --xmx 12g
+python3 tools/gen/generate.py report tmp/gen/<label>                  # totals, report.json
+python3 -m unittest tools/gen/test_generate.py                        # its tests (offline)
+```
+
 ### Oracles dataset
 To replicate the generation of the raw dataset of oracles or generate a new oracles dataset, it is necessary to run the following command:
 
