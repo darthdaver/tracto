@@ -1,5 +1,8 @@
 # Resuming the work on the tokens dataset (on another machine)
 
+> **2026-11-23: generation of the datasets on the MacBook (M5 Pro, 64 GB):** start from `docs/mac-generation.md`
+> (setup, checks and the large run, in order); this file stays the reference for the state of the module.
+
 **Written:** 2026-11-05, at the end of the work on the 314 GB / 32-core server, before moving to a 16 GB laptop.
 **Branch:** `22-test-processing-refactoring`. **Read first:** this file, then section 9 of
 `docs/missing-candidate-tokens.md` (the plan) and the step documents in `docs/fixes/` (20 to 26).
