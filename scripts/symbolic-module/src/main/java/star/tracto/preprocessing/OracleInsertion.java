@@ -22,6 +22,8 @@ public final class OracleInsertion {
     public static final String MASK = "/*<MASK_PLACEHOLDER>*/";
     private static final String NAME = "__tracto_oracle__";
     private static final String MARKER = NAME + "()";
+    private static final java.util.regex.Pattern INSERTION_HEADER =
+            java.util.regex.Pattern.compile("AT\\s+\\d+\\s+\\d+(\\s+ELSE)?");
     /** A printed marker statement, with the declaration that may receive its value, on its own line. */
     private static final java.util.regex.Pattern MARKER_STATEMENT = java.util.regex.Pattern.compile(
             "(?m)^([ \\t]*)[^\\n;{}]*?\\b" + NAME + "\\(\\);[ \\t]*$");
@@ -171,6 +173,11 @@ public final class OracleInsertion {
     }
 
     /** Applies an insertion to a copy, leaving all accepted statements intact. */
+    /** Whether a line is an insertion header: {@code AT <block> <slot>} or {@code AT <block> <slot> ELSE}. */
+    public static boolean isInsertionHeader(String line) {
+        return INSERTION_HEADER.matcher(line.strip()).matches();
+    }
+
     public static BlockStmt applyProposal(BlockStmt accepted, String proposal) {
         String[] lines = proposal.split("\\R", 2);
         String[] address = lines[0].strip().split("\\s+");

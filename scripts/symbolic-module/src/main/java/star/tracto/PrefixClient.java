@@ -237,9 +237,9 @@ public final class PrefixClient {
     }
 
     /**
-     * Alternates a model A insertion proposal with one oracle from original Tracto.
+     * Alternates a prefix model insertion proposal with one oracle from original Tracto.
      * A rejected round (invalid insertion, prefix that does not compile, or test that does not compile once the
-     * oracle is inserted) is retried once, showing model A the diagnostic and its rejected proposal.
+     * oracle is inserted) is retried once, showing the prefix model the diagnostic and its rejected proposal.
      */
     private static PrefixInference.Result generatePrefixOracleCycle(
             TestClazzDatapoints<OracleDatapoint> testClass, OracleDatapoint testCase,
@@ -298,7 +298,7 @@ public final class PrefixClient {
 
     /**
      * Applies one insertion, asks Tracto for its oracle, and accepts the round only if the whole test compiles.
-     * Rejections that model A can correct are reported as {@link IllegalArgumentException}.
+     * Rejections that the prefix model can correct are reported as {@link IllegalArgumentException}.
      */
     private static void runRound(String proposal, CycleState state, Path output,
                                  TestClazzDatapoints<OracleDatapoint> testClass, OracleDatapoint testCase,
@@ -404,6 +404,11 @@ public final class PrefixClient {
                     return Optional.of(STOP);
                 }
                 default -> {
+                    // A draft without its header cannot become an insertion: rejected at once, not at READY
+                    if (draft.isEmpty() && !OracleInsertion.isInsertionHeader(response)) {
+                        throw new IllegalArgumentException("Start the insertion with the line AT <block> <slot> "
+                                + "(or AT <block> <slot> ELSE), not: " + response.strip());
+                    }
                     if (lines == options.maxSteps()) return Optional.empty();
                     draft.append(response).append('\n');
                 }
