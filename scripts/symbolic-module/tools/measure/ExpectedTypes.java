@@ -143,6 +143,14 @@ public class ExpectedTypes {
                     .filter(s -> s.toString().equals(normalized) || s.toString().endsWith("." + normalized)).reduce((a, b) -> b);
             if (real.isEmpty()) {
                 count("target not found in the split test case");
+                if (System.getenv("MEASURE_SHOW_MISSED") != null) {
+                    List<ExpressionStmt> all = methods.get(0).findAll(ExpressionStmt.class);
+                    System.err.println("MISSED\t" + filePath + "\t" + prefix + "\t" + normalized.replace('\n', ' ') + "\tLAST:\t"
+                            + (all.isEmpty() ? "-" : all.get(all.size() - 1).toString().replace('\n', ' ')));
+                }
+                continue;
+            }
+            if (System.getenv("MEASURE_SHOW_MISSED") != null) {
                 continue;
             }
             List<Expression> parsedCalls = calls(parsed);

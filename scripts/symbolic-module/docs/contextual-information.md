@@ -113,8 +113,12 @@ before it) and, when the first token of the argument is a project token, the **d
 in the v4 tokens dataset: the least number of member accesses (fields, non-private methods) after which its type is
 assignable to an expected type (boxing and widening included). **Strict**: without the members of `Object` and the
 generic return types; without strict, `equals`, `hashCode`, `toString` make every value reach `boolean`, `int`,
-`String` in one access, and generic methods (`Class.cast`) reach everything. 21,274 arguments (8,685 of 9,148
-datapoints: 463 targets not located in their split test case), 99.7% resolved, all aligned with their step.
+`String` in one access, and generic methods (`Class.cast`) reach everything. 21,274 arguments of 8,685 of the 9,148
+datapoints, 99.7% resolved, all aligned with their step. The other 463 datapoints are left out by the **measurement**
+only (their token steps are complete in the dataset, as for all the oracles of v4): the script finds the assertion in
+the split test case by comparing the statement text, which fails when a comment precedes the assertion (398: JavaParser
+prints the comment with the statement) and for `assertThrows`/`assertDoesNotThrow` with a lambda, whose split test case
+ends with the lambda body (65). `MEASURE_SHOW_MISSED=1` lists them (locating only, no depth search).
 
 **How often the expected type says something.** Only **38%** of the argument positions have an informative expected type
 (not `Object`, not a type variable): the `Object` overloads of JUnit (`assertEquals`, `assertNotNull`, …) and Hamcrest
