@@ -167,7 +167,10 @@ def synthetic_pom(artifact_id, dependencies, repositories, modules=()):
 
 # A slow or unreachable repository must not stall the generation: network timeouts of the Maven resolver (ms), and a
 # limit on each Maven call (s), after which it fails like a missing artifact
-MAVEN_NETWORK_OPTIONS = ['-Daether.connector.connectTimeout=20000', '-Daether.connector.requestTimeout=120000']
+MAVEN_NETWORK_OPTIONS = ['-Daether.connector.connectTimeout=20000', '-Daether.connector.requestTimeout=120000',
+                         # The local repository shared by the parallel resolutions of the generation (tools/gen): the
+                         # file locks of the Maven resolver, so that two of them do not write the same artifact at once
+                         '-Daether.syncContext.named.factory=file-lock', '-Daether.syncContext.named.nameMapper=file-gav']
 MAVEN_CALL_SECONDS = int(os.environ.get('TRACTO_DEPS_MAVEN_SECONDS', 1200))
 
 
