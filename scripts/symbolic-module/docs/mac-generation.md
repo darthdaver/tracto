@@ -91,6 +91,11 @@ separators or file encoding (`file.encoding`, `Charset.defaultCharset()`); case 
 caused by the platform is a **reproducibility defect of the module**: fix it as a normal step (tests, doc, corpus) so
 that Linux and macOS give the same results, and ask the author before accepting anything.
 
+Done on 2026-11-23: 8 projects identical, uuid 32 oracles with another candidate order. The cause was the folder of
+the module, not macOS: **Step 51** (`docs/fixes/step-51-imported-package-order.md`). The durations: `prepare` 224 s
+(`-j 2`), `check` 316 s (`-j 4`, 1,853 s CPU). Step 51 accepted with the author's OK on 2026-11-24:
+the expected results are those of its check on the Mac.
+
 ## C. Make the runner work on macOS
 
 `tools/gen/generate.py` reads Linux-only files for its memory control: `memory_limit()` and `memory_used()` use the
@@ -125,16 +130,17 @@ ffmpeg,bramp/ffmpeg-cli-wrapper,a6655138d7cc1b2c62a57a5e95798695e060de6e,3
 Server results for this run (commit `ca4020b`, jar of dataset v4): steve 163 datapoints in 277 s, ffmpeg 586 in
 2,272 s, uuid 369 in 2,771 s, all `done`.
 
-## D. Remaining module step before the run: Step 51 (deterministic anonymous classes)
+## D. Remaining module step before the run: Step 52 (deterministic anonymous classes)
 
 JavaParser names anonymous classes `Anonymous-<UUID.randomUUID()>` (`JavaParserAnonymousClassDeclaration`); the name
 reaches the `identifier`/`signature` of declarations in the oracles and tokens datasets (seen in ffmpeg: 1 of 21
 datapoints differed between two runs, 58 bytes). `tools/ab/corpus.py` masks it (`ANONYMOUS` pattern), so the corpus does
-not see it, but the datasets are not byte-reproducible. Fix it as **Step 51** with the full step procedure (section 0):
+not see it, but the datasets are not byte-reproducible. Fix it as **Step 52** (Step 51 went to checkpoint B) with the
+full step procedure (section 0):
 a deterministic name (for example from the enclosing type and the position of the anonymous class in the file), tests
 that fail before the fix, two runs of ffmpeg byte-identical after it.
 
-**Checkpoint D:** Step 51 committed and pushed; the corpus check identical (after `accept` of the explained
+**Checkpoint D:** Step 52 committed and pushed; the corpus check identical (after `accept` of the explained
 differences, if the name is visible in the digests).
 
 ## E. Calibration on the nine reference projects

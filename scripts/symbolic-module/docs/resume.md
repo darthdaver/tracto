@@ -59,6 +59,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 49 | on the corpus: identical (1,302 complete): the simple name of a class whose key has qualified type arguments (a latent `StringIndexOutOfBoundsException`, the `Range [131, 126)` of v1) |
 | **Dataset v4** (full test with the dependencies, 2026-11-17, Step 49 `e70d8ac`) | **0.0%** on the nine projects (9,043 complete of 9,043; dataset v3: 9,028, +15, 0 regressions, 0 dropped) |
 | After Step 50 | on the corpus: unchanged (1,302 complete, 0 worse, removals only, no target): 113 steps lose the fields of the classes nested in the type of a value or in its supertypes (`Throwable.SentinelHolder.STACK_TRACE_SENTINEL`, jsoup `Element.NodeList.validChildren`, `FileChannel.MapMode.READ_ONLY`) |
+| After Step 51 | on the corpus: unchanged (1,302 complete, 0 worse, order only): the classes of an imported package (`import java.io.*`) were added in the order of the hashes of their absolute paths, so the order of the candidates depended on the folder of the module and of the repository (found on the MacBook: uuid, 32 oracles, 104 steps); now the same in any folder |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -75,7 +76,8 @@ Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`
 After Steps 21, 23 and 24 the tokens stage is **deterministic**: the same code on the same inputs gives byte for byte
 the same dataset (checked with `-XX:hashCode=2`, which changes every identity hash code), except the random names of
 the anonymous classes (`Anonymous-<uuid>`) and a few error messages of the statistics that print identity hashes.
-This is what makes the fast checks of section 4 exact.
+This is what makes the fast checks of section 4 exact. Since Step 51 it is also the same in any folder of the module
+and of the repositories (checked with the corpus from a second folder: the tokens datasets byte-identical).
 
 ## 2. Decisions of the author (all still valid)
 
@@ -183,6 +185,10 @@ JVM (pre-existing defect, section 6), so corpus results are compared only with c
 - Before Steps 21–24, two runs of the same code differed (identity hash order): every old A/B had noise. Old runs
   are not comparable byte for byte with new ones.
 - Order-only differences need a deep comparison (the lists of `contextualInfos` are nested).
+- A `HashSet<Path>` iterates in the order of the hashes of the absolute paths: the output then depends on the folder
+  of the module and of the run (Step 51, found when the module moved to the MacBook). A test of it needs files whose
+  paths have different hash codes: class names with the same hash code (`AaAa`, `BBBB`) in one folder give paths with
+  the same hash code too. `HashMap.computeIfAbsent` puts a new key at the head of its bucket, `put` at the tail.
 
 ## 6. Next steps (in this order)
 

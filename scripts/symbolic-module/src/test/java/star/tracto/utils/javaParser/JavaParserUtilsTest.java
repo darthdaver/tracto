@@ -21,6 +21,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mockito;
+import star.tracto.utils.JavaUtils;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -581,6 +582,45 @@ class JavaParserUtilsTest {
                 """);
 
         assertThrows(RuntimeException.class, () -> JavaParserUtils.resolveMethodCall(cu.findFirst(MethodCallExpr.class).orElseThrow()));
+    }
+
+    /**
+     * Step 51: the imported classes are added in the order of the imports, the classes of an imported package in the
+     * order of its files, wherever the repository is (the files were collected in a {@code HashSet<Path>}, in the order
+     * of the hashes of their absolute paths). The map given keeps the order in which the classes are added.
+     */
+    @Test
+    void collectPathsOfImportedClassesAddsTheClassesInAnOrderThatDoesNotDependOnTheFolder() throws IOException {
+        // The JDK sources of the module are searched too (lib/java21)
+        JavaUtils.setJavaLibPath(Path.of("").toAbsolutePath(), Optional.of(21));
+        CompilationUnit cu = parse("""
+                package com.acme.app;
+
+                import com.acme.Canvas;
+                import com.acme.shapes.*;
+
+                public class App {
+                }
+                """);
+        List<String> expected = new ArrayList<>(List.of("Canvas"));
+        for (char letter = 'A'; letter <= 'Z'; letter++) {
+            expected.add("Shape" + letter);
+        }
+
+        for (String folder : List.of("first", "runs/another-run/work/repository")) {
+            Path sources = tempDir.resolve(folder).resolve("src/main/java");
+            Files.createDirectories(sources.resolve("com/acme/shapes"));
+            Files.writeString(sources.resolve("com/acme/Canvas.java"), "package com.acme;\n\npublic class Canvas {\n}\n");
+            for (String name : expected.subList(1, expected.size())) {
+                Files.writeString(sources.resolve("com/acme/shapes/" + name + ".java"),
+                        "package com.acme.shapes;\n\npublic class " + name + " {\n}\n");
+            }
+            LinkedHashMap<String, List<Path>> classes = new LinkedHashMap<>();
+            JavaParserUtils.collectPathsOfImportedClasses(classes, List.of(sources), cu,
+                    List.of(List.of(new Pair<>(Modifier.Keyword.PUBLIC, true))));
+
+            assertEquals(expected, new ArrayList<>(classes.keySet()), folder);
+        }
     }
 
     /** Writes the given class as {@code com/acme/Bytes.java} of the repository, and configures the parser on it. */

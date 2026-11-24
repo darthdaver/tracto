@@ -2032,7 +2032,10 @@ public class JavaParserUtils {
                 // The other static imports name members, not types (Step 25)
                 continue;
             }
-            Set<Path> relatedTypeDeclarationPaths = new HashSet<>();
+            // In the order they are found (the files of a package in a fixed order), not in the order of the hashes of
+            // their absolute paths: the classes are added in this order to the map of the candidates, and the order of
+            // its names in the same bucket follows the order in which they were added (Step 51)
+            Set<Path> relatedTypeDeclarationPaths = new LinkedHashSet<>();
 
             // Get the fully qualified name of the imported class
             String fqn = importDecl.getNameAsString();

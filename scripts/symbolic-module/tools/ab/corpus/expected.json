@@ -224,6 +224,11 @@
    "date": "2026-11-18T11:22:03",
    "jar_sha256": "40ac2ebb4f9d39c6404da28937ac1b2eba28055532a789e2e5400bd673414a4b",
    "reason": "Step 50: the fields of the classes nested in a type or its supertypes are not candidates after a value (113 steps lose candidates, removals only, no target)"
+  },
+  {
+   "date": "2026-11-23T17:41:01",
+   "jar_sha256": "f697d9c4bffbdc366687a31458dc61a0fedd86a41131fa7131c54960d45cf8b0",
+   "reason": "Step 51: the classes of an imported package are added to the candidates in the order of their files, not of the hashes of their absolute paths; uuid: 32 oracles with another candidate order only (against the Mac before the fix: 104 steps, the same names, no target moved); the order is now the same in any folder of the module and of the repositories"
   }
  ],
  "oracles": {
@@ -6265,137 +6270,137 @@
   },
   "uuid": {
    "EgressInterfaceFinderTestSTARSplitTest|testFromLocalAddress_split_0|assertEquals(anInterface, finder.fromLocalAddress(anAddress));": {
-    "digest": "0c2594f2367a3532",
+    "digest": "747a8e0ac747e9b9",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|constructor_canOnlyTakeAFile_shouldThrowFileNotFoundException_split_0|assertThrows(FileNotFoundException.class, () -> new LockedFile(blankFolder), \"This should not succeed\");": {
-    "digest": "44ce040496485a6c",
+    "digest": "3591a815dac0a1cb",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|constructor_canOnlyTakeAFile_shouldThrowFileNotFoundException_split_1|assertEquals(String.format(\"%s (Is a directory)\", blankFolder.getPath()), fileNotFoundException.getMessage());": {
-    "digest": "1015554410f716ad",
+    "digest": "b67d8db2063acc86",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|constructor_givenEmptyFile_shouldLeaveFileAsIs_split_0|assertTrue(emptyFile.exists());": {
-    "digest": "71a8fd93004b4694",
+    "digest": "046b7a705327436e",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|constructor_givenEmptyFile_shouldLeaveFileAsIs_split_1|assertTrue(emptyFile.canRead());": {
-    "digest": "e6f67b0391394621",
+    "digest": "b6017a4ec4c0bed0",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|constructor_givenEmptyFile_shouldLeaveFileAsIs_split_2|assertTrue(emptyFile.canWrite());": {
-    "digest": "ad3f59e94c06713e",
+    "digest": "a2c4324f1aa6d8d0",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|constructor_givenNonExistentFile_shouldCreateANewFile_split_0|fail(\"temp file should not exist\");": {
-    "digest": "ef01844062869d48",
+    "digest": "a221892a46b9c42f",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|constructor_givenNonExistentFile_shouldCreateANewFile_split_1|assertTrue(Files.exists(nonExistentFile.toPath()));": {
-    "digest": "fa932d0e2c6d06e2",
+    "digest": "bd14c6f1d8aae73e",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|constructor_givenNonExistentFile_shouldCreateANewFile_split_2|assertTrue(nonExistentFile.canRead());": {
-    "digest": "d8cb519d6cb5f51f",
+    "digest": "443f7b2f7cf3a421",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|constructor_givenNonExistentFile_shouldCreateANewFile_split_3|assertTrue(nonExistentFile.canWrite());": {
-    "digest": "db5cd747d8ed042f",
+    "digest": "e9cd73930b0ecc51",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|constructor_givenNull_shouldThrowNullPointerException_split_0|assertThrows(NullPointerException.class, () -> new LockedFile(null), \"This should have thrown a null pointer exception\");": {
-    "digest": "4877d90097d8c6f7",
+    "digest": "f1b1c7ab90c7e2ef",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|readStamp_givenEmptyFile_shouldReturnREADERROR_split_0|assertEquals(READ_ERROR, stamp);": {
-    "digest": "c27b8ac09102d499",
+    "digest": "574af091b2c0f107",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|readStamp_givenGibberishFile_shouldReturnREADERROR_split_0|assertEquals(22, Files.size(gibberishFile.toPath()));": {
-    "digest": "3727cb100ee6845f",
+    "digest": "327149aa99c3392f",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|readStamp_givenGibberishFile_shouldReturnREADERROR_split_1|assertEquals(READ_ERROR, stamp);": {
-    "digest": "c8e3c739f95278d6",
+    "digest": "00f4bc1dfeaeb8fa",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|readStamp_givenMaxLongFile_shouldReturnLargeTimestamp_split_0|assertEquals(Long.MAX_VALUE, stamp);": {
-    "digest": "ea880f3fe39547ef",
+    "digest": "0b72ad516c4febb1",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|readStamp_givenOverflowedDigitFile_shouldReturnREADERROR_split_0|assertEquals(READ_ERROR, stamp);": {
-    "digest": "e2daa351f04c93f4",
+    "digest": "f5541640905fef87",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|readStamp_givenTimestampedFile_shouldReturnValueInside_split_0|assertEquals(expectedTimestamp, stamp);": {
-    "digest": "63c418bf4d8ecfc9",
+    "digest": "74117d6414570a28",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|writeStamp_givenNegativeTimestamps_shouldThrowIOException_split_0|assertThrows(IOException.class, () -> lockedFile.writeStamp(Long.MIN_VALUE), \"This should throw an exception\");": {
-    "digest": "8bfb85c51ce335fa",
+    "digest": "a9be7e3db129f42e",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|writeStamp_givenNegativeTimestamps_shouldThrowIOException_split_1|assertTrue(ioException.getMessage().contains(\"trying to overwrite existing value\"));": {
-    "digest": "dcf7d28a0d2af1ce",
+    "digest": "f07a21c78998547a",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|writeStamp_givenNegativeTimestamps_shouldThrowIOException_split_2|assertTrue(ioException.getMessage().contains(\"with an earlier timestamp\"));": {
-    "digest": "342126d18aa09c22",
+    "digest": "0b59d6b1c6e34518",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|writeStamp_givenNewerTimestampedFile_writeNegativeTimestamp_shouldThrowException_split_0|assertThrows(IOException.class, () -> lockedFile.writeStamp(newTimestamp), \"This should throw an exception\");": {
-    "digest": "7e71af123ce28cdd",
+    "digest": "91008b2fbf6f16ce",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|writeStamp_givenNewerTimestampedFile_writeNegativeTimestamp_shouldThrowException_split_1|assertTrue(ioException.getMessage().contains(\"trying to overwrite existing value\"));": {
-    "digest": "3c6360200e75563d",
+    "digest": "5cfc08fda2722721",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|writeStamp_givenNewerTimestampedFile_writeNegativeTimestamp_shouldThrowException_split_2|assertTrue(ioException.getMessage().contains(\"with an earlier timestamp\"));": {
-    "digest": "5bc281ee086f89ed",
+    "digest": "fd6c7c50d784c356",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|writeStamp_givenTimestampedFile_withLowerValue_shouldOverrideValue_split_0|assertNotEquals(numericInputValue, stamp);": {
-    "digest": "e5c261323aa67eea",
+    "digest": "619a65af916f54d0",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|writeStamp_givenTimestampedFile_withLowerValue_shouldOverrideValue_split_1|assertEquals(newTimestamp, stamp);": {
-    "digest": "9ccd3ce0ef989e44",
+    "digest": "d0ceddbe5c520bdb",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|writeStamp_givenTimestampedFile_writeSameTimestamp_shouldLeaveFileAlone_split_0|assertEquals(numericInputValue, stamp);": {
-    "digest": "433959b30677b49a",
+    "digest": "7c830d9fc47374d2",
     "missing": [],
     "status": "complete"
    },
    "LockedFileTestSTARSplitTest|writeStamp_givenTimestampedFile_writeSameTimestamp_shouldLeaveFileAlone_split_1|assertEquals(newTimestamp, stamp);": {
-    "digest": "13a7f587c7e2e9d5",
+    "digest": "7cbfd8856078e5f6",
     "missing": [],
     "status": "complete"
    },
@@ -6655,27 +6660,27 @@
     "status": "complete"
    },
    "UUIDTimerTestSTARSplitTest|testGetTimestampReproducible_split_0|assertEquals(timer1.getTimestamp(), timer2.getTimestamp());": {
-    "digest": "54788eabc6a2a7ac",
+    "digest": "fe74d872d7ae85a4",
     "missing": [],
     "status": "complete"
    },
    "UUIDTimerTestSTARSplitTest|testSecureRandomUUIDTimerConstructor_split_0|assertThrows(NullPointerException.class, () -> new UUIDTimer((SecureRandom) null, null), \"Expected exception not caught\");": {
-    "digest": "de2e41358fe8f936",
+    "digest": "57de53853f211662",
     "missing": [],
     "status": "complete"
    },
    "UUIDTimerTestSTARSplitTest|testSecureRandomUUIDTimerConstructor_split_1|assertTrue(test_array.length >= UUID_TIMER_ARRAY_LENGTH, \"array1 was not equal or longer then length\");": {
-    "digest": "17e07eaf2431ec5d",
+    "digest": "444901b02923ef69",
     "missing": [],
     "status": "complete"
    },
    "UUIDTimerTestSTARSplitTest|testSecureRandomUUIDTimerConstructor_split_2|assertTrue(array2.length >= UUID_TIMER_ARRAY_LENGTH, \"array2 was not equal or longer then length\");": {
-    "digest": "bd7fee6180a4fcbb",
+    "digest": "023d474f7574bbae",
     "missing": [],
     "status": "complete"
    },
    "UUIDTimerTestSTARSplitTest|testSecureRandomUUIDTimerConstructor_split_3|fail(\"All elements of Array1 were equal to all elements of Array2\");": {
-    "digest": "0dbff776d998015c",
+    "digest": "d570eed49bffdf4d",
     "missing": [],
     "status": "complete"
    },
