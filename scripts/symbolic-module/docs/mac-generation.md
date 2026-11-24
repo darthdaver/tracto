@@ -130,6 +130,19 @@ ffmpeg,bramp/ffmpeg-cli-wrapper,a6655138d7cc1b2c62a57a5e95798695e060de6e,3
 Server results for this run (commit `ca4020b`, jar of dataset v4): steve 163 datapoints in 277 s, ffmpeg 586 in
 2,272 s, uuid 369 in 2,771 s, all `done`.
 
+Done on 2026-11-24. On macOS the limit is `sysctl -n hw.memsize` and the memory in use is Activity Monitor's "Memory
+Used" from `vm_stat`: anonymous pages − purgeable + wired + occupied by compressor. Not `Pages active` as suggested
+above: it counts the page cache too, which the Linux measure leaves out. Reading 5.4 GB twice moved 5.4 GiB from free
+to file-backed pages and left the measure unchanged. A measurement that fails (`vm_stat` is a process) is logged and
+skipped: no repository starts or is stopped, and the watcher goes on. 25 tests (12 new: recorded `vm_stat`/`sysctl`
+outputs, the Linux files in their formats, the machine itself, the watcher); the scheduling tests no longer depend on
+the memory in use of the machine (they waited forever above 80%). Each part was mutation-checked. `resolve_maven.py`
+runs only `mvn` and `java`, nothing Linux-only; its Lombok test needs `JAVA_HOME` on JDK 21 (the Mac's default JDK 11
+fails it). End to end (jar of `35ac938`, 12:16–12:28): steve 163 datapoints in 105 s, ffmpeg 586 in 607 s, uuid 369
+in 718 s, all `done` (2.6–3.9× faster than the server), tokens peak RSS as on the server (uuid 7,521 MB), 4.0 GB of
+tokens output; the memory in use peaked at 41.7 GiB of 64 (the desktop applications used ~33 GiB before the run), no
+swap.
+
 ## D. Remaining module step before the run: Step 52 (deterministic anonymous classes)
 
 JavaParser names anonymous classes `Anonymous-<UUID.randomUUID()>` (`JavaParserAnonymousClassDeclaration`); the name
