@@ -32,7 +32,7 @@ Background documents (read them when a phase points to them):
   Jackson streaming in Java, or `ijson`-style streaming in Python).
 - **One large run at a time.** Do not edit module files while a `corpus.py`, `ab.py`, `dev_tokens.py` or
   `generate.py run` is running (develop in a git worktree under `tmp/` instead).
-- **Git:** commit with `git -c user.name=darthdaver -c user.email=davide.molinelli@uusi.ch commit ...`; messages start
+- **Git:** commit with `git -c user.name=darthdaver -c user.email=davide.molinelli@usi.ch commit ...`; messages start
   with `[SYMBOLIC MODULE]` and end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. The author's
   standing authorization: commit and push when a step is done. Push with
   `GIT_ASKPASS= GIT_TERMINAL_PROMPT=0 git push`; if it fails for credentials, ask the author to run `! git push` once

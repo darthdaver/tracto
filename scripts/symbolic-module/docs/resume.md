@@ -83,7 +83,7 @@ and of the repositories (checked with the corpus from a second folder: the token
 
 - Correctness first: no fix without tests that fail before it, no change accepted without its differences explained.
 - Each fix is a step: tests first, a document `docs/fixes/step-NN-*.md`, a commit only when the author asks (one per
-  step). Git identity of the commits: `darthdaver <davide.molinelli@uusi.ch>` (as the earlier commits).
+  step). Git identity of the commits: `darthdaver <davide.molinelli@usi.ch>` (the commits from 2026-02-09 to `4a8db564` have the typo `uusi.ch`).
 - Only JUnit assertions are in scope (Hamcrest `MatcherAssert.assertThat` and AssertJ are out, counted apart).
   **Changed on 2026-11-09:** Hamcrest `assertThat` is in scope (see below; done in Step 30); AssertJ stays out.
 - The fixes follow the order of section 9 of `missing-candidate-tokens.md` (summarized in section 6 below).
