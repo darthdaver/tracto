@@ -124,7 +124,9 @@ def resolve_dependencies(repo, jar):
     # No bytecode cache written into the module during a run (its written-outside check)
     sys.dont_write_bytecode = True
     import resolve_maven  # noqa: E402
-    os.environ.setdefault('JAVA_HOME', JAVA_HOME)
+    # Maven and delombok run on the JDK of the pipeline, whatever JAVA_HOME the shell has (as tools/gen/generate.py):
+    # on the JDK 11 of a shell, delombok cannot parse text blocks and the members Lombok generates are lost (steve)
+    os.environ['JAVA_HOME'] = JAVA_HOME
     report = resolve_maven.run(repo, DEPS_CACHE, tracto_jar=jar)
     return {k: report.get(k) for k in ('status', 'mode', 'modules', 'counts', 'seconds', 'error', 'cached', 'failed')}
 

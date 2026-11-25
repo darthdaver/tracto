@@ -396,7 +396,9 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
 - Step 53: the qualified name of the interface (`Anonymous-org.jsoup.select.NodeVisitor()`; a local interface: the
   name as written): two interfaces with the same simple name are two entries; corpus identical (1,302 complete), the
   16 entries renamed. Found: the oracles stage depends on identity hash codes through JavaParser (an eec prefix lost
-  the invoked method `setData` with the new jar; with `-XX:hashCode=2` both jars keep it).
+  the invoked method `setData` with the new jar; with `-XX:hashCode=2` both jars keep it). Measured before phase E:
+  1 of the 9,148 datapoints of the oracles stage; the tokens stage (candidates) identical in three orders of the
+  identity hashes (`docs/resume.md`, section 6, item 10).
 - Step 54: the members declared in an anonymous class, after a `var` of it (`var counter = new Object() { … }`:
   `counter.` ▸ `twice`, `count`; JavaParser typed it as `Object`), named with the rule of Step 53, the context of its
   supertype: corpus identical (1,302 complete; no corpus class has the shape), both stages byte-identical.

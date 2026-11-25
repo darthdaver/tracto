@@ -81,7 +81,8 @@ the same dataset (checked with `-XX:hashCode=2`, which changes every identity ha
 of the statistics that print identity hashes. The oracles stage gives the same bytes for the same jar and inputs since
 Step 52 (before it, the anonymous classes of interfaces had a random name, `Anonymous-<uuid>`), but its results still
 depend on identity hash codes through JavaParser (found in Step 53, section 6, item 10): a change of the code can move
-an unrelated result.
+an unrelated result (measured: 1 of the 9,148 datapoints of the nine projects; the tokens stage does not depend on
+them).
 This is what makes the fast checks of section 4 exact. Since Step 51 it is also the same in any folder of the module
 and of the repositories (checked with the corpus from a second folder: the tokens datasets byte-identical).
 
@@ -304,8 +305,17 @@ examples to start from.
      "equivalent types" JavaParser iterates in the order of a set of identity hashes; the jar of Step 53 lost the
      invoked method `setData` (the jar of Step 52 kept it; with `-XX:hashCode=2` both keep it). Reproducible for a given
      jar (HotSpot's identity hashes are a fixed sequence per thread), but a change of the code anywhere can move such a
-     result. Only the invoked methods (context of the prompt) were seen to change; to measure (the corpus with and
-     without `-XX:hashCode=2`) before deciding whether to work around it;
+     result. **Measured** on 2026-11-25, before phase E (jar of Step 54, JDK 21), in three orders of the identity
+     hashes (HotSpot's default; `-XX:+UnlockExperimentalVMOptions -XX:hashCode=2`, every hash equal; `-XX:hashCode=3`,
+     a sequence): the oracles stage of the nine projects, **1 of 9,148 datapoints** differs, this one (19 invoked
+     methods by default, 20 in both other orders), and error messages of the statistics (eec, cryptofs: the order of
+     the equivalent types, the identity hash of an object printed); a new default run is byte-identical to the corpus
+     run of Step 54. The tokens stage, on the same oracles (corpus, 1,302 oracles): **identical** in the three orders
+     (status, missing tokens, digests of the token steps). No workaround proposed: `-XX:hashCode=2` would make the
+     results independent of the code, but the corpus check took 448 s with it (456 s with `hashCode=3`) against 323 s
+     for the check of Step 54 (one run each). A difference of the invoked methods in a later comparison, on a statement
+     whose error lists "Equivalent types are", is checked by running both jars with `-XX:hashCode=2`
+     (`tmp/ab/hash-*`, `tmp/ab/compare-*`, `tmp/ab/hash-check-*.json`);
    - ~~the members of an anonymous class are not offered after a variable of that class~~ (`var counter = new Object() {
      int count; int twice() { … } };` then `counter.` ▸ `twice`, `count`: "Unexpected token", a lost target; found by the
      test of Step 52): **Step 54 done** (`docs/fixes/step-54-anonymous-class-members.md`; asked by the author before
