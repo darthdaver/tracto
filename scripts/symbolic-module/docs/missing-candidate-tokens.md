@@ -387,6 +387,12 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
   not of the hashes of their absolute paths: the order of the candidates no longer depends on the folder of the module
   or of the repository (found on the MacBook, uuid: 32 oracles, 104 steps, the same candidates in another order, no
   target moved); corpus 1,302 complete, the tokens datasets byte-identical from a second folder.
+- Step 52: the constructor of an anonymous class of an interface, among the invoked methods, is named after the
+  interface (`Anonymous-NutReaderListener()`), no longer `Anonymous-<UUID.randomUUID()>` (JavaParser), different at each
+  run; equal entries merged: corpus identical (1,302 complete), the oracles datasets of its projects 16 datapoints
+  (26 random entries → 16), the datasets byte-identical between two runs. Found by its test, not fixed: the members of
+  an anonymous class after a `var` of that class (`counter.` ▸ `twice`, `count`), a lost target (`docs/resume.md`,
+  section 6, item 10).
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles

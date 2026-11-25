@@ -60,6 +60,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | **Dataset v4** (full test with the dependencies, 2026-11-17, Step 49 `e70d8ac`) | **0.0%** on the nine projects (9,043 complete of 9,043; dataset v3: 9,028, +15, 0 regressions, 0 dropped) |
 | After Step 50 | on the corpus: unchanged (1,302 complete, 0 worse, removals only, no target): 113 steps lose the fields of the classes nested in the type of a value or in its supertypes (`Throwable.SentinelHolder.STACK_TRACE_SENTINEL`, jsoup `Element.NodeList.validChildren`, `FileChannel.MapMode.READ_ONLY`) |
 | After Step 51 | on the corpus: unchanged (1,302 complete, 0 worse, order only): the classes of an imported package (`import java.io.*`) were added in the order of the hashes of their absolute paths, so the order of the candidates depended on the folder of the module and of the repository (found on the MacBook: uuid, 32 oracles, 104 steps); now the same in any folder |
+| After Step 52 | on the corpus: identical (1,302 complete; the corpus classes have no anonymous class among their invoked methods), now without the mask of the random names; the oracles datasets of the corpus projects: 16 datapoints, 26 entries `Anonymous-<uuid>()` become 16 `Anonymous-<interface>()` (`Anonymous-NodeVisitor()`; equal entries merged): the constructor of an anonymous class of an interface had a random name, different at each run (present since the original code) |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -74,8 +75,9 @@ Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`
 | 26 (2026-11-06) | class names: `java.lang`, member types, imports of member types and records, the package without its subpackages and with its interfaces, no generated classes, the classes after `instanceof` | corpus: 62 oracles recovered (1,009 → 1,071), 0 worse (eec +23, plexus +11, esapi +8, uuid +8, ffmpeg +7, jsoup +3, cryptofs +2) |
 
 After Steps 21, 23 and 24 the tokens stage is **deterministic**: the same code on the same inputs gives byte for byte
-the same dataset (checked with `-XX:hashCode=2`, which changes every identity hash code), except the random names of
-the anonymous classes (`Anonymous-<uuid>`) and a few error messages of the statistics that print identity hashes.
+the same dataset (checked with `-XX:hashCode=2`, which changes every identity hash code), except a few error messages
+of the statistics that print identity hashes. The oracles stage too since Step 52 (before it, the anonymous classes of
+interfaces had a random name, `Anonymous-<uuid>`).
 This is what makes the fast checks of section 4 exact. Since Step 51 it is also the same in any folder of the module
 and of the repositories (checked with the corpus from a second folder: the tokens datasets byte-identical).
 
@@ -288,6 +290,14 @@ examples to start from.
      (`docs/fixes/step-50-nested-class-fields.md`);
    - ~~the body of a method without a source is garbage taken from the text of its `MethodUsage`~~: **Step 35 done**
      (`docs/fixes/step-35-sourceless-bodies.md`);
+   - ~~the constructor of an anonymous class of an interface has a random name (`Anonymous-<uuid>`, JavaParser), different
+     at each run, among the invoked methods~~: **Step 52 done** (`docs/fixes/step-52-anonymous-class-names.md`; named
+     after the interface, `Anonymous-NutReaderListener()`, decided by the author on 2026-11-25);
+   - the members of an anonymous class are not offered after a variable of that class (`var counter = new Object() {
+     int count; int twice() { … } };` then `counter.` ▸ `twice`, `count`: "Unexpected token", a lost target). Found by
+     the test of Step 52 (`AnonymousClassNamesTokensTest`); cause not analysed. Rare (only `var` gives a variable the
+     type of an anonymous class): no lost oracle of dataset v4 or of the corpus has it; to measure during the
+     generation;
    - the imports and the package of the focal class are added to the classes of the test class (not visible there
      unless imported in the test class too);
    - the qualifiers `Assert.`/`Assertions.` are removed with a text replacement (`TestUtils`, targets and bodies):

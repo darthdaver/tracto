@@ -52,6 +52,14 @@ class TestUtilsDatapointsTest {
             }
             """;
 
+    private static final String LISTENER = """
+            package com.acme;
+
+            public interface Listener {
+                void on(int value);
+            }
+            """;
+
     private static final String TEST_ADD = """
             @Test
             public void testAdd() {
@@ -245,6 +253,108 @@ class TestUtilsDatapointsTest {
 
         assertEquals(List.of("Calc", "count", "accumulate"), invokedMethodNames(datapoints.get(0)));
         assertEquals("public static int count(byte[] values)", datapoints.get(0).testPrefix().invokedMethods().get(1).signature());
+    }
+
+    @Test
+    void constructorOfAnAnonymousClassOfAnInterfaceIsNamedAfterTheInterface() throws IOException {
+        // An interface has no constructor: JavaParser gives the anonymous class a default one, named after the class,
+        // which it names Anonymous-<UUID.randomUUID()>, a new name each time it builds the class (Step 52)
+        repo.writeSourceClass("com/acme/Listener.java", LISTENER);
+
+        List<OracleDatapoint> datapoints = datapoints(FixtureRepo.CONFIG, """
+                @Test
+                public void testListener() {
+                    Calc calc = new Calc();
+                    Listener listener = new Listener() {
+                        public void on(int value) {
+                        }
+                    };
+                    listener.on(1);
+                    assertEquals(0, calc.total());
+                }
+                """);
+
+        Callable constructor = datapoints.get(0).testPrefix().invokedMethods().get(1);
+        assertEquals(List.of("Calc", "Anonymous-Listener", "on"), invokedMethodNames(datapoints.get(0)));
+        assertEquals("Anonymous-Listener()", constructor.signature());
+        assertEquals(List.of(), constructor.parameters());
+    }
+
+    @Test
+    void constructorOfAnAnonymousClassOfANestedGenericInterfaceIsNamedAfterItsSimpleName() throws IOException {
+        // as JavaParser names the constructors of the classes: the simple name, without the type arguments
+        repo.writeSourceClass("com/acme/Events.java", """
+                package com.acme;
+
+                public class Events {
+                    public interface Handler<T> {
+                        void handle(T event);
+                    }
+                }
+                """);
+
+        List<OracleDatapoint> datapoints = datapoints(FixtureRepo.CONFIG, """
+                @Test
+                public void testHandler() {
+                    Calc calc = new Calc();
+                    Events.Handler<String> handler = new Events.Handler<String>() {
+                        public void handle(String event) {
+                        }
+                    };
+                    calc.accumulate(1);
+                    assertEquals(1, calc.total());
+                }
+                """);
+
+        assertEquals(List.of("Calc", "Anonymous-Handler", "accumulate"), invokedMethodNames(datapoints.get(0)));
+        assertEquals("Anonymous-Handler()", datapoints.get(0).testPrefix().invokedMethods().get(1).signature());
+    }
+
+    @Test
+    void constructorsOfTwoAnonymousClassesOfTheSameInterfaceAreOneInvokedMethod() throws IOException {
+        // the two entries are equal, and the invoked methods of a prefix are listed once
+        repo.writeSourceClass("com/acme/Listener.java", LISTENER);
+
+        List<OracleDatapoint> datapoints = datapoints(FixtureRepo.CONFIG, """
+                @Test
+                public void testListeners() {
+                    Calc calc = new Calc();
+                    Listener first = new Listener() {
+                        public void on(int value) {
+                        }
+                    };
+                    Listener second = new Listener() {
+                        int count;
+
+                        public void on(int value) {
+                        }
+                    };
+                    second.on(1);
+                    assertEquals(0, calc.total());
+                }
+                """);
+
+        assertEquals(List.of("Calc", "Anonymous-Listener", "on"), invokedMethodNames(datapoints.get(0)));
+    }
+
+    @Test
+    void constructorOfAnAnonymousSubclassIsTheConstructorOfTheClass() throws IOException {
+        // JavaParser resolves the creation of an anonymous subclass to the constructor of the class: kept as it is
+        List<OracleDatapoint> datapoints = datapoints(FixtureRepo.CONFIG, """
+                @Test
+                public void testSubclass() {
+                    Calc calc = new Calc() {
+                        public int total() {
+                            return 0;
+                        }
+                    };
+                    calc.accumulate(1);
+                    assertEquals(0, calc.total());
+                }
+                """);
+
+        assertEquals(List.of("Calc", "accumulate"), invokedMethodNames(datapoints.get(0)));
+        assertEquals("Calc()", datapoints.get(0).testPrefix().invokedMethods().get(0).signature());
     }
 
     @Test

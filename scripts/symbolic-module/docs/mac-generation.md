@@ -156,6 +156,14 @@ that fail before the fix, two runs of ffmpeg byte-identical after it.
 **Checkpoint D:** Step 52 committed and pushed; the corpus check identical (after `accept` of the explained
 differences, if the name is visible in the digests).
 
+Done on 2026-11-25 (`docs/fixes/step-52-anonymous-class-names.md`). Only the constructor of an anonymous class of an
+**interface** had the random name (it resolves to the default constructor of the anonymous class; an anonymous class of
+a class resolves to the constructor of that class), in the invoked methods of the test prefixes, since the original
+code (the jar of `7a583a06` writes them too). Named after the interface, as decided by the author:
+`Anonymous-NutReaderListener()`; equal entries merged. The corpus check identical without the mask (no accept); two
+runs of ffmpeg byte-identical (datasets and statistics, except the folder of the run in `test-stats`), and identical to
+phase C once the random name is replaced.
+
 ## E. Calibration on the nine reference projects
 
 Run the nine projects with the runner, as the large run will:

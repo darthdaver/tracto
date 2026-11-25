@@ -8,8 +8,8 @@ A fixed set of real test classes of the nine reference projects (tools/ab/corpus
 
 The expected results (tools/ab/corpus/expected.json) hold, for each oracle of these classes, its status (complete,
 loses a step, dropped), the tokens missing from its candidates, and a digest of its token steps (candidates in their
-order, contextual information). Since Steps 21-24 the tokens stage is deterministic, so the digests are exact: any
-difference is a real change.
+order, contextual information). Since Steps 21-24 the tokens stage is deterministic, and since Step 52 the anonymous
+classes have the same name at each run (no longer masked), so the digests are exact: any difference is a real change.
 
 Commands (from scripts/symbolic-module):
   corpus.py prepare --jar J [-j N] [--jvm-options=...] [--no-deps]
@@ -52,7 +52,6 @@ EXPECTED = os.path.join(CORPUS_DIR, 'expected.json')
 WORK = os.path.join(ab.MODULE, 'tmp', 'ab', 'corpus')
 SOURCE_RUN = 'corpus-src'
 CONFIG = os.path.join(ab.MODULE, 'src', 'main', 'resources', 'dataset', 'oracles-dataset_config.json')
-ANONYMOUS = re.compile(r'Anonymous-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 RANK = {'complete': 0, 'loses a step': 1, 'dropped': 2}
 MAX_CLASS_SECONDS = 120   # a corpus class takes at most this long on the server (jsoup ElementTest: 80 min)
 SAMPLE_CLASSES = 2        # random classes per project, besides the guard and target ones
@@ -176,7 +175,7 @@ def digest(datapoint, replacements):
     text = json.dumps(datapoint['tokenSteps'], sort_keys=True, ensure_ascii=False)
     for old, new in replacements:
         text = text.replace(old, new)
-    return hashlib.sha256(ANONYMOUS.sub('Anonymous-<uuid>', text).encode()).hexdigest()[:16]
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
 
 
 def check_project(jar, project, classes, jvm_options):
