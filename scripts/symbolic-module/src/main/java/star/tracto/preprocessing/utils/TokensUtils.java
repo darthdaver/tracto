@@ -3,6 +3,8 @@ package star.tracto.preprocessing.utils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.javaparser.ast.*;
 import com.github.javaparser.ast.body.*;
+import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.ast.type.PrimitiveType;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
@@ -35,6 +37,7 @@ import star.tracto.preprocessing.components.*;
 import star.tracto.utils.FilesUtils;
 import star.tracto.utils.JavaUtils;
 import star.tracto.utils.javaParser.JavaParserUtils;
+import star.tracto.utils.javaParser.NamedAnonymousClassDeclaration;
 import star.tracto.utils.javaParser.DelombokCopies;
 import star.tracto.utils.javaParser.PackageIndex;
 
@@ -2611,8 +2614,12 @@ public class TokensUtils {
 
             if (resolvedType.isReferenceType()) {
 
-                // Get the declaring type of the method usage
-                String qualifiedName = resolvedType.asReferenceType().getQualifiedName();
+                // Get the declaring type of the method usage. An anonymous class has no file: the class of the context is
+                // its supertype, as when JavaParser typed the variable with it (Step 54)
+                String qualifiedName = resolvedType.asReferenceType().getTypeDeclaration()
+                        .filter(declaration -> declaration instanceof NamedAnonymousClassDeclaration)
+                        .map(declaration -> ((NamedAnonymousClassDeclaration) declaration).getSuperTypeDeclaration().getQualifiedName())
+                        .orElse(resolvedType.asReferenceType().getQualifiedName());
                 Optional<Path> resolvedTypePath = JavaParserUtils.retrieveFilePathFromFullyQualifiedName(qualifiedName, repoSourcePath);
                 if (!resolvedTypePath.isPresent()) {
                     resolvedTypePath = JavaParserUtils.retrieveFilePathFromFullyQualifiedName(qualifiedName, repoTestPath);
@@ -2742,11 +2749,18 @@ public class TokensUtils {
 
     /**
      * The fields declared in a type (Step 50): not the fields of the classes nested in it (static, inner, local or
-     * anonymous), which a value of the type cannot reach. Empty when the node is not a type declaration.
+     * anonymous), which a value of the type cannot reach. For an anonymous class (its node is the creation, Step 54), the
+     * fields of its body. Empty when the node is neither.
      */
     static List<FieldDeclaration> declaredFields(Node typeDeclaration) {
         if (typeDeclaration instanceof TypeDeclaration<?> declaration) {
             return declaration.getFields();
+        }
+        if (typeDeclaration instanceof ObjectCreationExpr creation && creation.getAnonymousClassBody().isPresent()) {
+            return creation.getAnonymousClassBody().get().stream()
+                    .filter(BodyDeclaration::isFieldDeclaration)
+                    .map(BodyDeclaration::asFieldDeclaration)
+                    .toList();
         }
         return List.of();
     }
@@ -3094,9 +3108,17 @@ public class TokensUtils {
      * cannot type as a whole, the type determined from the parts of the initializer, when it is not ambiguous (Step 34).
      * A variable is never {@code void}: when the symbol solver types its initializer {@code void}, it has chosen a void
      * method of an overload ({@code assertDoesNotThrow(Executable)} for {@code assertDoesNotThrow(() -> value)}), and
-     * the type is determined from the parts of the initializer too (Step 42).
+     * the type is determined from the parts of the initializer too (Step 42). A variable declared with {@code var} whose
+     * initializer creates an anonymous class has the type of the anonymous class, whose members are the ones declared in
+     * its body and the inherited ones; JavaParser types the creation as the type written after {@code new} (Step 54).
      */
     private static ResolvedType resolveVariableType(VariableDeclarator variableDeclarator, Type type) {
+        if (type.isVarType()) {
+            Optional<ResolvedType> anonymousClass = anonymousClassType(variableDeclarator);
+            if (anonymousClass.isPresent()) {
+                return anonymousClass.get();
+            }
+        }
         RuntimeException failure;
         try {
             ResolvedType resolved = type.resolve();
@@ -3115,6 +3137,29 @@ public class TokensUtils {
             return fromInitializer.get();
         }
         throw failure;
+    }
+
+    /**
+     * The type of the anonymous class created by the initializer of a variable, with the same name at each run
+     * ({@link NamedAnonymousClassDeclaration}); empty when the initializer creates no anonymous class or when its
+     * supertype cannot be resolved (the type of JavaParser is used then, as before). Step 54.
+     */
+    private static Optional<ResolvedType> anonymousClassType(VariableDeclarator variableDeclarator) {
+        Optional<Expression> initializer = variableDeclarator.getInitializer();
+        if (initializer.isEmpty() || !initializer.get().isObjectCreationExpr()) {
+            return Optional.empty();
+        }
+        ObjectCreationExpr creation = initializer.get().asObjectCreationExpr();
+        if (creation.getAnonymousClassBody().isEmpty() || JavaParserUtils.getRepoTypeSolver().isEmpty()) {
+            return Optional.empty();
+        }
+        try {
+            // The constructor of JavaParser resolves the supertype: it fails here when the supertype cannot be resolved
+            return Optional.of(new ReferenceTypeImpl(new NamedAnonymousClassDeclaration(creation, JavaParserUtils.getRepoTypeSolver().get())));
+        } catch (RuntimeException e) {
+            logger.error("Unable to resolve the anonymous class of the variable " + variableDeclarator.getNameAsString() + ": " + e.getMessage());
+            return Optional.empty();
+        }
     }
 
     /** Adds the field {@code length} of the arrays to the field identifiers (Step 31). */

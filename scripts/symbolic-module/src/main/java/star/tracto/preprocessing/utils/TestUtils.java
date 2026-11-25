@@ -31,6 +31,7 @@ import star.tracto.preprocessing.components.*;
 import star.tracto.preprocessing.components.Type;
 import star.tracto.utils.FilesUtils;
 import star.tracto.utils.javaParser.JavaParserUtils;
+import star.tracto.utils.javaParser.NamedAnonymousClassDeclaration;
 import star.tracto.utils.javaParser.NameAllocator;
 import star.tracto.utils.javaParser.visitors.declarations.FieldDeclarationVisitor;
 import star.tracto.utils.javaParser.visitors.expressions.MethodCallExprVisitor;
@@ -2801,7 +2802,7 @@ public class TestUtils {
             // run (Step 52), with its qualified name, so that two interfaces with the same simple name are told apart
             // (Step 53). JavaParser 3.28.2 does not override isAnonymousClass() (false) in its anonymous class
             // declaration
-            String anonymousName = "Anonymous-" + interfaceName(anonymousClass.getSuperTypeDeclaration(), objCreationExpr);
+            String anonymousName = NamedAnonymousClassDeclaration.nameOf(objCreationExpr, anonymousClass.getSuperTypeDeclaration());
             signature = anonymousName + signature.substring(name.length());
             name = anonymousName;
         }
@@ -2827,20 +2828,6 @@ public class TestUtils {
         callableBuilder.setParameters(parameters);
         // Build the method and return it
         return callableBuilder.build();
-    }
-
-    /**
-     * The name of the interface of an anonymous class, as Java accepts it in the source: its canonical name (dots, not
-     * the {@code $} of the binary name; without type arguments), or, for a local interface or one nested in a local
-     * class, which have no canonical name, the name written in the creation (JavaParser's qualified name of a local
-     * type, {@code com.acme.T.Local}, is not valid Java). Step 53.
-     */
-    private static String interfaceName(ResolvedTypeDeclaration interfaceDeclaration, ObjectCreationExpr objCreationExpr) {
-        Optional<Node> declaration = interfaceDeclaration.toAst();
-        if (declaration.isPresent() && declaration.get() instanceof TypeDeclaration<?> typeDeclaration) {
-            return typeDeclaration.getFullyQualifiedName().orElseGet(() -> objCreationExpr.getType().getNameWithScope());
-        }
-        return interfaceDeclaration.getQualifiedName();
     }
 
     /**

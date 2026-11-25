@@ -62,6 +62,7 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 51 | on the corpus: unchanged (1,302 complete, 0 worse, order only): the classes of an imported package (`import java.io.*`) were added in the order of the hashes of their absolute paths, so the order of the candidates depended on the folder of the module and of the repository (found on the MacBook: uuid, 32 oracles, 104 steps); now the same in any folder |
 | After Step 52 | on the corpus: identical (1,302 complete; the corpus classes have no anonymous class among their invoked methods), now without the mask of the random names; the oracles datasets of the corpus projects: 16 datapoints, 26 entries `Anonymous-<uuid>()` become 16 `Anonymous-<interface>()` (`Anonymous-NodeVisitor()`; equal entries merged): the constructor of an anonymous class of an interface had a random name, different at each run (present since the original code) |
 | After Step 53 | on the corpus: identical (1,302 complete): the anonymous classes of interfaces named after the qualified name of the interface (`Anonymous-org.jsoup.select.NodeVisitor()`; a local interface: the name as written), so that two interfaces with the same simple name are two entries; one eec prefix loses an invoked method by an identity-hash effect of JavaParser (not the fix; section 6, item 10) |
+| After Step 54 | on the corpus: identical (1,302 complete; both stages byte-identical: no corpus class has the shape): the members declared in an anonymous class offered after a `var` of it (`var counter = new Object() { int count; int twice() … }`: `counter.` ▸ `twice`, `count`), a lost target before (JavaParser types the creation as the type after `new`) |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -305,13 +306,11 @@ examples to start from.
      jar (HotSpot's identity hashes are a fixed sequence per thread), but a change of the code anywhere can move such a
      result. Only the invoked methods (context of the prompt) were seen to change; to measure (the corpus with and
      without `-XX:hashCode=2`) before deciding whether to work around it;
-   - the members of an anonymous class are not offered after a variable of that class (`var counter = new Object() {
-     int count; int twice() { … } };` then `counter.` ▸ `twice`, `count`: "Unexpected token", a lost target). Found by
-     the test of Step 52 (`AnonymousClassNamesTokensTest`); cause not analysed. Rare (only `var` gives a variable the
-     type of an anonymous class): no lost oracle of dataset v4 or of the corpus has it; 0 of the 117 anonymous classes
-     of the test sources of the nine projects are assigned to a `var`. Cause (Step 53 investigation): JavaParser types
-     `new Object() { … }` as `Object`, the type written after `new`, so `counter` is an `Object` (JavaParser cannot
-     resolve `counter.twice()` either). To fix as Step 54 (the author, 2026-11-25), before phase E;
+   - ~~the members of an anonymous class are not offered after a variable of that class~~ (`var counter = new Object() {
+     int count; int twice() { … } };` then `counter.` ▸ `twice`, `count`: "Unexpected token", a lost target; found by the
+     test of Step 52): **Step 54 done** (`docs/fixes/step-54-anonymous-class-members.md`; asked by the author before
+     phase E). JavaParser types `new Object() { … }` as `Object`, the type written after `new`. Rare: only `var` gives a
+     variable the type of an anonymous class; 0 of the 117 anonymous classes of the test sources of the nine projects;
    - the imports and the package of the focal class are added to the classes of the test class (not visible there
      unless imported in the test class too);
    - the qualifiers `Assert.`/`Assertions.` are removed with a text replacement (`TestUtils`, targets and bodies):

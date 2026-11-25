@@ -161,7 +161,9 @@ Done on 2026-11-25 (`docs/fixes/step-52-anonymous-class-names.md`). Only the con
 a class resolves to the constructor of that class), in the invoked methods of the test prefixes, since the original
 code (the jar of `7a583a06` writes them too). Named after the interface, as decided by the author:
 `Anonymous-NutReaderListener()`; equal entries merged; since Step 53 (asked by the author) the qualified name,
-`Anonymous-net.bramp.ffmpeg.nut.NutReaderListener()`. The corpus check identical without the mask (no accept); two
+`Anonymous-net.bramp.ffmpeg.nut.NutReaderListener()`. Step 54 (asked by the author before phase E): the members of an
+anonymous class after a `var` of it (a lost target before). Found in Step 53: the oracles stage depends on identity
+hash codes through JavaParser (`docs/resume.md`, section 6, item 10), to measure. The corpus check identical without the mask (no accept); two
 runs of ffmpeg byte-identical (datasets and statistics, except the folder of the run in `test-stats`), and identical to
 phase C once the random name is replaced.
 

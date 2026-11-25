@@ -397,6 +397,9 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
   name as written): two interfaces with the same simple name are two entries; corpus identical (1,302 complete), the
   16 entries renamed. Found: the oracles stage depends on identity hash codes through JavaParser (an eec prefix lost
   the invoked method `setData` with the new jar; with `-XX:hashCode=2` both jars keep it).
+- Step 54: the members declared in an anonymous class, after a `var` of it (`var counter = new Object() { … }`:
+  `counter.` ▸ `twice`, `count`; JavaParser typed it as `Object`), named with the rule of Step 53, the context of its
+  supertype: corpus identical (1,302 complete; no corpus class has the shape), both stages byte-identical.
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles
