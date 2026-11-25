@@ -258,7 +258,8 @@ class TestUtilsDatapointsTest {
     @Test
     void constructorOfAnAnonymousClassOfAnInterfaceIsNamedAfterTheInterface() throws IOException {
         // An interface has no constructor: JavaParser gives the anonymous class a default one, named after the class,
-        // which it names Anonymous-<UUID.randomUUID()>, a new name each time it builds the class (Step 52)
+        // which it names Anonymous-<UUID.randomUUID()>, a new name each time it builds the class (Step 52); named after
+        // the qualified name of the interface (Step 53)
         repo.writeSourceClass("com/acme/Listener.java", LISTENER);
 
         List<OracleDatapoint> datapoints = datapoints(FixtureRepo.CONFIG, """
@@ -275,14 +276,15 @@ class TestUtilsDatapointsTest {
                 """);
 
         Callable constructor = datapoints.get(0).testPrefix().invokedMethods().get(1);
-        assertEquals(List.of("Calc", "Anonymous-Listener", "on"), invokedMethodNames(datapoints.get(0)));
-        assertEquals("Anonymous-Listener()", constructor.signature());
+        assertEquals(List.of("Calc", "Anonymous-com.acme.Listener", "on"), invokedMethodNames(datapoints.get(0)));
+        assertEquals("Anonymous-com.acme.Listener()", constructor.signature());
         assertEquals(List.of(), constructor.parameters());
     }
 
     @Test
-    void constructorOfAnAnonymousClassOfANestedGenericInterfaceIsNamedAfterItsSimpleName() throws IOException {
-        // as JavaParser names the constructors of the classes: the simple name, without the type arguments
+    void constructorOfAnAnonymousClassOfANestedGenericInterfaceIsNamedAfterItsQualifiedName() throws IOException {
+        // the canonical name, as Java accepts it in the source (dots, not the $ of the binary name), without the type
+        // arguments, whatever the source writes (Events.Handler<String>)
         repo.writeSourceClass("com/acme/Events.java", """
                 package com.acme;
 
@@ -306,8 +308,83 @@ class TestUtilsDatapointsTest {
                 }
                 """);
 
-        assertEquals(List.of("Calc", "Anonymous-Handler", "accumulate"), invokedMethodNames(datapoints.get(0)));
-        assertEquals("Anonymous-Handler()", datapoints.get(0).testPrefix().invokedMethods().get(1).signature());
+        assertEquals(List.of("Calc", "Anonymous-com.acme.Events.Handler", "accumulate"), invokedMethodNames(datapoints.get(0)));
+        assertEquals("Anonymous-com.acme.Events.Handler()", datapoints.get(0).testPrefix().invokedMethods().get(1).signature());
+    }
+
+    @Test
+    void constructorsOfAnonymousClassesOfTwoInterfacesWithTheSameSimpleNameAreTwoInvokedMethods() throws IOException {
+        // the qualified names tell them apart (with the simple name they were one entry)
+        repo.writeSourceClass("com/acme/Events.java", """
+                package com.acme;
+
+                public class Events {
+                    public interface Handler {
+                        void handle(String event);
+                    }
+                }
+                """);
+        repo.writeSourceClass("com/acme/Jobs.java", """
+                package com.acme;
+
+                public class Jobs {
+                    public interface Handler {
+                        void handle(int job);
+                    }
+                }
+                """);
+
+        List<OracleDatapoint> datapoints = datapoints(FixtureRepo.CONFIG, """
+                @Test
+                public void testHandlers() {
+                    Calc calc = new Calc();
+                    Events.Handler events = new Events.Handler() {
+                        public void handle(String event) {
+                        }
+                    };
+                    Jobs.Handler jobs = new Jobs.Handler() {
+                        public void handle(int job) {
+                        }
+                    };
+                    calc.accumulate(1);
+                    assertEquals(1, calc.total());
+                }
+                """);
+
+        assertEquals(List.of("Calc", "Anonymous-com.acme.Events.Handler", "Anonymous-com.acme.Jobs.Handler", "accumulate"),
+                invokedMethodNames(datapoints.get(0)));
+    }
+
+    @Test
+    void constructorOfAnAnonymousClassOfALocalInterfaceIsNamedAsWritten() throws IOException {
+        // a local interface (or one nested in a local class) has no qualified name in Java: the name as written, the
+        // only one Java accepts (JavaParser's qualified name com.acme.CalcTest.Local is not valid Java)
+        List<OracleDatapoint> datapoints = datapoints(FixtureRepo.CONFIG, """
+                @Test
+                public void testLocal() {
+                    interface Local {
+                        void on(int value);
+                    }
+                    class Holder {
+                        interface Nested {
+                            void on(int value);
+                        }
+                    }
+                    Calc calc = new Calc();
+                    Local local = new Local() {
+                        public void on(int value) {
+                        }
+                    };
+                    Holder.Nested nested = new Holder.Nested() {
+                        public void on(int value) {
+                        }
+                    };
+                    calc.accumulate(1);
+                    assertEquals(1, calc.total());
+                }
+                """);
+
+        assertEquals(List.of("Calc", "Anonymous-Local", "Anonymous-Holder.Nested", "accumulate"), invokedMethodNames(datapoints.get(0)));
     }
 
     @Test
@@ -334,7 +411,7 @@ class TestUtilsDatapointsTest {
                 }
                 """);
 
-        assertEquals(List.of("Calc", "Anonymous-Listener", "on"), invokedMethodNames(datapoints.get(0)));
+        assertEquals(List.of("Calc", "Anonymous-com.acme.Listener", "on"), invokedMethodNames(datapoints.get(0)));
     }
 
     @Test

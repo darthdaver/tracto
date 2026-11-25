@@ -2794,13 +2794,14 @@ public class TestUtils {
         ResolvedConstructorDeclaration resolvedConstructor = objCreationExpr.resolve();
         String name = resolvedConstructor.getName();
         String signature = resolvedConstructor.getSignature();
-        if (resolvedConstructor.declaringType() instanceof JavaParserAnonymousClassDeclaration) {
+        if (resolvedConstructor.declaringType() instanceof JavaParserAnonymousClassDeclaration anonymousClass) {
             // The creation of an anonymous class of an interface (which has no constructor) resolves to the default
             // constructor of the anonymous class, which JavaParser names Anonymous-<UUID.randomUUID()>, a new name each
-            // time it builds the class: named after the interface instead (its simple name, as the constructors of the
-            // classes), so that the datasets are the same at each run (Step 52). JavaParser 3.28.2 does not override
-            // isAnonymousClass() (false) in its anonymous class declaration
-            String anonymousName = "Anonymous-" + objCreationExpr.getType().getNameAsString();
+            // time it builds the class: named after the interface instead, so that the datasets are the same at each
+            // run (Step 52), with its qualified name, so that two interfaces with the same simple name are told apart
+            // (Step 53). JavaParser 3.28.2 does not override isAnonymousClass() (false) in its anonymous class
+            // declaration
+            String anonymousName = "Anonymous-" + interfaceName(anonymousClass.getSuperTypeDeclaration(), objCreationExpr);
             signature = anonymousName + signature.substring(name.length());
             name = anonymousName;
         }
@@ -2826,6 +2827,20 @@ public class TestUtils {
         callableBuilder.setParameters(parameters);
         // Build the method and return it
         return callableBuilder.build();
+    }
+
+    /**
+     * The name of the interface of an anonymous class, as Java accepts it in the source: its canonical name (dots, not
+     * the {@code $} of the binary name; without type arguments), or, for a local interface or one nested in a local
+     * class, which have no canonical name, the name written in the creation (JavaParser's qualified name of a local
+     * type, {@code com.acme.T.Local}, is not valid Java). Step 53.
+     */
+    private static String interfaceName(ResolvedTypeDeclaration interfaceDeclaration, ObjectCreationExpr objCreationExpr) {
+        Optional<Node> declaration = interfaceDeclaration.toAst();
+        if (declaration.isPresent() && declaration.get() instanceof TypeDeclaration<?> typeDeclaration) {
+            return typeDeclaration.getFullyQualifiedName().orElseGet(() -> objCreationExpr.getType().getNameWithScope());
+        }
+        return interfaceDeclaration.getQualifiedName();
     }
 
     /**

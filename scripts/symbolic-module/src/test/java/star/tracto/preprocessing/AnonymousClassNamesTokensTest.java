@@ -112,6 +112,7 @@ class AnonymousClassNamesTokensTest {
                 import org.junit.jupiter.api.Test;
 
                 import java.util.ArrayList;
+                import java.util.Comparator;
                 import java.util.Iterator;
                 import java.util.List;
                 import java.util.function.Supplier;
@@ -222,6 +223,16 @@ class AnonymousClassNamesTokensTest {
                     }
 
                     @Test
+                    public void testInterfaceOfTheJdk() {
+                        Comparator<String> byLength = new Comparator<String>() {
+                            public int compare(String a, String b) {
+                                return 0;
+                            }
+                        };
+                        assertEquals(0, byLength.compare("a", "b"));
+                    }
+
+                    @Test
                     public void testFieldAndSetUp() {
                         assertEquals("listener", field.name());
                         assertEquals("listener", setUpListener.name());
@@ -242,10 +253,12 @@ class AnonymousClassNamesTokensTest {
         fixture.generate();
 
         Map<String, JsonNode> datapoints = fixture.tokensDatapoints();
-        assertEquals(List.of("public Reader(Listener listener)", "Anonymous-Listener()"), invokedSignatures(datapoints.get("testArgument_split_0")));
-        assertEquals(List.of("Anonymous-Listener()"), invokedSignatures(datapoints.get("testVariable_split_0")));
+        assertEquals(List.of("public Reader(Listener listener)", "Anonymous-com.acme.Listener()"), invokedSignatures(datapoints.get("testArgument_split_0")));
+        assertEquals(List.of("Anonymous-com.acme.Listener()"), invokedSignatures(datapoints.get("testVariable_split_0")));
         // the two anonymous classes (in a lambda, one in the other) were five entries with five random names
-        assertEquals(List.of("void on(String event)", "Anonymous-Listener()"), invokedSignatures(datapoints.get("testInLambdaAndNested_split_0")));
+        assertEquals(List.of("void on(String event)", "Anonymous-com.acme.Listener()"), invokedSignatures(datapoints.get("testInLambdaAndNested_split_0")));
+        // an interface of the JDK (its sources in lib): its qualified name (Step 53)
+        assertEquals(List.of("Anonymous-java.util.Comparator()"), invokedSignatures(datapoints.get("testInterfaceOfTheJdk_split_0")));
         // anonymous classes of classes: the constructor of the class, as before
         assertEquals(List.of("protected TypeRef()"), invokedSignatures(datapoints.get("testGeneric_split_0")));
         assertEquals(List.of("public Reader(Listener listener)"), invokedSignatures(datapoints.get("testSubclassWithArguments_split_0")));

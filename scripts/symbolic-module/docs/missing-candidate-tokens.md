@@ -393,6 +393,10 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
   (26 random entries → 16), the datasets byte-identical between two runs. Found by its test, not fixed: the members of
   an anonymous class after a `var` of that class (`counter.` ▸ `twice`, `count`), a lost target (`docs/resume.md`,
   section 6, item 10).
+- Step 53: the qualified name of the interface (`Anonymous-org.jsoup.select.NodeVisitor()`; a local interface: the
+  name as written): two interfaces with the same simple name are two entries; corpus identical (1,302 complete), the
+  16 entries renamed. Found: the oracles stage depends on identity hash codes through JavaParser (an eec prefix lost
+  the invoked method `setData` with the new jar; with `-XX:hashCode=2` both jars keep it).
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles

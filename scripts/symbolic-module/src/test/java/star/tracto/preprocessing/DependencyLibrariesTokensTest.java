@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.jar.JarEntry;
@@ -79,6 +80,10 @@ class DependencyLibrariesTokensTest {
                     public static Gadget create() {
                         return new Gadget();
                     }
+
+                    public interface Listener {
+                        void on(int value);
+                    }
                 }
                 """);
         fixture.write("src/main/java/com/acme/Shop.java", """
@@ -134,6 +139,15 @@ class DependencyLibrariesTokensTest {
                         Gadget gadget = new Shop().gadget();
                         assertEquals(1, gadget.spin());
                     }
+
+                    @Test
+                    public void testGadgetListener() {
+                        Gadget.Listener listener = new Gadget.Listener() {
+                            public void on(int value) {
+                            }
+                        };
+                        assertNotNull(listener);
+                    }
                 }
                 """);
     }
@@ -155,6 +169,18 @@ class DependencyLibrariesTokensTest {
         // A library without sources nor stubs: its binary jar, the members of its types
         List<String> afterGadget = candidatesAfter(datapoints.get("testGadget_split_0"), "assertEquals(1,gadget.");
         assertTrue(afterGadget.contains("spin"), afterGadget.toString());
+    }
+
+    @Test
+    void theConstructorOfAnAnonymousClassOfAnInterfaceOfAJarIsNamedAfterItsQualifiedName() throws IOException {
+        // an interface read from a binary jar has no source (no AST): the qualified name of JavaParser, dotted (Step 53)
+        fixture.generate();
+
+        JsonNode datapoint = fixture.tokensDatapoints().get("testGadgetListener_split_0");
+        assertNotNull(datapoint, "no tokens datapoint");
+        List<String> signatures = new ArrayList<>();
+        datapoint.get("testPrefix").get("invokedMethods").forEach(method -> signatures.add(method.get("signature").asText()));
+        assertEquals(List.of("Anonymous-org.gadgets.Gadget.Listener()"), signatures);
     }
 
     /** Compiles one class and writes its class files into a jar. */

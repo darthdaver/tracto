@@ -1,5 +1,9 @@
 # Step 52 – The anonymous classes of interfaces have the same name at each run
 
+> **Changed by Step 53** (`docs/fixes/step-53-anonymous-class-qualified-names.md`): the name is the qualified name of
+> the interface (`Anonymous-net.bramp.ffmpeg.nut.NutReaderListener()`), not its simple name: two interfaces with the
+> same simple name were one entry.
+
 **Date:** 2026-11-25
 **Branch:** `22-test-processing-refactoring` (on top of Step 51 and phase C of `docs/mac-generation.md`)
 **Files changed:**
