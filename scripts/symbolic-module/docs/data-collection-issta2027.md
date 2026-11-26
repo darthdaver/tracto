@@ -2,7 +2,7 @@
 
 Design discussed with the author on 2026-11-26/27, before the large run of `docs/mac-generation.md` (section G). It
 replaces the plan of running the 4,517 repositories of `resources/seart-github-repos.csv` as they are. Status: draft;
-steps 3 and 4 done; the rules of the split (step 8) wait for the author's answers.
+steps 3 and 4 done; the criteria of the split (step 8) are being agreed with the author.
 
 ## Intent
 
@@ -34,6 +34,15 @@ Time is the limit, not the GPUs: the fine-tuning should start by ~2026-12-11, th
    default timeouts with a retry pass at doubled limits, a manifest of the run.
 7. Budget: 6,152 CHF ≈ 9,150 GPU-hours on Clariden (GH200, billed per node: 4 GPU-hours per node-hour, whole nodes).
    The prompt-side fixes are done in the prompt template step (`docs/prompt-template-todo.md`).
+8. (2026-11-26) **Only the new SEART export** is used: the paper describes one selection, and the old list was only a
+   list. The old files stay in `resources/` and are not read.
+9. (2026-11-26) **The nine reference projects are treated like any other project**: the symbolic module is
+   deterministic and must work on every project; a bug it has is an error of the development, not a limit of the
+   approach, and can be investigated later.
+10. (2026-11-26) **The repositories created after T go to the experiment set only** (the author's search:
+    `resources/repositories-after-cutoff.csv`, 46 repositories created from 2026-03-16, all already in the export).
+11. (2026-11-26) The split follows **explicit criteria** that make the experiment set representative (sizes and other
+    dimensions), with seeded random choice inside them.
 
 ## Goals, non-goals, anti-goals
 
@@ -60,9 +69,9 @@ before cloning repositories for the mining, before the large run, and before del
   day, fewer with clones and dependency downloads). Rejected: the whole list on the Mac (1–3 weeks, does not fit the
   calendar); Clariden CPUs (faster, but a new platform needing its own corpus check on Linux ARM, bulk downloads from
   Alps are discouraged by CSCS, and CPU work there is billed at the GPU price).
-- **Which list.** Chosen: the old list ∪ a fresh SEART export. Rejected: the old list only (its activity window ends
-  on 2025-05-04, so it cannot give tests after T); the fresh export only (it drops inactive projects, which are still
-  good fine-tuning data).
+- **Which list.** Chosen by the author: the fresh SEART export only (one selection to describe in the paper).
+  Rejected: the old list only (its activity window ends on 2025-05-04, so it cannot give tests after T); the old list ∪
+  the fresh export (624 more inactive repositories for the fine-tuning, but two selections to justify).
 - **Which models.** Chosen: the newest family with a range of dense sizes and a leakage date that leaves ~9 months of
   tests (Qwen3.5). Rejected: the newest models (Qwen3.8-27B, mid-August 2026, would leave ~3 months of tests; GLM-5.x
   and DeepSeek V4 are mixtures of hundreds of billions of parameters, too large to fine-tune here); the models of
@@ -80,28 +89,26 @@ before cloning repositories for the mining, before the large run, and before del
    configuration, JDK, module commit; for the run: SEART export date and query, T, seeds); the retry pass of the
    timeouts with doubled limits (F.4). The runner already processes `--repos` in the order of the CSV and can be
    stopped and resumed.
-3. **Merge script** (done 2026-11-26: `tools/gen/repo_list.py`, tests `tools/gen/test_repo_list.py`): reads the old
-   SEART information file and the new export, keeps the union matched by SEART `id` or by name ignoring case (two
-   repositories were deleted and created again under the same name, with a new id); when a repository is in both, the
-   row of the new export (its newer commit and its current licence). Drops the forks and the licences that are not
-   permissive; a licence string in neither list stops the script. Permissive: Apache 2.0, MIT, MIT No Attribution, BSD
-   0/2/3/4-Clause, BSD 3-Clause Clear, ISC, The Unlicense, CC0 1.0, Universal Permissive License, zlib, Boost Software
-   License 1.0, University of Illinois/NCSA, PostgreSQL, Academic Free License 3.0, Educational Community License 2.0,
-   WTFPL, Artistic 2.0, Mulan Permissive 2. Not permissive: no licence, "Other", GPL/LGPL/AGPL, EPL, MPL, EUPL, OSL,
-   CeCILL, CC BY(-SA). Writes **`resources/issta2027-repositories.csv`** (the official list: id, name, lastCommitSHA,
-   lastCommit, codeLines, license, createdAt, isArchived, commits, contributors, stargazers, totalIssues, and `source`:
-   `new`, `new+old` or `old`), sorted by id, byte-identical when run again. Counts: new export 5,095 rows, 212 forks
-   and 2,060 not permissive dropped; old list 4,517 rows, 3,436 also in the new export, 457 not permissive dropped;
-   **kept 3,447** (815 only in the new export, 2,008 in both, 624 only in the old list). The licence changed between
-   the two exports for 86 repositories (e.g. liquibase: Apache 2.0, now "Other"; 30 became permissive, 20 stopped
-   being permissive): the new export decides.
+3. **The list** (done 2026-11-26: `tools/gen/repo_list.py`, tests `tools/gen/test_repo_list.py`): reads the SEART
+   export, drops the forks and the licences that are not permissive; a licence string in neither list stops the
+   script. Permissive: Apache 2.0, MIT, MIT No Attribution, BSD 0/2/3/4-Clause, BSD 3-Clause Clear, ISC, The Unlicense,
+   CC0 1.0, Universal Permissive License, zlib, Boost Software License 1.0, University of Illinois/NCSA, PostgreSQL,
+   Academic Free License 3.0, Educational Community License 2.0, WTFPL, Artistic 2.0, Mulan Permissive 2. Not
+   permissive: no licence, "Other", GPL/LGPL/AGPL, EPL, MPL, EUPL, OSL, CeCILL, CC BY(-SA). Writes
+   **`resources/issta2027-repositories.csv`** (the official list: id, name, lastCommitSHA, lastCommit, codeLines,
+   javaCodeLines (the Java entry of SEART's `metrics`), license, createdAt, isArchived, commits, contributors,
+   stargazers, totalIssues), sorted by id, byte-identical when run again. Counts: 5,095 rows, 212 forks and 2,060 not
+   permissive dropped, **2,823 kept**.
 
 ### Collect (each step waits for the author's go-ahead)
 
 4. **SEART export** (the author, done 2026-11-26): `resources/seart-github-repos-updated.csv`, 5,095 repositories,
    main language Java. Observed in the file: at least 103 commits, 10 contributors, 10 stars, 50 issues; last commit
    from 2026-03-15 to 2026-11-05; 212 forks (the old list had none: dropped by step 3). The exact query (the dates of
-   the last-commit filter) is to be written in the manifest.
+   the last-commit filter) is to be written in the manifest. Created after T: 50 repositories that are not forks, 28
+   of them permissive, **19 Maven** (checked on 2026-11-26 with the request of `select`; 18 of the author's list and
+   `reshaprio/reshapr`, created on 2026-03-04, before the start of the author's search). `matevip/mateclaw` and
+   `mateaix/mateclaw` look like the same project under two owners.
 5. **`generate.py select`** on the merged file: one request per repository to raw.githubusercontent.com; keeps the
    repositories with a `pom.xml` at the root of their pinned commit.
 6. **Mining of the candidates.** For the Maven repositories with a last commit after T: clone the history since T at

@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""The list of repositories of the ISSTA 2027 datasets, from two SEART exports (docs/data-collection-issta2027.md).
+"""The list of repositories of the ISSTA 2027 datasets, from the SEART export (docs/data-collection-issta2027.md).
 
-Usage: repo_list.py [--new CSV] [--old CSV] [--out CSV]
+Usage: repo_list.py [--export CSV] [--out CSV]
 
-Keeps the union of the two exports, matched by SEART id or by name (ignoring case: a repository deleted and created
-again under the same name gets a new id). When a repository is in both, the row of the new export is kept, with its
-newer commit and its current licence. Drops the forks (they contain the tests of the repository they come from) and
-the licences that are not permissive (the datasets and the models will be published). A licence string that is in
-neither list stops the script, so a new name is classified by hand and never dropped silently.
+Drops the forks (they contain the tests of the repository they come from) and the licences that are not permissive
+(the datasets and the models will be published). A licence string that is in neither list stops the script, so a new
+name is classified by hand and never dropped silently.
 
 Writes the repositories sorted by SEART id, with the columns of COLUMNS only (`select` of generate.py reads `id`,
-`name`, `lastCommitSHA` and `codeLines`), and prints the count of each filter. Same inputs, same bytes.
+`name`, `lastCommitSHA` and `codeLines`; `javaCodeLines` is the Java entry of SEART's `metrics`, 0 when there is none),
+and prints the count of each filter. Same input, same bytes.
 """
 import argparse
 import collections
 import csv
+import json
 import os
 import sys
 
@@ -44,17 +44,24 @@ NOT_PERMISSIVE = {
     'Creative Commons Attribution 4.0 International', 'Creative Commons Attribution Share Alike 4.0 International',
 }
 
-COLUMNS = ['id', 'name', 'lastCommitSHA', 'lastCommit', 'codeLines', 'license', 'createdAt', 'isArchived', 'commits',
-           'contributors', 'stargazers', 'totalIssues', 'source']
+COLUMNS = ['id', 'name', 'lastCommitSHA', 'lastCommit', 'codeLines', 'javaCodeLines', 'license', 'createdAt',
+           'isArchived', 'commits', 'contributors', 'stargazers', 'totalIssues']
 
 
-def read_export(path, label):
-    """The rows of one SEART export, checked: a known licence, a fork flag, a commit, each name once."""
+def java_code_lines(metrics):
+    java = [m for m in json.loads(metrics or '[]') if m.get('language') == 'Java']
+    if len(java) > 1:
+        raise ValueError(f'more than one Java entry in the metrics: {java}')
+    return java[0]['codeLines'] if java else 0
+
+
+def read_export(path):
+    """The rows of the SEART export, checked: a known licence, a fork flag, a commit, each name once."""
     csv.field_size_limit(1 << 30)  # the `metrics` and `languages` columns can be long
     rows, names = [], set()
     with open(path, newline='', encoding='utf-8') as f:
         for r in csv.DictReader(f):
-            where = f'{label} export, id {r["id"]} ({r["name"]})'
+            where = f'id {r["id"]} ({r["name"]})'
             if r['license'] not in PERMISSIVE | NOT_PERMISSIVE:
                 raise ValueError(f'{where}: licence {r["license"]!r} is not classified (add it to PERMISSIVE or '
                                  f'NOT_PERMISSIVE)')
@@ -64,37 +71,25 @@ def read_export(path, label):
                 raise ValueError(f'{where}: no lastCommitSHA')
             name = r['name'].lower()
             if name in names:
-                raise ValueError(f'{label} export: the name {name} appears twice')
+                raise ValueError(f'the name {name} appears twice')
             names.add(name)
-            rows.append({c: r[c].strip() for c in COLUMNS if c != 'source'} | {'isFork': r['isFork']})
+            row = {c: r[c].strip() for c in COLUMNS if c != 'javaCodeLines'}
+            row['javaCodeLines'] = str(java_code_lines(r['metrics']))
+            rows.append(dict(row, isFork=r['isFork']))
     return rows
 
 
-def merge(new_path, old_path, out_path):
-    new = read_export(new_path, 'new')
-    old = read_export(old_path, 'old')
+def build(export_path, out_path):
     counts = collections.Counter()
-    new_ids = {r['id'] for r in new}
-    new_names = {r['name'].lower() for r in new}
-    old_ids = {r['id'] for r in old}
-    old_names = {r['name'].lower() for r in old}
     kept = []
-    for label, rows in (('new', new), ('old', old)):
-        for r in rows:
-            counts[f'{label}: rows'] += 1
-            if label == 'old' and (r['id'] in new_ids or r['name'].lower() in new_names):
-                counts['old: also in the new export'] += 1
-                continue
-            if r['isFork'] == 'true':
-                counts[f'{label}: fork'] += 1
-                continue
-            if r['license'] not in PERMISSIVE:
-                counts[f'{label}: licence not permissive'] += 1
-                continue
-            in_old = label == 'new' and (r['id'] in old_ids or r['name'].lower() in old_names)
-            source = 'new+old' if in_old else label
-            counts[f'kept: {source}'] += 1
-            kept.append(dict({c: r[c] for c in COLUMNS if c != 'source'}, source=source))
+    for r in read_export(export_path):
+        counts['rows'] += 1
+        if r['isFork'] == 'true':
+            counts['fork'] += 1
+        elif r['license'] not in PERMISSIVE:
+            counts['licence not permissive'] += 1
+        else:
+            kept.append({c: r[c] for c in COLUMNS})
     kept.sort(key=lambda r: int(r['id']))
     temporary = f'{out_path}.tmp{os.getpid()}'
     with open(temporary, 'w', newline='', encoding='utf-8') as f:
@@ -102,20 +97,19 @@ def merge(new_path, old_path, out_path):
         writer.writeheader()
         writer.writerows(kept)
     os.replace(temporary, out_path)
-    for key in ['new: rows', 'new: fork', 'new: licence not permissive', 'old: rows', 'old: also in the new export',
-                'old: fork', 'old: licence not permissive', 'kept: new', 'kept: new+old', 'kept: old']:
-        print(f'{key:32} {counts[key]:6}')
-    print(f'{"kept":32} {len(kept):6}  -> {out_path}')
+    counts['kept'] = len(kept)
+    for key in ['rows', 'fork', 'licence not permissive', 'kept']:
+        print(f'{key:24} {counts[key]:6}')
+    print(f'-> {out_path}')
     return counts
 
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('--new', default=os.path.join(RESOURCES, 'seart-github-repos-updated.csv'))
-    p.add_argument('--old', default=os.path.join(RESOURCES, 'seart-github-repos-info.csv'))
+    p.add_argument('--export', default=os.path.join(RESOURCES, 'seart-github-repos-updated.csv'))
     p.add_argument('--out', default=os.path.join(RESOURCES, 'issta2027-repositories.csv'))
     a = p.parse_args(argv)
-    merge(a.new, a.old, a.out)
+    build(a.export, a.out)
 
 
 if __name__ == '__main__':
