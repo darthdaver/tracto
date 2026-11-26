@@ -205,6 +205,40 @@ Per datapoint on the server: oracles ~0.2 CPU s, tokens ~5.9 CPU s, tokens outpu
 the speed ratio Mac/server per project; the estimate of the large run recomputed (section H) and reported to the
 author.
 
+Done on 2026-11-26 (00:22–01:39, `tmp/gen/ref9`, log `tmp/gen/ref9.log`; jar `tmp/gen/ref9.jar`, the code of `0190a87a`
+= Step 54, sha256 `8939c667…`, same classes as `tmp/ab/jar-step54.jar`; `-j 4 --xmx 12g`, in `tmux` with
+`caffeinate -dims`, the desktop applications closed: 15.7 GiB in use before the run). All nine `done`, **9,148
+datapoints, every count as on the server**; 76 min of wall time (jsoup alone the last 34 min); 4.9 CPU hours.
+
+| Project | Oracles wall s | Tokens wall s | Tokens CPU s | Server/Mac tokens CPU | Tokens peak RSS MB | Tokens output GiB |
+|---|---|---|---|---|---|---|
+| crawler | 22 | 732 | 1,302 | 3.2× | 6,633 | 3.15 |
+| cryptofs | 15 | 726 | 1,208 | 2.5× | 5,097 | 2.35 |
+| eec | 51 | 2,464 | 3,658 | 3.1× | 10,233 | 5.66 |
+| esapi | 14 | 393 | 777 | 2.1× | 11,214 | 4.99 |
+| ffmpeg | 34 | 631 | 952 | 3.3× | 5,841 | 1.21 |
+| jsoup | 62 | 4,515 | 6,479 | 3.5× | 12,646 | 12.39 |
+| plexus | 17 | 593 | 1,071 | 3.0× | 5,093 | 2.46 |
+| steve | 8 | 78 | 156 | 1.9× | 1,994 | 0.17 |
+| uuid | 13 | 754 | 1,420 | 3.1× | 7,510 | 2.64 |
+| **total** | | | **17,023** | **3.2×** | | **35.0** |
+
+- Per datapoint: tokens 1.86 CPU s (server 5.9), oracles 0.075 CPU s; 1.22 s of a job's wall time; output 3.9 MiB (as
+  on the server; the total 35.0 GiB against 36, not analysed per project). A tokens job uses 1.4–2.0 cores: the 4 jobs
+  use ~6 of the 18 cores of the M5 Pro (6 performance, 12 efficiency); the parallelism is limited by memory (14 GiB
+  reserved per job: a fifth job does not fit in 64 GiB), not by the cores.
+- Memory (sampled every 30 s, `tmp/gen/ref9-memory.tsv`): peak 46.0 GiB in use of 64 (4 jobs, at 00:41), the lowest
+  free level 87%, no swap. Peak RSS per project as on the server (steve lower).
+- Reproducibility: the oracles datasets of the nine projects are identical to the corpus run of Step 54
+  (`tmp/ab/corpus-src`, made by `tools/ab/ab.py` from `input/github-repos`; the runner clones from GitHub). The
+  tokens datasets of steve and uuid are byte-identical to phase C (jar of Step 51), and ffmpeg to the run of Step 52
+  (`tmp/gen/step52-a`) once `Anonymous-NutReaderListener` is renamed as Step 53 did.
+- Compression of the tokens outputs (for F.1; each file read once, nothing written): **zstd -3: 52.8×** (38× eec to
+  143× esapi; 37.6 GB → 0.71 GB; under 1 s per GB on one thread), gzip -6: 8.0× (its 32 KB window cannot see the contextual information
+  repeated from one token step to the next), zstd -19 --long=27: ffmpeg 1,295 MB → 0.67 MB, jsoup 13.3 GB → 4.2 MB
+  in 118 s (4 threads; the readers then need `--long=27`), xz -6 on ffmpeg 311×. Round trips byte-identical (ffmpeg,
+  sha256).
+
 ## F. Decisions of the author needed before the large run
 
 Present them with the numbers of phase E; do not decide alone:
@@ -252,6 +286,13 @@ datapoints, ~6–10 CPU s per datapoint for the tokens stage on the server (more
 eec 8.0) → ~2,000–6,000 CPU hours on the server; the M5 cores are expected to be ~2× faster per core (not measured),
 with 4–5 parallel jobs in 64 GB → **about 2 to 5 weeks** of continuous running, dominated by the large repositories
 and the 12-hour timeout. Disk: see F.1.
+
+Redone on 2026-11-26 with phase E: 1.22 s of a job's wall time per datapoint and 4 jobs → **~3.5 days per million
+datapoints** (1–3 million: ~4–11 days), if the repositories of the large run cost what the reference projects cost
+per datapoint. Not measured by phase E, all adding to it: the clones and the first resolution of the dependencies of
+each repository (here 0.5–7 s, Maven's local repository already filled), the repositories much larger than jsoup,
+and the timeouts (each holds a job for up to 2 + 12 hours). So **about 1 to 3 weeks**. Disk: 3.9 MiB per datapoint
+raw → 4–12 TB for 1–3 million datapoints (the Mac has 1.4 TiB free); with zstd -3, 53× smaller → ~80–240 GB.
 
 ## Notes from the server (things learned the hard way)
 
