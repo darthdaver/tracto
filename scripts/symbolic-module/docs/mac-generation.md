@@ -259,6 +259,21 @@ Present them with the numbers of phase E; do not decide alone:
    (per repository: commit, status, jar sha256, configuration, JDK, the module commit) for reproducibility.
 5. The go-ahead for `generate.py select` and for the large run.
 
+Answers of the author, 2026-11-26 (after the report of phase E):
+
+1. **zstd**: the runner compresses every JSON output of a repository with zstd once the repository is `done` (measured
+   on phase E: -3 gives 53×). No module change; the readers stream from the compressed files. The compact format (a)
+   is not needed now.
+2. **Keep all the `contextualInfos`** (left to me: with zstd, keeping everything costs little disk).
+3. **Deferred to the step of the prompt template for the fine-tuning**; saved, with the evidence, in
+   `docs/prompt-template-todo.md`.
+4. **Default timeouts** (2 h, 12 h), then a retry pass of the timeouts with doubled limits at the end, and a manifest of
+   the run per repository (left to me).
+5. **Open**: it depends on the list of projects. The author wants to revise the 4,517 repositories of
+   `resources/seart-github-repos.csv` (SEART-GHS, collected in 2025) together with the strategy of the experiments:
+   the projects of the experiments are excluded entirely from the fine-tuning, and their test cases must be added after
+   the training cutoff of the models (data leakage). `select` and the large run wait for that decision.
+
 ## G. The large run
 
 1. `python3 tools/gen/generate.py select` (with the author's go-ahead): writes `tmp/gen/maven-repos.csv` (Maven
