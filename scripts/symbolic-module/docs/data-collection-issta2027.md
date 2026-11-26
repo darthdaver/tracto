@@ -109,21 +109,39 @@ before cloning repositories for the mining, before the large run, and before del
    of them permissive, **19 Maven** (checked on 2026-11-26 with the request of `select`; 18 of the author's list and
    `reshaprio/reshapr`, created on 2026-03-04, before the start of the author's search). `matevip/mateclaw` and
    `mateaix/mateclaw` look like the same project under two owners.
-5. **`generate.py select`** on the merged file: one request per repository to raw.githubusercontent.com; keeps the
-   repositories with a `pom.xml` at the root of their pinned commit.
-6. **Mining of the candidates.** For the Maven repositories with a last commit after T: clone the history since T at
-   the pinned commit (`git clone --shallow-since`, then one more commit, so the state at T is known); list the JUnit
-   test methods (`@Test`, `@ParameterizedTest`) added after T and still present at the pinned commit; drop the ones
-   whose normalized body already existed in the repository at T (moved, renamed or copied tests). Report per
-   repository: test methods added after T, dropped as moved, commits after T.
-7. **Build check** of the repositories with the most new tests: `mvn test-compile` at the pinned commit, with the
-   JDKs that RQ2 tries (`rqs/bash/rq2_correctness_all.sh`: 8, 11, 17, 21, 24). Keep the ones that build.
-8. **Split** (seeded, written to CSV files and to the manifest):
-   - experiment projects: among the ones that build, enough to reach the goals above, spread across sizes; preferably
-     from owners with few repositories in the list, and the other repositories of the same owner are excluded from
-     the fine-tuning (they share test helpers and style);
-   - validation projects: a seeded sample of the remaining repositories, for early stopping;
-   - fine-tuning projects: all the others.
+5. **`generate.py select`** on the official list (go-ahead 2026-11-26): one request per repository to
+   raw.githubusercontent.com; keeps the repositories with a `pom.xml` at the root of their pinned commit. Output in
+   `tmp/gen/issta2027/maven-repos.csv`. Done 2026-11-26 in 2 minutes: **1,572 Maven**, 1,251 not, 0 unknown; the 19
+   repositories created after T are among them. Size terciles of the Maven list: 13,207 and 50,647 Java lines.
+6. **The walk** (choosing the experiment and validation projects; go-ahead for the clones 2026-11-26, ~300–400
+   repositories): the Maven repositories are split into three size groups by `javaCodeLines` (terciles of the Maven
+   list), each in a seeded random order. Going down each order, a candidate is cloned with its history since T at the
+   pinned commit (`git clone --shallow-since`, then one more commit, so the state at T is known) and checked:
+   - test methods (`@Test`, `@ParameterizedTest`) added by commits whose author and committer dates are after T, still
+     present at the pinned commit, whose normalized body did not exist in the repository at T (moved, renamed or
+     copied tests are dropped); at least 10 oracles in them;
+   - it builds and those tests pass at the pinned commit with one of the JDKs 8, 11, 17, 21, 25, 26, 27 (Corretto,
+     SDKMAN), the one matching the Java version the project declares first (JDK 24 is not needed: 25 builds it);
+   - its JUnit version: the one of most of its target test classes (JUnit 4, or Jupiter = JUnit 5/6); each oracle is
+     labelled too.
+   An eligible candidate fills its cell (size × JUnit version) until the cell has **20 projects**; then 5 more per
+   cell for validation. Every candidate and the reason it was refused are written to a CSV. A cell that is not full
+   by the selection deadline is reported, never filled from another cell.
+7. **The repositories created after T** (decision 10): all go to the experiment set when they meet the same checks;
+   `matevip/mateclaw` and `mateaix/mateclaw` count once.
+8. **Split** (decided 2026-11-26; seeded, written to CSV files and to the manifest):
+   - experiment projects: 3 size groups × 2 JUnit versions × 20 = **120**, plus the eligible repositories created
+     after T (at most 19), reported also as their own group; **at most 50 oracles per project** (seeded sample);
+     results per oracle and per project, the overall figure weighted by the real share of each group in the list;
+     a table compares the experiment set with the whole list (JUnit version, assertion style, Java version, age,
+     stars). AssertJ chains are out of the module's scope (Step 30): a scope limit to state in the paper;
+   - validation projects: 5 per cell (30), for early stopping;
+   - fine-tuning projects: all the other Maven repositories;
+   - similar projects on both sides: proposed on 2026-11-26, waiting for the author (see the conversation of that
+     day): experiment and validation projects only from owners with a single repository in the list; a fine-tuning
+     repository with the same repository name as an experiment project is dropped; the large run records a
+     fingerprint of every Java file, and a fine-tuning repository sharing files with an experiment project is
+     dropped.
 9. **The large run**, in this order: experiment projects, validation projects, then the fine-tuning projects in a
    seeded random order balanced by size (so that what is done when the time limit stops the run is a fair sample, not
    only the small repositories). Time limit about 7 days; the timeouts are retried at the end if time allows.
