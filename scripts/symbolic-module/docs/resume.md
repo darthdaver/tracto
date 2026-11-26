@@ -59,6 +59,10 @@ token of its target is missing from the candidates offered at that step). Measur
 | After Step 49 | on the corpus: identical (1,302 complete): the simple name of a class whose key has qualified type arguments (a latent `StringIndexOutOfBoundsException`, the `Range [131, 126)` of v1) |
 | **Dataset v4** (full test with the dependencies, 2026-11-17, Step 49 `e70d8ac`) | **0.0%** on the nine projects (9,043 complete of 9,043; dataset v3: 9,028, +15, 0 regressions, 0 dropped) |
 | After Step 50 | on the corpus: unchanged (1,302 complete, 0 worse, removals only, no target): 113 steps lose the fields of the classes nested in the type of a value or in its supertypes (`Throwable.SentinelHolder.STACK_TRACE_SENTINEL`, jsoup `Element.NodeList.validChildren`, `FileChannel.MapMode.READ_ONLY`) |
+| After Step 51 | on the corpus: unchanged (1,302 complete, 0 worse, order only): the classes of an imported package (`import java.io.*`) were added in the order of the hashes of their absolute paths, so the order of the candidates depended on the folder of the module and of the repository (found on the MacBook: uuid, 32 oracles, 104 steps); now the same in any folder |
+| After Step 52 | on the corpus: identical (1,302 complete; the corpus classes have no anonymous class among their invoked methods), now without the mask of the random names; the oracles datasets of the corpus projects: 16 datapoints, 26 entries `Anonymous-<uuid>()` become 16 `Anonymous-<interface>()` (`Anonymous-NodeVisitor()`; equal entries merged): the constructor of an anonymous class of an interface had a random name, different at each run (present since the original code) |
+| After Step 53 | on the corpus: identical (1,302 complete): the anonymous classes of interfaces named after the qualified name of the interface (`Anonymous-org.jsoup.select.NodeVisitor()`; a local interface: the name as written), so that two interfaces with the same simple name are two entries; one eec prefix loses an invoked method by an identity-hash effect of JavaParser (not the fix; section 6, item 10) |
+| After Step 54 | on the corpus: identical (1,302 complete; both stages byte-identical: no corpus class has the shape): the members declared in an anonymous class offered after a `var` of it (`var counter = new Object() { int count; int twice() … }`: `counter.` ▸ `twice`, `count`), a lost target before (JavaParser types the creation as the type after `new`) |
 
 Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`):
 
@@ -73,15 +77,20 @@ Steps committed on 2026-11-05 (one commit each, a document each in `docs/fixes/`
 | 26 (2026-11-06) | class names: `java.lang`, member types, imports of member types and records, the package without its subpackages and with its interfaces, no generated classes, the classes after `instanceof` | corpus: 62 oracles recovered (1,009 → 1,071), 0 worse (eec +23, plexus +11, esapi +8, uuid +8, ffmpeg +7, jsoup +3, cryptofs +2) |
 
 After Steps 21, 23 and 24 the tokens stage is **deterministic**: the same code on the same inputs gives byte for byte
-the same dataset (checked with `-XX:hashCode=2`, which changes every identity hash code), except the random names of
-the anonymous classes (`Anonymous-<uuid>`) and a few error messages of the statistics that print identity hashes.
-This is what makes the fast checks of section 4 exact.
+the same dataset (checked with `-XX:hashCode=2`, which changes every identity hash code), except a few error messages
+of the statistics that print identity hashes. The oracles stage gives the same bytes for the same jar and inputs since
+Step 52 (before it, the anonymous classes of interfaces had a random name, `Anonymous-<uuid>`), but its results still
+depend on identity hash codes through JavaParser (found in Step 53, section 6, item 10): a change of the code can move
+an unrelated result (measured: 1 of the 9,148 datapoints of the nine projects; the tokens stage does not depend on
+them).
+This is what makes the fast checks of section 4 exact. Since Step 51 it is also the same in any folder of the module
+and of the repositories (checked with the corpus from a second folder: the tokens datasets byte-identical).
 
 ## 2. Decisions of the author (all still valid)
 
 - Correctness first: no fix without tests that fail before it, no change accepted without its differences explained.
 - Each fix is a step: tests first, a document `docs/fixes/step-NN-*.md`, a commit only when the author asks (one per
-  step). Git identity of the commits: `darthdaver <davide.molinelli@uusi.ch>` (as the earlier commits).
+  step). Git identity of the commits: `darthdaver <davide.molinelli@usi.ch>` (the commits from 2026-02-09 to `4a8db564` have the typo `uusi.ch`).
 - Only JUnit assertions are in scope (Hamcrest `MatcherAssert.assertThat` and AssertJ are out, counted apart).
   **Changed on 2026-11-09:** Hamcrest `assertThat` is in scope (see below; done in Step 30); AssertJ stays out.
 - The fixes follow the order of section 9 of `missing-candidate-tokens.md` (summarized in section 6 below).
@@ -183,6 +192,10 @@ JVM (pre-existing defect, section 6), so corpus results are compared only with c
 - Before Steps 21–24, two runs of the same code differed (identity hash order): every old A/B had noise. Old runs
   are not comparable byte for byte with new ones.
 - Order-only differences need a deep comparison (the lists of `contextualInfos` are nested).
+- A `HashSet<Path>` iterates in the order of the hashes of the absolute paths: the output then depends on the folder
+  of the module and of the run (Step 51, found when the module moved to the MacBook). A test of it needs files whose
+  paths have different hash codes: class names with the same hash code (`AaAa`, `BBBB`) in one folder give paths with
+  the same hash code too. `HashMap.computeIfAbsent` puts a new key at the head of its bucket, `put` at the tail.
 
 ## 6. Next steps (in this order)
 
@@ -282,6 +295,32 @@ examples to start from.
      (`docs/fixes/step-50-nested-class-fields.md`);
    - ~~the body of a method without a source is garbage taken from the text of its `MethodUsage`~~: **Step 35 done**
      (`docs/fixes/step-35-sourceless-bodies.md`);
+   - ~~the constructor of an anonymous class of an interface has a random name (`Anonymous-<uuid>`, JavaParser), different
+     at each run, among the invoked methods~~: **Step 52 done** (`docs/fixes/step-52-anonymous-class-names.md`; named
+     after the interface, decided by the author on 2026-11-25), **Step 53** (the qualified name of the interface,
+     `Anonymous-net.bramp.ffmpeg.nut.NutReaderListener()`, asked by the author: two interfaces with the same simple name
+     were one entry);
+   - the oracles stage depends on identity hash codes through the type inference of JavaParser (found in Step 53):
+     eec `SimpleSheetTest.testSimpleSheetPaging_split_1`, a lambda argument `(i, a) -> { … }` of `setData`, whose
+     "equivalent types" JavaParser iterates in the order of a set of identity hashes; the jar of Step 53 lost the
+     invoked method `setData` (the jar of Step 52 kept it; with `-XX:hashCode=2` both keep it). Reproducible for a given
+     jar (HotSpot's identity hashes are a fixed sequence per thread), but a change of the code anywhere can move such a
+     result. **Measured** on 2026-11-25, before phase E (jar of Step 54, JDK 21), in three orders of the identity
+     hashes (HotSpot's default; `-XX:+UnlockExperimentalVMOptions -XX:hashCode=2`, every hash equal; `-XX:hashCode=3`,
+     a sequence): the oracles stage of the nine projects, **1 of 9,148 datapoints** differs, this one (19 invoked
+     methods by default, 20 in both other orders), and error messages of the statistics (eec, cryptofs: the order of
+     the equivalent types, the identity hash of an object printed); a new default run is byte-identical to the corpus
+     run of Step 54. The tokens stage, on the same oracles (corpus, 1,302 oracles): **identical** in the three orders
+     (status, missing tokens, digests of the token steps). No workaround proposed: `-XX:hashCode=2` would make the
+     results independent of the code, but the corpus check took 448 s with it (456 s with `hashCode=3`) against 323 s
+     for the check of Step 54 (one run each). A difference of the invoked methods in a later comparison, on a statement
+     whose error lists "Equivalent types are", is checked by running both jars with `-XX:hashCode=2`
+     (`tmp/ab/hash-*`, `tmp/ab/compare-*`, `tmp/ab/hash-check-*.json`);
+   - ~~the members of an anonymous class are not offered after a variable of that class~~ (`var counter = new Object() {
+     int count; int twice() { … } };` then `counter.` ▸ `twice`, `count`: "Unexpected token", a lost target; found by the
+     test of Step 52): **Step 54 done** (`docs/fixes/step-54-anonymous-class-members.md`; asked by the author before
+     phase E). JavaParser types `new Object() { … }` as `Object`, the type written after `new`. Rare: only `var` gives a
+     variable the type of an anonymous class; 0 of the 117 anonymous classes of the test sources of the nine projects;
    - the imports and the package of the focal class are added to the classes of the test class (not visible there
      unless imported in the test class too);
    - the qualifiers `Assert.`/`Assertions.` are removed with a text replacement (`TestUtils`, targets and bodies):

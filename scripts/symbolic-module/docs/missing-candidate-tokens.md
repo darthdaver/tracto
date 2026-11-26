@@ -383,6 +383,25 @@ after Step 21. Status on 2026-11-05; the next steps follow the loop of `docs/res
 - Step 50: the fields of the classes nested in the type of a value or in its supertypes (static, inner, local,
   anonymous) are not offered after the value (`declaredFields`): corpus 1,302 complete, 113 steps lose candidates
   (removals only, no target), e.g. `Throwable.SentinelHolder.STACK_TRACE_SENTINEL` after an exception value.
+- Step 51: the classes of an imported package are added in the order of the imports and of the files of the package,
+  not of the hashes of their absolute paths: the order of the candidates no longer depends on the folder of the module
+  or of the repository (found on the MacBook, uuid: 32 oracles, 104 steps, the same candidates in another order, no
+  target moved); corpus 1,302 complete, the tokens datasets byte-identical from a second folder.
+- Step 52: the constructor of an anonymous class of an interface, among the invoked methods, is named after the
+  interface (`Anonymous-NutReaderListener()`), no longer `Anonymous-<UUID.randomUUID()>` (JavaParser), different at each
+  run; equal entries merged: corpus identical (1,302 complete), the oracles datasets of its projects 16 datapoints
+  (26 random entries → 16), the datasets byte-identical between two runs. Found by its test, not fixed: the members of
+  an anonymous class after a `var` of that class (`counter.` ▸ `twice`, `count`), a lost target (`docs/resume.md`,
+  section 6, item 10).
+- Step 53: the qualified name of the interface (`Anonymous-org.jsoup.select.NodeVisitor()`; a local interface: the
+  name as written): two interfaces with the same simple name are two entries; corpus identical (1,302 complete), the
+  16 entries renamed. Found: the oracles stage depends on identity hash codes through JavaParser (an eec prefix lost
+  the invoked method `setData` with the new jar; with `-XX:hashCode=2` both jars keep it). Measured before phase E:
+  1 of the 9,148 datapoints of the oracles stage; the tokens stage (candidates) identical in three orders of the
+  identity hashes (`docs/resume.md`, section 6, item 10).
+- Step 54: the members declared in an anonymous class, after a `var` of it (`var counter = new Object() { … }`:
+  `counter.` ▸ `twice`, `count`; JavaParser typed it as `Object`), named with the rule of Step 53, the context of its
+  supertype: corpus identical (1,302 complete; no corpus class has the shape), both stages byte-identical.
 
 **Dataset v1 (full test of 2026-11-09, Step 29):** 12.2% lost (1,116 of 9,154 datapoints; 7,937 complete of 9,043
 counted by `missing_tokens.py`), 0 regressions against Step 21 (details in `docs/resume.md`, section 7). Lost oracles

@@ -50,7 +50,12 @@ final class TokensFixture {
      * {@code SymbolicModule}; the {@code lib} folder is the one of the module, the working directory of the tests).
      */
     void generate() throws IOException {
-        JavaUtils.setJavaLibPath(Path.of("").toAbsolutePath(), Optional.of(JAVA_VERSION));
+        generate(Path.of("").toAbsolutePath());
+    }
+
+    /** Runs both stages as {@link #generate()}, with the module (its {@code lib} folder) in another folder. */
+    void generate(Path modulePath) throws IOException {
+        JavaUtils.setJavaLibPath(modulePath, Optional.of(JAVA_VERSION));
         String classpath = JavaUtils.initializeJavaClassPath();
         assertFalse(classpath.isEmpty(), "no JDK sources in lib/java" + JAVA_VERSION);
         OraclesDataset.generate(repoRoot, Optional.empty(), COMMITTED_CONFIG, outputPath, PROJECT, classpath);

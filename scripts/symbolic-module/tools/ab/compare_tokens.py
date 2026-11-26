@@ -28,7 +28,8 @@ UNEXPECTED = 'Unexpected token'
 POSITION_NOT_FOUND = 'Target position not found in the test prefix'
 
 
-# The oracles stage names the anonymous classes with a random UUID (Anonymous-<uuid>), different at each run
+# Before Step 52 the oracles stage named the anonymous classes of interfaces with a random UUID (Anonymous-<uuid>),
+# different at each run: masked, for the runs of the jars before it (a no-op on the runs of the later jars)
 ANONYMOUS_UUID = re.compile(rb'Anonymous-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 
 

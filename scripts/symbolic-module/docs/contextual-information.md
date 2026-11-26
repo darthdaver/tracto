@@ -175,5 +175,12 @@ By expected type, k = 1:
 ## Open decisions
 
 - The symbol-table format (proposed above) instead of `contextualInfos` in full.
+  **Rule for its ids** (the author, 2026-11-25): an id must never be a name or a signature alone. The entries write
+  simple names (`public B()` of `com.acme.A.B` and of `com.other.C.B`; `public String toString()` of hundreds of
+  classes), so an id built from them would point two different symbols to one entry. Use the qualified name of the
+  declaring type with the signature, or a hash of the whole entry. The constructors of anonymous classes of interfaces
+  are named after the qualified name of the interface (`Anonymous-net.bramp.ffmpeg.nut.NutReaderListener()`, Steps 52
+  and 53); two anonymous classes of the same interface have equal entries (no parameters, no body), so one id is
+  correct for them as long as the entry holds nothing else.
 - The two prompt-side problems (setup/teardown key, focal constructors): fixes in `scripts/prompt`.
 - Model and GPUs for experiments 2–4; repositories for experiment 4.

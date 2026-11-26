@@ -9,6 +9,7 @@ import tempfile
 import time
 import types
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.dont_write_bytecode = True
@@ -146,6 +147,147 @@ class RepositoryTest(TempDirTest):
             self.assertTrue(os.path.exists(os.path.join(self.dir, 'output', kind, '77', 'a.json')))
 
 
+# Recorded on the MacBook Pro M5 Pro (64 GB, macOS 27.2), 2026-11-24, with Chrome, Mail and other applications open
+SYSCTL_MEMSIZE = '68719476736\n'
+VM_STAT = '''Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                   329882.
+Pages active:                                1591289.
+Pages inactive:                              1591866.
+Pages speculative:                             27505.
+Pages throttled:                                   0.
+Pages wired down:                             264144.
+Pages purgeable:                              110511.
+"Translation faults":                      443871441.
+Pages copy-on-write:                        20216255.
+Pages zero filled:                         485063825.
+Pages reactivated:                           7204860.
+Pages purged:                                4043494.
+File-backed pages:                           1468505.
+Anonymous pages:                             1742155.
+Pages stored in compressor:                   643355.
+Pages occupied by compressor:                 329113.
+Decompressions:                              2153291.
+Compressions:                                3294681.
+Pageins:                                    11869209.
+Pageouts:                                        561.
+Swapins:                                           0.
+Swapouts:                                          0.
+Pages tagged:                                 279390.
+Pages tagged resident:                        211976.
+Pages tagged compressed:                       67414.
+Pages tag-storage:                            131072.
+Pages tag-storage holding tags:                 7626.
+Pages tag-storage free:                         4060.
+Pages tag-storage non-tag pageable:           119233.
+Pages tag-storage non-tag wired:                 139.
+Bytes of compressed tags:                    9380160.
+Tagged compressions:                          196991.
+Tagged decompressions:                        119321.
+'''
+# The formats of the Linux files (cgroup v2 memory.stat, /proc/meminfo; values in bytes and kB)
+MEMORY_STAT = '''anon 30000000000
+file 70000000000
+kernel 1500000000
+kernel_stack 40000000
+pagetables 300000000
+sec_pagetables 0
+percpu 20000000
+sock 5000000
+vmalloc 1000000
+shmem 200000000
+file_mapped 900000000
+file_dirty 1000000
+inactive_anon 1000000
+active_anon 29000000000
+inactive_file 40000000000
+active_file 30000000000
+unevictable 0
+slab_reclaimable 800000000
+slab_unreclaimable 100000000
+slab 900000000
+'''
+MEMINFO = '''MemTotal:       65843264 kB
+MemFree:         1203456 kB
+MemAvailable:   40123904 kB
+Buffers:          123456 kB
+Cached:         35000000 kB
+SwapCached:            0 kB
+'''
+
+
+class MemoryTest(TempDirTest):
+    """The memory limit and the memory in use (that the kernel cannot reclaim), on Linux and on macOS."""
+
+    def commands(self, outputs):
+        def command_output(command):
+            return outputs[tuple(command)]
+        return mock.patch.object(g, 'command_output', command_output)
+
+    def test_macos_limit_is_the_physical_memory(self):
+        with mock.patch.object(g, 'PLATFORM', 'darwin'), self.commands({('sysctl', '-n', 'hw.memsize'): SYSCTL_MEMSIZE}):
+            self.assertEqual(64 * g.GIB, g.memory_limit())
+
+    def test_macos_memory_used_is_the_anonymous_wired_and_compressed_pages(self):
+        # Activity Monitor's "Memory Used": the anonymous pages but the purgeable ones, wired, occupied by the compressor
+        with mock.patch.object(g, 'PLATFORM', 'darwin'), self.commands({('vm_stat',): VM_STAT}):
+            self.assertEqual((1742155 - 110511 + 264144 + 329113) * 16384, g.memory_used())
+
+    def test_macos_page_cache_is_not_memory_used(self):
+        # Reading the datasets fills the page cache (file-backed pages, active or inactive): the kernel drops it under
+        # pressure, so it does not stop a repository (as the `file` pages of the cgroup on Linux)
+        cached = (VM_STAT.replace('Pages active:                                1591289.', 'Pages active:                                2591289.')
+                  .replace('File-backed pages:                           1468505.', 'File-backed pages:                           2468505.')
+                  .replace('Pages free:                                   329882.', 'Pages free:                                         0.'))
+        self.assertNotEqual(VM_STAT, cached)
+        self.assertEqual(g.vm_stat_used(VM_STAT), g.vm_stat_used(cached))
+
+    def test_macos_page_size_of_the_header(self):
+        # Intel Macs have 4 KiB pages
+        small_pages = VM_STAT.replace('page size of 16384 bytes', 'page size of 4096 bytes')
+        self.assertEqual(g.vm_stat_used(VM_STAT) // 4, g.vm_stat_used(small_pages))
+
+    def test_macos_unexpected_output_is_an_error(self):
+        with self.assertRaises(ValueError):
+            g.vm_stat_used('Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 1.\n')
+
+    def linux(self, memory_max=None, memory_stat=None):
+        cgroup = os.path.join(self.dir, 'cgroup')
+        os.makedirs(cgroup)
+        if memory_max is not None:
+            self.write('cgroup/memory.max', memory_max)
+        if memory_stat is not None:
+            self.write('cgroup/memory.stat', memory_stat)
+        meminfo = self.write('meminfo', MEMINFO)
+        return mock.patch.multiple(g, PLATFORM='linux', CGROUP=cgroup, MEMINFO=meminfo)
+
+    def test_linux_limit_of_the_cgroup(self):
+        with self.linux(memory_max='157840048128\n'):
+            self.assertEqual(157840048128, g.memory_limit())
+
+    def test_linux_limit_without_cgroup_limit_is_the_total_memory(self):
+        with self.linux(memory_max='max\n'):
+            self.assertEqual(65843264 * 1024, g.memory_limit())
+        shutil.rmtree(os.path.join(self.dir, 'cgroup'))
+        with self.linux():
+            self.assertEqual(65843264 * 1024, g.memory_limit())
+
+    def test_linux_memory_used_of_the_cgroup_without_page_cache(self):
+        with self.linux(memory_stat=MEMORY_STAT):
+            self.assertEqual(30000000000 + 200000000 + 40000000 + 300000000 + 100000000 + 5000000, g.memory_used())
+
+    def test_linux_memory_used_without_cgroup_is_total_minus_available(self):
+        with self.linux():
+            self.assertEqual((65843264 - 40123904) * 1024, g.memory_used())
+
+    def test_the_memory_of_this_machine(self):
+        physical = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
+        limit, used = g.memory_limit(), g.memory_used()
+        if sys.platform == 'darwin':
+            self.assertEqual(physical, limit)
+        self.assertGreater(limit, 0)
+        self.assertTrue(0 < used < limit, (used, limit))
+
+
 REPOS = [{'id': str(i), 'name': f'o/r{i}', 'commit': f'c{i}', 'codeLines': i} for i in range(1, 5)]
 
 
@@ -168,6 +310,14 @@ class FakeRunner(g.Runner):
 
 
 class RunnerTest(TempDirTest):
+    def setUp(self):
+        super().setUp()
+        # The scheduling does not depend on the memory in use of the machine running the tests (else a test waits
+        # forever for a memory it does not need, when other programs use 80% of it)
+        patch = mock.patch.object(g, 'memory_used', lambda: 0)
+        patch.start()
+        self.addCleanup(patch.stop)
+
     def status(self, repo_id):
         path = os.path.join(self.dir, 'status', f'{repo_id}.json')
         return g.read_json(path) if os.path.exists(path) else None
@@ -222,6 +372,42 @@ class RunnerTest(TempDirTest):
         runner = FakeRunner(args(self.dir, min_free_disk_gb=10 ** 9))
         self.assertEqual(2, runner.run(REPOS))
         self.assertEqual([None] * 4, [self.status(r['id']) for r in REPOS])
+
+    def watched(self, percent_used):
+        runner = FakeRunner(args(self.dir))
+        runner.limit = 100 * g.GIB
+        for repo_id, started, pid in (('old', 1.0, 101), ('young', 2.0, 102)):
+            job = g.Job({'id': repo_id}, runner)
+            job.started, job.process = started, types.SimpleNamespace(pid=pid)
+            runner.running[repo_id] = job
+        return runner, mock.patch.object(g, 'memory_used', lambda: percent_used * g.GIB)
+
+    def test_memory_pressure_stops_the_repository_started_last(self):
+        runner, memory = self.watched(91)
+        killed = []
+        with memory, mock.patch.object(g, 'kill_group', killed.append):
+            self.assertTrue(runner.check_memory())
+        self.assertEqual([102], killed)
+        self.assertEqual([False, True], [runner.running[i].memory_kill for i in ('old', 'young')])
+        runner, memory = self.watched(89)
+        with memory, mock.patch.object(g, 'kill_group', killed.append):
+            self.assertFalse(runner.check_memory())
+            self.assertFalse(runner.admits(0))  # 89% is over the admission threshold
+        self.assertEqual([102], killed)
+
+    def test_a_memory_measurement_that_fails_stops_nothing_and_admits_nothing(self):
+        # On macOS the measurement runs vm_stat: if it fails once (no process can be started), the watcher goes on
+        runner, _ = self.watched(0)
+        killed = []
+
+        def fails():
+            raise OSError('Resource temporarily unavailable')
+        with mock.patch.object(g, 'memory_used', fails), mock.patch.object(g, 'kill_group', killed.append):
+            self.assertFalse(runner.check_memory())
+            self.assertFalse(runner.admits(0))
+        self.assertEqual([], killed)
+        with mock.patch.object(g, 'memory_used', lambda: 0):
+            self.assertTrue(runner.admits(0))
 
     def test_report(self):
         FakeRunner.outcomes = {'2': {'status': 'skipped', 'reason': 'no JUnit test'},

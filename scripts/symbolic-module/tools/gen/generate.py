@@ -27,8 +27,9 @@ Subcommands:
            clone.
       Resumable: a repository with a status is not run again (`--retry-failed`: the failed ones and the timeouts are);
       its partial outputs are removed before a run. Memory: a repository starts only when the reservations of the
-      running ones (heap + 2 GiB each) leave room in the memory limit (the cgroup limit of the container) and the
-      memory in use is under 80%; at 90% the repository started last is stopped and queued again (twice: failed).
+      running ones (heap + 2 GiB each) leave room in the memory limit (the cgroup limit of the container; on macOS the
+      physical memory) and the memory in use (that the kernel cannot reclaim: the page cache left out; on macOS from
+      vm_stat) is under 80%; at 90% the repository started last is stopped and queued again (twice: failed).
       Disk: no repository starts when the free disk is under the minimum; the run stops when the running ones end.
       SIGINT/SIGTERM: the running stages are stopped, their repositories keep no status (run again at the next start).
   report <run-dir>
@@ -40,6 +41,7 @@ import collections
 import csv
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -60,6 +62,8 @@ RESOLVE_MAVEN = os.path.join(MODULE, 'tools', 'deps', 'resolve_maven.py')
 JAVA_VERSION_ARG = 'auto'
 OUT_OF_MEMORY = 'java.lang.OutOfMemoryError'
 CGROUP = '/sys/fs/cgroup'
+MEMINFO = '/proc/meminfo'
+PLATFORM = sys.platform
 GIB = 1 << 30
 FINAL = ('done', 'skipped')
 RETRYABLE = ('failed', 'timeout')
@@ -205,7 +209,14 @@ def kill_group(pid):
 
 # ------------------------------------------------------------------------------------------------------------- memory
 
+def command_output(command):
+    return subprocess.run(command, capture_output=True, text=True, check=True, timeout=60, stdin=subprocess.DEVNULL).stdout
+
+
 def memory_limit():
+    """The cgroup limit of the container, else the total memory; on macOS the physical memory."""
+    if PLATFORM == 'darwin':
+        return int(command_output(['sysctl', '-n', 'hw.memsize']))
     try:
         value = read_text(os.path.join(CGROUP, 'memory.max')).strip()
         if value != 'max':
@@ -216,7 +227,7 @@ def memory_limit():
 
 
 def meminfo():
-    return {line.split(':')[0]: int(line.split()[1]) * 1024 for line in read_text('/proc/meminfo').splitlines()}
+    return {line.split(':')[0]: int(line.split()[1]) * 1024 for line in read_text(MEMINFO).splitlines()}
 
 
 # The memory of a cgroup the kernel cannot reclaim: the page cache (`file`, active or not) is left out, it is dropped
@@ -224,14 +235,47 @@ def meminfo():
 UNRECLAIMABLE = ('anon', 'shmem', 'kernel_stack', 'pagetables', 'slab_unreclaimable', 'sock')
 
 
+# macOS: the pages of vm_stat Activity Monitor shows as "Memory Used": the anonymous pages (the purgeable ones left out,
+# the kernel drops them), the wired ones and the ones the compressor occupies. The file-backed pages (the page cache,
+# active or not) are left out, as the `file` pages of the cgroup on Linux: `Pages active` counts them too
+VM_STAT_USED = ('Anonymous pages', 'Pages wired down', 'Pages occupied by compressor')
+VM_STAT_RECLAIMABLE = ('Pages purgeable',)
+
+
+def vm_stat_used(text):
+    page_size = re.search(r'page size of (\d+) bytes', text)
+    pages = {}
+    for line in text.splitlines():
+        match = re.match(r'^"?([^":]+)"?:\s+(\d+)\.$', line)
+        if match:
+            pages[match.group(1)] = int(match.group(2))
+    missing = [key for key in VM_STAT_USED + VM_STAT_RECLAIMABLE if key not in pages]
+    if page_size is None or missing:
+        raise ValueError(f'unexpected output of vm_stat (page size {page_size is not None}, missing {missing})')
+    return (sum(pages[key] for key in VM_STAT_USED) - sum(pages[key] for key in VM_STAT_RECLAIMABLE)) * int(page_size.group(1))
+
+
 def memory_used():
-    """The memory the kernel cannot reclaim: of the cgroup (memory.stat), else MemTotal - MemAvailable."""
+    """The memory the kernel cannot reclaim: of the cgroup (memory.stat), else MemTotal - MemAvailable; on macOS from
+    vm_stat."""
+    if PLATFORM == 'darwin':
+        return vm_stat_used(command_output(['vm_stat']))
     try:
         stat = dict(line.split() for line in read_text(os.path.join(CGROUP, 'memory.stat')).splitlines())
         return sum(int(stat[key]) for key in UNRECLAIMABLE if key in stat)
     except (OSError, ValueError):
         info = meminfo()
         return info['MemTotal'] - info['MemAvailable']
+
+
+def measured_memory():
+    """The memory in use, or None when it cannot be measured now (on macOS vm_stat is a process, which may fail to
+    start): no repository starts and none is stopped, and the watcher of the memory goes on."""
+    try:
+        return memory_used()
+    except (OSError, subprocess.SubprocessError, ValueError) as e:
+        log(f'memory not measured: {e}')
+        return None
 
 
 def heap_bytes(xmx):
@@ -435,17 +479,27 @@ class Runner:
 
     def watch_memory(self):
         while not self.stopping:
-            used = memory_used()
-            if 100.0 * used / self.limit >= PRESSURE_PCT:
-                with self.lock:
-                    candidates = [j for j in self.running.values() if not j.memory_kill and j.process is not None]
-                    if candidates:
-                        youngest = max(candidates, key=lambda j: j.started)
-                        youngest.memory_kill = True
-                        log(f'memory {100.0 * used / self.limit:.1f}%: stopping {youngest.repo["id"]} (queued again)')
-                        kill_group(youngest.process.pid)
+            if self.check_memory():
                 time.sleep(10)
             time.sleep(2)
+
+    def check_memory(self):
+        """Over the pressure threshold (True), the repository started last is stopped."""
+        used = measured_memory()
+        if used is None or 100.0 * used / self.limit < PRESSURE_PCT:
+            return False
+        with self.lock:
+            candidates = [j for j in self.running.values() if not j.memory_kill and j.process is not None]
+            if candidates:
+                youngest = max(candidates, key=lambda j: j.started)
+                youngest.memory_kill = True
+                log(f'memory {100.0 * used / self.limit:.1f}%: stopping {youngest.repo["id"]} (queued again)')
+                kill_group(youngest.process.pid)
+        return True
+
+    def admits(self, running):
+        used = measured_memory()
+        return used is not None and can_admit(running, self.reservation, self.limit, used)
 
     def run(self, repos):
         signal.signal(signal.SIGINT, self.stop)
@@ -479,8 +533,7 @@ class Runner:
                 if not disk_full:
                     log(f'free disk {free / GIB:.0f} GiB under {self.args.min_free_disk_gb} GiB: no new repository')
                 disk_full = True
-            if queue and not disk_full and len(futures) < self.args.jobs and \
-                    can_admit(len(futures), self.reservation, self.limit, memory_used()):
+            if queue and not disk_full and len(futures) < self.args.jobs and self.admits(len(futures)):
                 job = Job(queue.popleft(), self)
                 job.started = time.time()
                 with self.lock:

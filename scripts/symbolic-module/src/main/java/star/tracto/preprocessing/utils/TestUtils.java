@@ -12,6 +12,7 @@ import com.github.javaparser.resolution.MethodUsage;
 import com.github.javaparser.resolution.UnsolvedSymbolException;
 import com.github.javaparser.resolution.declarations.*;
 import com.github.javaparser.resolution.types.*;
+import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserAnonymousClassDeclaration;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserClassDeclaration;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserInterfaceDeclaration;
 import com.github.javaparser.printer.DefaultPrettyPrinter;
@@ -30,6 +31,7 @@ import star.tracto.preprocessing.components.*;
 import star.tracto.preprocessing.components.Type;
 import star.tracto.utils.FilesUtils;
 import star.tracto.utils.javaParser.JavaParserUtils;
+import star.tracto.utils.javaParser.NamedAnonymousClassDeclaration;
 import star.tracto.utils.javaParser.NameAllocator;
 import star.tracto.utils.javaParser.visitors.declarations.FieldDeclarationVisitor;
 import star.tracto.utils.javaParser.visitors.expressions.MethodCallExprVisitor;
@@ -2816,13 +2818,26 @@ public class TestUtils {
      */
     private static Callable processObjectCreationExpr(ObjectCreationExpr objCreationExpr) {
         ResolvedConstructorDeclaration resolvedConstructor = objCreationExpr.resolve();
+        String name = resolvedConstructor.getName();
+        String signature = resolvedConstructor.getSignature();
+        if (resolvedConstructor.declaringType() instanceof JavaParserAnonymousClassDeclaration anonymousClass) {
+            // The creation of an anonymous class of an interface (which has no constructor) resolves to the default
+            // constructor of the anonymous class, which JavaParser names Anonymous-<UUID.randomUUID()>, a new name each
+            // time it builds the class: named after the interface instead, so that the datasets are the same at each
+            // run (Step 52), with its qualified name, so that two interfaces with the same simple name are told apart
+            // (Step 53). JavaParser 3.28.2 does not override isAnonymousClass() (false) in its anonymous class
+            // declaration
+            String anonymousName = NamedAnonymousClassDeclaration.nameOf(objCreationExpr, anonymousClass.getSuperTypeDeclaration());
+            signature = anonymousName + signature.substring(name.length());
+            name = anonymousName;
+        }
         // Instantiate a method builder to build a MethodTracto object from the method declaration
         CallableBuilder callableBuilder = new CallableBuilder();
         // Set the attributes of the method
-        callableBuilder.setIdentifier(resolvedConstructor.getName());
+        callableBuilder.setIdentifier(name);
         callableBuilder.setAnnotations(null);
         callableBuilder.setModifiers(null);
-        callableBuilder.setSignature(resolvedConstructor.getSignature());
+        callableBuilder.setSignature(signature);
         callableBuilder.setThrownExceptions(null);
         callableBuilder.setJavadoc("");
         callableBuilder.setBody(null);
