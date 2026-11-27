@@ -1,8 +1,9 @@
 # Data collection for the ISSTA 2027 experiments
 
 Design discussed with the author on 2026-11-26/27, before the large run of `docs/mac-generation.md` (section G). It
-replaces the plan of running the 4,517 repositories of `resources/seart-github-repos.csv` as they are. Status: draft;
-steps 3 and 4 done; the criteria of the split (step 8) are being agreed with the author.
+replaces the plan of running the 4,517 repositories of `resources/seart-github-repos.csv` as they are. Status: approved by the
+author on 2026-11-27 (with the four checks of step 8); steps 3, 4 and 5 done. The numbers for the paper are kept in
+`docs/issta2027-dataset-numbers.md`.
 
 ## Intent
 
@@ -111,7 +112,7 @@ before cloning repositories for the mining, before the large run, and before del
    `mateaix/mateclaw` look like the same project under two owners.
 5. **`generate.py select`** on the official list (go-ahead 2026-11-26): one request per repository to
    raw.githubusercontent.com; keeps the repositories with a `pom.xml` at the root of their pinned commit. Output in
-   `tmp/gen/issta2027/maven-repos.csv`. Done 2026-11-26 in 2 minutes: **1,572 Maven**, 1,251 not, 0 unknown; the 19
+   `tmp/gen/issta2027/maven-repos.csv`, copied to `resources/issta2027-maven-repositories.csv`. Done 2026-11-26 in 2 minutes: **1,572 Maven**, 1,251 not, 0 unknown; the 19
    repositories created after T are among them. Size terciles of the Maven list: 13,207 and 50,647 Java lines.
 6. **The walk** (choosing the experiment and validation projects; go-ahead for the clones 2026-11-26, ~300–400
    repositories): the Maven repositories are split into three size groups by `javaCodeLines` (terciles of the Maven
@@ -137,11 +138,12 @@ before cloning repositories for the mining, before the large run, and before del
      stars). AssertJ chains are out of the module's scope (Step 30): a scope limit to state in the paper;
    - validation projects: 5 per cell (30), for early stopping;
    - fine-tuning projects: all the other Maven repositories;
-   - similar projects on both sides: proposed on 2026-11-26, waiting for the author (see the conversation of that
-     day): experiment and validation projects only from owners with a single repository in the list; a fine-tuning
-     repository with the same repository name as an experiment project is dropped; the large run records a
-     fingerprint of every Java file, and a fine-tuning repository sharing files with an experiment project is
-     dropped.
+   - similar projects on both sides (approved 2026-11-27): experiment and validation projects only from owners with
+     a single Maven repository in the list (the after-T pairs of one owner both go to the experiment set); a
+     fine-tuning repository with the same repository name as an experiment project is dropped; the large run records
+     a fingerprint of every Java file (whitespace and comments removed), and a fine-tuning repository sharing files
+     with an experiment project is dropped (threshold set after measuring, shown to the author first); duplicate
+     datapoints are dropped (step 11).
 9. **The large run**, in this order: experiment projects, validation projects, then the fine-tuning projects in a
    seeded random order balanced by size (so that what is done when the time limit stops the run is a fair sample, not
    only the small repositories). Time limit about 7 days; the timeouts are retried at the end if time allows.
