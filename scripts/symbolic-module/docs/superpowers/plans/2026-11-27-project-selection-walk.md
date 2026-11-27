@@ -67,10 +67,14 @@ which has `tree-sitter` 0.24 and `tree-sitter-java` 0.23.5), git, Maven, the JDK
 **Interfaces:**
 - Produces:
   - `ASSERTION_NAMES: frozenset[str]`, `TEST_ANNOTATIONS: frozenset[str]` (values in Global Constraints)
-  - `@dataclass(frozen=True) class TestMethod: cls: str; name: str; body: str; oracles: int; start_line: int; end_line: int`
-    — `cls` is the binary name (`com.x.FooTest`, nested `com.x.FooTest$Inner`); `body` the tokens of the method body
-    joined by one space, comments left out; lines are 1-based and inclusive (the whole declaration, annotations
-    included).
+  - `@dataclass(frozen=True) class TestMethod: cls: str; name: str; body: str; oracles: int; start_line: int;
+    end_line: int; oracle_keys: tuple[str, ...]; oracle_texts: tuple[str, ...]; tokens: tuple[str, ...]`
+    — `cls` is the binary name (`com.x.FooTest`, nested `com.x.FooTest$Inner`); `tokens` the tokens of the method
+    body, comments left out, with the **local names normalized** (the local variables, parameters, catch, for and
+    lambda parameters of the method renamed `v1`, `v2`, ... in order of first appearance; fields, methods and types
+    unchanged); `body` the tokens joined by one space; lines are 1-based and inclusive (the whole declaration,
+    annotations included); one `oracle_keys` entry per oracle: the normalized tokens of the body from its start to the
+    end of that assertion; one `oracle_texts` entry per oracle: the normalized tokens of the assertion alone.
   - `test_methods(source: bytes) -> list[TestMethod]` in source order.
   - `junit_flavour(source: bytes) -> str`: `'jupiter'`, `'junit4'` or `'unknown'`.
 
@@ -84,6 +88,9 @@ class TestMethodsTest(unittest.TestCase):
         self.assertEqual('com.x.FooTest$Inner', wj.test_methods(NESTED)[0].cls)
     def test_body_ignores_whitespace_and_comments(self):    # same method reformatted and commented -> equal body
     def test_body_differs_on_a_literal(self):               # assertEquals(1, x) vs assertEquals(2, x) -> different body
+    def test_local_names_normalized(self):                  # `int a = f(); assertEquals(1, a);` vs `int b = f(); ...` -> equal
+        # a renamed field, method or type -> different body
+    def test_one_key_per_oracle(self):                      # two assertions -> two keys, the first a prefix of the second
     def test_oracles_as_the_module(self):
         # assertEquals(..); Assertions.assertTrue(..); assertThat(x, is(y)); assert x > 0;
         # IllegalStateException e = assertThrows(...); fail("no");  -> 6
@@ -136,7 +143,13 @@ Run: `../../.venv/bin/python -m unittest tools/gen/test_walk_java.py` — Expect
     command, `GIT_TERMINAL_PROMPT=0`.
   - `base_commit(path: str, commit: str) -> str | None` — the newest first-parent ancestor of `commit` with
     committer date before `CUTOFF`; None when the history starts after it.
-  - `@dataclass(frozen=True) class Target: file: str; cls: str; name: str; oracles: int; junit: str; start_line: int; end_line: int`
+  - `@dataclass(frozen=True) class Target: file: str; cls: str; name: str; oracles: int; junit: str; start_line: int;
+    end_line: int; duplicates: int; oracles_seen: int; similarity: float; most_similar: str` — `oracles` leaves out
+    the `duplicates`: the oracles whose `oracle_keys` entry is the key of an oracle of a test method at the base commit
+    (the same test prefix and oracle, local names aside, already written before T); `oracles_seen`: the oracles whose
+    `oracle_texts` entry appears in a test method at the base (recorded, not dropped); `similarity`: the largest
+    Jaccard similarity of token multisets (Σ min / Σ max of the counts of `tokens`) with a test method at the base, 0.0
+    when there is no base; `most_similar`: that method as `cls#name`.
   - `@dataclass class Mined: base: str | None; targets: list[Target]; old_lines: int; test_files: int; parse_errors: int`
     — `old_lines`: methods new by name and body but with a line authored before T (dropped, counted).
   - `mine(path: str, commit: str) -> Mined`
@@ -155,6 +168,12 @@ class MineTest(unittest.TestCase):
     def test_history_after_the_cutoff_only_has_no_base(self):     # first commit 2026-03-20 -> base None, all methods targets
     def test_a_line_authored_before_the_cutoff_drops_the_method(self):
         # commit authored 2026-02-20, committed 2026-03-06 (a rebased pull request) adds e -> not a target, old_lines == 1
+    def test_copied_prefix_and_oracle_is_a_duplicate(self):
+        # 2026-03-07 adds f: the first assertion with its prefix copied from a (a local renamed), then a new one
+        # -> f is a target with oracles 1, duplicates 1; a method whose only oracle is copied is not a target
+    def test_similarity_to_the_tests_before_the_cutoff(self):
+        # b differs from a by one literal -> similarity > 0.9 and most_similar 'FooTest#a'; c shares no token
+        # sequence with a -> similarity < 0.3; history after the cutoff only -> 0.0 and ''
     def test_test_files_only_under_src_test(self):                # a @Test method in src/main/java is ignored
     def test_generated_star_files_ignored(self):                  # FooSTARSplitTest.java is ignored
     def test_unknown_commit_is_not_fetched(self):
@@ -172,7 +191,9 @@ Files: `git ls-tree -r --name-only <rev>`, the `*.java` paths with a `src/test/`
 `commit` is new when its `(cls, name)` and its `body` are both absent from the methods at `base` (every method of
 `commit` is new when `base` is None). For the new methods, one `git blame --porcelain <commit> -- <file>` per file
 gives the author time of each line; a method is a target only when every line from `start_line` to `end_line` has an
-author time at or after `CUTOFF`. A file tree-sitter cannot fully parse counts in `parse_errors` (its parsed methods
+author time at or after `CUTOFF`, and it keeps at least one oracle that is not a duplicate. Similarity: compare with
+the base methods in decreasing order of the bound `min(n, m) / max(n, m)` (n, m their numbers of tokens) and stop when
+the bound is below the best value found; log the time of a repository that needs more than 10 minutes. A file tree-sitter cannot fully parse counts in `parse_errors` (its parsed methods
 are still used).
 
 - [ ] **Step 4: Run the tests to verify they pass** — Expected: OK.
@@ -300,7 +321,8 @@ Evaluation in a thread pool of `-j` workers fed in the round-robin order; each f
 `evaluations.jsonl` (one JSON line, flushed); `assign` runs on the evaluations so far after each one, and a group whose
 two cells are full gets no new candidate. The after-T repositories are evaluated first (all 19). Split columns: `id,
 name, commit, javaCodeLines, sizeGroup, createdAfterCutoff, set, junit, reason, walkOrder`; targets columns: `id,
-name, file, class, method, startLine, endLine, oracles, junit, passed` (experiment and validation projects, every
+name, file, class, method, startLine, endLine, oracles, duplicates, oraclesSeen, similarity, mostSimilar, junit,
+passed` (experiment and validation projects, every
 target, sorted). `summary.json`: seed, start and end, per group and cell the candidates examined, refused by reason,
 experiment, validation, oracles; the after-T results.
 

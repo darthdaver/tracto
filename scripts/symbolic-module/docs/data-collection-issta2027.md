@@ -125,6 +125,9 @@ before cloning repositories for the mining, before the large run, and before del
      SDKMAN), the one matching the Java version the project declares first (JDK 24 is not needed: 25 builds it);
    - its JUnit version: the one of most of its target test classes (JUnit 4, or Jupiter = JUnit 5/6); each oracle is
      labelled too.
+   - (2026-11-27, left to me by the author) an oracle whose test prefix and assertion, local names aside, existed at T
+     is a copy and not a target; the similarity of each target to the tests at T is recorded for the analysis
+     (`docs/issta2027-dataset-numbers.md`, section 5).
    An eligible candidate fills its cell (size × JUnit version) until the cell has **20 projects**; then 5 more per
    cell for validation. Every candidate and the reason it was refused are written to a CSV. A cell that is not full
    by the selection deadline is reported, never filled from another cell.

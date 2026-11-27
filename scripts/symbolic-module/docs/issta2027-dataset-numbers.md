@@ -115,10 +115,33 @@ deadline.
 
 1. At least 10 oracles in **test methods added after T**: methods (`@Test`, `@ParameterizedTest`) added by commits
    whose author and committer dates are both after T, still present at the pinned commit, and whose normalized body
-   did not exist in the repository at T (moved, renamed or copied tests are not targets).
+   did not exist in the repository at T (moved, renamed or copied tests are not targets). An oracle whose test
+   prefix and assertion, local variable names aside, already existed in a test of the repository at T is not a target
+   either (a copy-paste of an older test).
 2. It **builds and these tests pass** at the pinned commit, because the experiments run the generated oracles. JDKs
    tried: 8, 11, 17, 21, 25, 26, 27 (Amazon Corretto), the one matching the Java version the project declares first.
 3. Its owner has a **single Maven repository** in the list (section 6).
+
+### Similarity of the targets to the tests written before the cutoff
+
+Decided on 2026-11-27. A new test that resembles the older tests of its project (same class, same pattern, other
+values) is not leakage: its oracle differs, and this is the usual situation in which developers write tests (Tracto
+even receives the other tests of the class as context). Only a copy is leakage, and copies are removed (eligibility
+1). The resemblance is measured for every target, computed during the selection, when the state of the repository at
+T is at hand:
+
+- `similarity`: the largest Jaccard similarity of token multisets (local variable names normalized) between the target
+  test method and a test method of the repository at T (the measure of Allamanis, *The Adverse Effects of Code
+  Duplication in Machine Learning Models of Code*, Onward! 2019, who calls near-duplicates the pairs at 0.7 or more);
+- `oraclesSeen`: whether the assertion alone (normalized) already appeared in a test at T (common assertions such as
+  `assertEquals(0, list.size())` are expected);
+- `duplicates`: the oracles removed as copies.
+
+For the paper: the distribution of `similarity` and `oraclesSeen` over the targets; the results of each approach by
+similarity range; a sensitivity analysis without the targets at 0.7 or more. **(to fill)**
+
+The same measures between the targets and the fine-tuning data (other repositories) are computed after the
+generation (section 6, check 4, extended to near-duplicates).
 
 ### Selection procedure
 
